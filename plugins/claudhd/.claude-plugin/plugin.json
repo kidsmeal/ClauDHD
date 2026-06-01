@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "claudhd",
+  "displayName": "ClauDHD",
+  "version": "0.1.0",
+  "description": "ADHD-friendly focus and drift control for Claude Code: a NOW cursor, an idea inbox, a trophy case, and session breadcrumbs so stopping mid-thought is always safe.",
+  "author": {
+    "name": "kidsmeal",
+    "url": "https://github.com/kidsmeal"
+  },
+  "homepage": "https://github.com/kidsmeal/ClauDHD",
+  "repository": "https://github.com/kidsmeal/ClauDHD",
+  "license": "MIT",
+  "keywords": ["adhd", "focus", "productivity", "hooks", "context", "drift", "memory"],
+  "hooks": "./hooks/hooks.json"
+}

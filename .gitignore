@@ -1,0 +1,12 @@
+# ClauDHD local session state (created in projects that opt in)
+.now/
+
+# Node
+node_modules/
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/

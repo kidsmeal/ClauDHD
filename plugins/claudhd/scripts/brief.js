@@ -1,0 +1,128 @@
+#!/usr/bin/env node
+/*
+ * ClauDHD brief - SessionStart hook, and the /claudhd:now command.
+ *
+ * Prints "where you left off + wins + drift flags".
+ *   default : emits SessionStart additionalContext JSON (hook mode).
+ *   --plain : prints plain markdown to stdout (command mode).
+ *
+ * Stays silent (empty) in projects without NOW.md, so it is invisible in
+ * repos that have not opted in to ClauDHD. Never throws; exits 0.
+ */
+"use strict";
+const { execFileSync } = require("child_process");
+const fs = require("fs");
+const path = require("path");
+
+const ROOT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+const NOW_MD = path.join(ROOT, "NOW.md");
+const NOW_DIR = path.join(ROOT, ".now");
+const PLAIN = process.argv.includes("--plain");
+
+function git(args) {
+  try {
+    return execFileSync("git", ["-C", ROOT, ...args], {
+      encoding: "utf8",
+      timeout: 15000,
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return "";
+  }
+}
+
+function section(text, heading) {
+  const esc = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const m = text.match(new RegExp(esc + "[\\s\\S]*?(?=\\n## |$)"));
+  return m ? m[0].trim() : "";
+}
+
+function ageHours(p) {
+  try {
+    return (Date.now() - fs.statSync(p).mtimeMs) / 3600000;
+  } catch {
+    return null;
+  }
+}
+
+function winsSinceLastVisit() {
+  const head = git(["rev-parse", "HEAD"]);
+  const anchor = path.join(NOW_DIR, "session-start-head");
+  let prev = "";
+  try {
+    if (fs.existsSync(anchor)) prev = fs.readFileSync(anchor, "utf8").trim();
+  } catch { /* ignore */ }
+  let subjects = [];
+  if (prev && head && prev !== head) {
+    const log = git(["log", `${prev}..HEAD`, "--pretty=format:%s", "-50"]);
+    subjects = log.split(/\r?\n/).filter((l) => l.trim());
+  }
+  try {
+    fs.mkdirSync(NOW_DIR, { recursive: true });
+    if (head) fs.writeFileSync(anchor, head);
+  } catch { /* ignore */ }
+  return subjects;
+}
+
+function emit(context) {
+  if (PLAIN) {
+    process.stdout.write(context + "\n");
+  } else {
+    process.stdout.write(JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: "SessionStart",
+        additionalContext: context,
+      },
+    }));
+  }
+}
+
+try {
+  if (!fs.existsSync(NOW_MD)) {
+    if (PLAIN) {
+      process.stdout.write("No NOW.md here. Run /claudhd:init to set up ClauDHD in this project.\n");
+    }
+    process.exit(0); // silent in non-ClauDHD projects
+  }
+
+  const txt = fs.readFileSync(NOW_MD, "utf8");
+  const lines = [];
+  const flags = [];
+
+  const active = section(txt, "## Active thread");
+  if (active) lines.push(active);
+
+  const age = ageHours(NOW_MD);
+  if (age && age > 72) {
+    flags.push(`NOW.md has not been touched in ${Math.floor(age / 24)} days. Is the active thread still right?`);
+  }
+
+  const status = git(["status", "--short"]);
+  if (status) {
+    flags.push(`${status.split(/\r?\n/).length} uncommitted path(s) in the working tree. Commit, stash, or discard before drifting further.`);
+  }
+
+  const last = path.join(NOW_DIR, "last-session.md");
+  if (fs.existsSync(last)) {
+    const m = fs.readFileSync(last, "utf8").match(/Stopped:\s*(.+)/);
+    if (m) lines.push(`Last session stopped: ${m[1].trim()}`);
+  }
+
+  const wins = winsSinceLastVisit();
+
+  let out = "## Where you left off\n\n" + (lines.length ? lines.join("\n\n") : "(no NOW.md cursor found)");
+  if (wins.length) {
+    out += "\n\n## Shipped since you were last here\n\n" + wins.slice(0, 6).map((w) => `- ${w}`).join("\n");
+    if (wins.length > 6) out += `\n- ... and ${wins.length - 6} more`;
+    out += "\n\n(Run /claudhd:shipped to log these to your trophy case.)";
+  }
+  if (flags.length) {
+    out += "\n\n## Drift flags\n\n" + flags.map((f) => `- ${f}`).join("\n");
+  }
+  out += "\n\n(Read NOW.md first. Keep its Next physical action line true and tiny as you work.)";
+
+  emit(out);
+} catch {
+  // stay silent on any error
+}
+process.exit(0);

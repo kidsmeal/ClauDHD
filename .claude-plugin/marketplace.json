@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-marketplace.json",
+  "name": "claudhd",
+  "owner": {
+    "name": "kidsmeal",
+    "url": "https://github.com/kidsmeal"
+  },
+  "description": "ClauDHD: ADHD-friendly focus and drift control for Claude Code.",
+  "plugins": [
+    {
+      "name": "claudhd",
+      "source": "./plugins/claudhd",
+      "description": "A NOW cursor, an idea inbox, a trophy case, and session breadcrumbs, so stopping mid-thought is always safe.",
+      "version": "0.1.0",
+      "author": { "name": "kidsmeal" }
+    }
+  ]
+}
