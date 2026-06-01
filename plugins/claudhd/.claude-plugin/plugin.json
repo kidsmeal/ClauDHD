@@ -2,8 +2,8 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "claudhd",
   "displayName": "ClauDHD",
-  "version": "0.1.0",
-  "description": "ADHD-friendly focus and drift control for Claude Code: a NOW cursor, an idea inbox, a trophy case, and session breadcrumbs so stopping mid-thought is always safe.",
+  "version": "0.2.0",
+  "description": "ADHD-friendly focus and drift control for Claude Code: a NOW cursor, an idea inbox, a trophy case, mid-session regroup, and session breadcrumbs so stopping mid-thought is always safe.",
   "author": {
     "name": "kidsmeal",
     "url": "https://github.com/kidsmeal"

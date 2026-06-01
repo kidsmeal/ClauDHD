@@ -40,6 +40,7 @@ In every other repo, ClauDHD stays completely silent.
 |---|---|
 | `/claudhd:init` | Scaffold the files into the current project and opt it in. |
 | `/claudhd:now` | Show the cursor: active thread, recent wins, drift flags. |
+| `/claudhd:regroup` | Mid-session reset: name the drift, park side-quests, snap back to the active thread. |
 | `/claudhd:idea <text>` | Park an idea in `IDEAS.md` without breaking your current thread. |
 | `/claudhd:triage` | Walk the inbox and promote, park, or kill each idea. |
 | `/claudhd:shipped` | Pull finished commits into `SHIPPED.md` and show the wins. |
