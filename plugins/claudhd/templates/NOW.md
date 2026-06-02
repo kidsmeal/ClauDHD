@@ -28,4 +28,4 @@ New idea mid-task: `/claudhd:idea <it>` parks it in IDEAS.md and you keep going.
 
 ## Leaving this file when you stop
 
-Before you walk away, or whenever you switch context, make the "Next physical action" line true and tiny. That one line is what lets you stop mid-thought and lose nothing.
+Before you walk away, or whenever you switch context, make the "Next physical action" line true and tiny. That one line is what lets you stop mid-thought and lose nothing. The quick way: run `/claudhd:wrap` and it reconciles this file for you - checks off what's done, writes the next action, and sweeps loose ends.

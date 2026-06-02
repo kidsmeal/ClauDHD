@@ -30,7 +30,7 @@ ClauDHD does nothing in a project until you opt in. In the project you want to m
 /claudhd:init
 ```
 
-That scaffolds `NOW.md`, `IDEAS.md`, and `SHIPPED.md` (without overwriting any you already have) and adds `.now/` to your `.gitignore`. Then name your one active thread and its next tiny step. That is it.
+That scaffolds `NOW.md`, `IDEAS.md`, and `SHIPPED.md` (without overwriting any you already have) and adds `.now/` to your `.gitignore`. Then Claude reads the repo, proposes your one active thread and its next tiny step, and you confirm or correct it. That is it.
 
 In every other repo, ClauDHD stays completely silent.
 
@@ -38,9 +38,10 @@ In every other repo, ClauDHD stays completely silent.
 
 | Command | What it does |
 |---|---|
-| `/claudhd:init` | Scaffold the files into the current project and opt it in. |
+| `/claudhd:init` | Scaffold the files, opt the project in, and propose your first active thread to confirm. |
 | `/claudhd:now` | Show the cursor: active thread, recent wins, drift flags. |
 | `/claudhd:regroup` | Mid-session reset: name the drift, park side-quests, snap back to the active thread. |
+| `/claudhd:wrap` | End-of-chunk wrap-up: reconcile `NOW.md` — check off done steps, write the next action, sweep loose ends. |
 | `/claudhd:idea <text>` | Park an idea in `IDEAS.md` without breaking your current thread. |
 | `/claudhd:triage` | Walk the inbox and promote, park, or kill each idea. |
 | `/claudhd:shipped` | Pull finished commits into `SHIPPED.md` and show the wins. |

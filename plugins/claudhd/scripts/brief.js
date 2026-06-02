@@ -119,7 +119,7 @@ try {
   if (flags.length) {
     out += "\n\n## Drift flags\n\n" + flags.map((f) => `- ${f}`).join("\n");
   }
-  out += "\n\n(Read NOW.md first. Keep its Next physical action line true and tiny as you work.)";
+  out += "\n\n(Read NOW.md first. As you work, keep it live: when you finish a step, check it off in NOW.md and write the next tiny action, instead of waiting until you stop. Run /claudhd:wrap to reconcile NOW.md at the end of a chunk.)";
 
   emit(out);
 } catch {
