@@ -1,8 +1,8 @@
 # ClauDHD
 
-ADHD-friendly focus and drift control for [Claude Code](https://claude.com/claude-code).
+Focus and drift control for [Claude Code](https://claude.com/claude-code).
 
-ClauDHD is built on one idea: **stop trying to finish sessions, and make stopping safe instead.** If you have ADHD, you will keep ending chats mid-thought, chasing new ideas, and leaving work half-done. Fighting that loses. So ClauDHD externalizes your place in the work and automates the remembering, so an abruptly-closed session never costs you anything.
+ClauDHD is built on one idea: **stop trying to finish sessions, and make stopping safe instead.** Real work gets interrupted — you chase a new lead, switch context, or close a chat mid-thought and lose your place. Instead of fighting that, ClauDHD externalizes where you are in the work and automates the remembering, so an abruptly-closed session never costs you anything.
 
 It is a small, zero-dependency plugin. No accounts, no servers, no data leaves your machine. Just Node (which Claude Code already ships with) and git.
 
@@ -71,4 +71,4 @@ Claude Code plugins cannot create scheduled remote agents, but ClauDHD ships two
 
 MIT. See [LICENSE](LICENSE).
 
-Built by a developer with ADHD who kept losing the thread.
+Built by a developer who kept losing the thread.

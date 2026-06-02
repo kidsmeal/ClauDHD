@@ -4,7 +4,7 @@
  *
  * Pulls commits made since the last recorded commit (tracked by a marker in
  * SHIPPED.md) into the trophy case, grouped by date, newest first. Idempotent.
- * Finishing should be visible: ADHD brains need to see the pile grow.
+ * Finishing should be visible: it helps to see the pile grow.
  */
 "use strict";
 const { execFileSync } = require("child_process");
@@ -18,7 +18,7 @@ const MARKER_PREFIX = "<!-- last-sha:";
 const HEADER =
 `# SHIPPED (trophy case)
 
-Finished work, newest first. Run \`/claudhd:shipped\` to pull in commits since the last entry. This exists so finishing is visible: ADHD brains need to see the pile grow.
+Finished work, newest first. Run \`/claudhd:shipped\` to pull in commits since the last entry. This exists so finishing is visible — it helps to see the pile grow.
 
 <!-- last-sha: -->
 `;
