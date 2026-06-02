@@ -13,7 +13,9 @@ It has zero dependencies and runs on local files: no ClauDHD account, no ClauDHD
 - **An idea inbox** (`IDEAS.md`). When an idea hits mid-task, `/claudhd:idea <it>` parks it in one line so you keep going instead of opening a new chat. Triage later with `/claudhd:triage`.
 - **A trophy case** (`SHIPPED.md`). `/claudhd:shipped` pulls your finished commits into a visible, growing list.
 
-## Install
+## Quick Start
+
+### 1. Install
 
 ```
 /plugin marketplace add kidsmeal/ClauDHD
@@ -22,7 +24,17 @@ It has zero dependencies and runs on local files: no ClauDHD account, no ClauDHD
 
 If you install during an existing Claude Code session, run `/reload-plugins` to activate it. No restart is needed.
 
-## Set it up in a project
+### 2. Verify installation
+
+Confirm the plugin loaded and check which version you're on:
+
+```
+/claudhd:version
+```
+
+You should see a line like `ClauDHD v0.5.3`. If the command isn't recognized, the plugin didn't load — run `/reload-plugins` (or restart Claude Code) and try again.
+
+### 3. Initialize a project
 
 ClauDHD does nothing in a project until you opt in. In the project you want to manage:
 
@@ -36,6 +48,20 @@ Scope the cursor to the **work you're doing**, not the repo. If a feature spans 
 
 In every other repo, ClauDHD stays completely silent.
 
+## Usage Flow
+
+A normal day with ClauDHD is mostly the automatic hooks, plus a few commands when you need them. Once a project is initialized, the loop looks like this:
+
+1. **Start where you left off.** Opening a session fires the `SessionStart` brief — your active thread, the next action, what shipped on this branch, and any drift flags. No command needed; read it and go.
+2. **Work the one active thread.** `NOW.md` holds a single cursor: the thread, the next physical step, and the queue behind it. Lost the plot mid-session? `/claudhd:now` reprints the cursor.
+3. **Park ideas instead of chasing them.** When something unrelated pops up, `/claudhd:idea <it>` drops it into `IDEAS.md` in one line so you keep moving.
+4. **Snap back when you drift.** `/claudhd:regroup` names the drift, parks side-quests, and points you back at the active thread.
+5. **Wrap up a chunk.** `/claudhd:wrap` reconciles `NOW.md` — checks off done steps, writes the next action, sweeps loose ends — so stopping now costs nothing later.
+6. **Bank the wins.** After you commit, `/claudhd:shipped` pulls finished commits into `SHIPPED.md`.
+7. **Tend the inbox.** Now and then, `/claudhd:triage` walks the idea inbox (promote / park / kill), and `/claudhd:harvest` backfills ideas you mentioned in past chats but never wrote down.
+
+Through all of it, the `Stop` hook quietly checkpoints after every turn, so however a session ends your place is at most one turn stale.
+
 ## Commands
 
 | Command | What it does |
@@ -48,6 +74,7 @@ In every other repo, ClauDHD stays completely silent.
 | `/claudhd:harvest` | Scan this project's past chats and backfill un-captured ideas into `IDEAS.md`. |
 | `/claudhd:triage` | Walk the inbox and promote, park, or kill each idea. |
 | `/claudhd:shipped` | Pull finished commits into `SHIPPED.md` and show the wins. |
+| `/claudhd:version` | Print the installed version — confirms the plugin is active. |
 
 ## What runs automatically
 
