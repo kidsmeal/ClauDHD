@@ -3,6 +3,7 @@
   "private": true,
   "description": "Dev tooling (tests) for the ClauDHD plugin. Not published and not part of the installed plugin, which lives in plugins/claudhd and has zero dependencies.",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "release": "node tools/release.js"
   }
 }
