@@ -15,10 +15,18 @@ const { execFileSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 
-const ROOT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+// Provider-neutral first, then Claude Code's var, then cwd. Lets the same
+// scripts run under a different host (or in tests) by setting CLAUDHD_PROJECT_DIR.
+const ROOT = process.env.CLAUDHD_PROJECT_DIR || process.env.CLAUDE_PROJECT_DIR || process.cwd();
 const NOW_MD = path.join(ROOT, "NOW.md");
 const NOW_DIR = path.join(ROOT, ".now");
 const PLAIN = process.argv.includes("--plain");
+// Advancing the "shipped since you were last here" anchor is a side effect that
+// must happen only on an actual session visit. SessionStart passes --record-visit;
+// /now, /regroup and /wrap (which also run this script) read the wins without
+// consuming the anchor, so the next SessionStart still reports what shipped while
+// you were away instead of finding it already swallowed by a mid-session /now.
+const RECORD_VISIT = process.argv.includes("--record-visit");
 
 function git(args) {
   try {
@@ -72,10 +80,15 @@ function winsSinceLastVisit(branch) {
     const log = git(["log", `${prev}..HEAD`, "--pretty=format:%s", "-50"]);
     subjects = log.split(/\r?\n/).filter((l) => l.trim());
   }
-  try {
-    fs.mkdirSync(path.dirname(anchor), { recursive: true });
-    if (head) fs.writeFileSync(anchor, head);
-  } catch { /* ignore */ }
+  // Only move the anchor on an actual session visit (--record-visit). A read-only
+  // /now/regroup/wrap leaves it where it was, so the next SessionStart still sees
+  // everything shipped since you last started a session here.
+  if (RECORD_VISIT) {
+    try {
+      fs.mkdirSync(path.dirname(anchor), { recursive: true });
+      if (head) fs.writeFileSync(anchor, head);
+    } catch { /* ignore */ }
+  }
   return subjects;
 }
 
@@ -133,6 +146,10 @@ try {
   // a working cursor permanently reads as drift. We read plain paths (not the
   // `status --short` columns) because the shared git() trims its output, which
   // would shift a leading-space status code and corrupt column parsing.
+  //
+  // Match the exact root-relative path git reports (always forward-slash), NOT
+  // the basename - otherwise a real file like docs/NOW.md or notes/IDEAS.md would
+  // be silently waved through as ClauDHD bookkeeping and never counted as drift.
   const own = new Set(["NOW.md", "IDEAS.md", "SHIPPED.md"]);
   const changed = git(["diff", "--name-only", "HEAD"]);              // tracked, staged + unstaged
   const untracked = git(["ls-files", "--others", "--exclude-standard"]); // new files
@@ -141,7 +158,7 @@ try {
       .split(/\r?\n/)
       .map((p) => p.trim())
       .filter(Boolean)
-      .filter((p) => !own.has(p.split(/[\\/]/).pop()))
+      .filter((p) => !own.has(p))
   );
   if (dirty.size) {
     flags.push(`${dirty.size} uncommitted path(s) in the working tree. Commit, stash, or discard before drifting further.`);

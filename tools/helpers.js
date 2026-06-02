@@ -35,20 +35,30 @@ function cleanup(dir) {
   try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
 }
 
+// Build the child env: point the scripts at the throwaway repo, and strip any
+// ambient CLAUDHD_PROJECT_DIR so a value set in the outer shell can't override
+// the repo we mean to test. `extra` (e.g. CLAUDHD_PROJECT_DIR, CLAUDE_CONFIG_DIR)
+// is layered on last so individual tests can exercise the env-var precedence.
+function childEnv(dir, extra) {
+  const env = { ...process.env, CLAUDE_PROJECT_DIR: dir };
+  delete env.CLAUDHD_PROJECT_DIR;
+  return Object.assign(env, extra || {});
+}
+
 // Run a ClauDHD script synchronously in the repo. Returns { stdout, stderr, status }.
-function run(dir, name, args = []) {
+function run(dir, name, args = [], extra = {}) {
   const res = spawnSync(process.execPath, [scriptPath(name), ...args], {
     encoding: "utf8",
-    env: { ...process.env, CLAUDE_PROJECT_DIR: dir },
+    env: childEnv(dir, extra),
   });
   return { stdout: res.stdout || "", stderr: res.stderr || "", status: res.status };
 }
 
 // Run a script asynchronously, for concurrency tests. Resolves on process exit.
-function runAsync(dir, name, args = []) {
+function runAsync(dir, name, args = [], extra = {}) {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [scriptPath(name), ...args], {
-      env: { ...process.env, CLAUDE_PROJECT_DIR: dir },
+      env: childEnv(dir, extra),
     });
     let stdout = "", stderr = "";
     child.stdout.on("data", (d) => (stdout += d));

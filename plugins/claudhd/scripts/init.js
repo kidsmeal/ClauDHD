@@ -20,7 +20,8 @@ const { execFileSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 
-const ROOT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+// Provider-neutral first, then Claude Code's var, then cwd.
+const ROOT = process.env.CLAUDHD_PROJECT_DIR || process.env.CLAUDE_PROJECT_DIR || process.cwd();
 const TEMPLATES = path.join(__dirname, "..", "templates");
 const MARKER = "<!-- claudhd: opt-in marker (do not remove) -->";
 
@@ -107,6 +108,8 @@ const recent = git(["log", "-8", "--oneline"]);
 // back as drift. Use plain paths (diff --name-only + ls-files), not
 // `status --short` columns: git() trims its output, which would shift the first
 // line's status code and corrupt column parsing (same reason brief.js avoids it).
+// Match the exact root-relative path git reports, NOT the basename - else a real
+// file like docs/NOW.md would be wrongly swallowed as our own scaffolding.
 const own = new Set(["NOW.md", "IDEAS.md", "SHIPPED.md", ".gitignore"]);
 const tracked = git(["diff", "--name-only", "HEAD"]);
 const untracked = git(["ls-files", "--others", "--exclude-standard"]);
@@ -115,7 +118,7 @@ const dirty = [...new Set(
     .split(/\r?\n/)
     .map((p) => p.trim())
     .filter(Boolean)
-    .filter((p) => !own.has(p.split(/[\\/]/).pop()))
+    .filter((p) => !own.has(p))
 )];
 
 if (branch || recent || dirty.length) {

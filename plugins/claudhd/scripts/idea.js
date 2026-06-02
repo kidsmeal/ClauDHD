@@ -12,7 +12,8 @@ const fs = require("fs");
 const path = require("path");
 const { withLock } = require("./lock.js");
 
-const ROOT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+// Provider-neutral first, then Claude Code's var, then cwd.
+const ROOT = process.env.CLAUDHD_PROJECT_DIR || process.env.CLAUDE_PROJECT_DIR || process.cwd();
 const IDEAS = path.join(ROOT, "IDEAS.md");
 const NOW_MD = path.join(ROOT, "NOW.md");
 const LOCK = path.join(ROOT, ".now", "ideas.lock");

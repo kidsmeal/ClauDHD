@@ -80,6 +80,61 @@ test("drift flag ignores own files but counts real work", () => {
   } finally { cleanup(dir); }
 });
 
+test("drift flag counts a nested NOW.md, not just the root cursor", () => {
+  const { dir, git } = makeRepo();
+  try {
+    optIn(dir, git, "main thread");
+    // A real doc that merely shares a basename with ClauDHD's cursor must NOT be
+    // waved through as bookkeeping - only the root NOW.md/IDEAS.md/SHIPPED.md are.
+    fs.mkdirSync(path.join(dir, "docs"), { recursive: true });
+    write(dir, path.join("docs", "NOW.md"), "# real notes\n");
+    const r = run(dir, "brief.js", ["--plain"]);
+    assert.match(r.stdout, /1 uncommitted path/, "docs/NOW.md is real work, not bookkeeping");
+  } finally { cleanup(dir); }
+});
+
+test("only --record-visit advances the shipped-since-last-visit anchor", () => {
+  const { dir, git } = makeRepo();
+  try {
+    optIn(dir, git, "main thread");
+    const anchor = path.join(".now", "branches", "main.head");
+
+    // SessionStart (hook mode + --record-visit) records the baseline at HEAD.
+    run(dir, "brief.js", ["--record-visit"]);
+    assert.ok(exists(dir, anchor), "SessionStart should create the visit anchor");
+
+    // Something ships during the session.
+    write(dir, "feature.txt", "done\n");
+    git(["add", "feature.txt"]);
+    git(["commit", "-q", "-m", "ship feature"]);
+
+    // /now / /regroup / /wrap (--plain, no --record-visit) must SHOW the win but
+    // not consume the anchor - so it keeps showing on repeat reads.
+    let r = run(dir, "brief.js", ["--plain"]);
+    assert.match(r.stdout, /ship feature/, "a read-only brief should surface the win");
+    r = run(dir, "brief.js", ["--plain"]);
+    assert.match(r.stdout, /ship feature/, "the anchor must not be consumed by /now");
+
+    // The next real SessionStart still reports it, then advances the anchor.
+    r = run(dir, "brief.js", ["--plain", "--record-visit"]);
+    assert.match(r.stdout, /ship feature/);
+
+    // Now that the visit was recorded, it is no longer "since you were last here".
+    r = run(dir, "brief.js", ["--plain"]);
+    assert.doesNotMatch(r.stdout, /ship feature/, "after a recorded visit the win is no longer new");
+  } finally { cleanup(dir); }
+});
+
+test("a read-only brief never creates the visit anchor", () => {
+  const { dir, git } = makeRepo();
+  try {
+    optIn(dir, git, "main thread");
+    run(dir, "brief.js", ["--plain"]); // /now, never a SessionStart
+    assert.equal(exists(dir, path.join(".now", "branches", "main.head")), false,
+      "/now must not write the visit anchor");
+  } finally { cleanup(dir); }
+});
+
 test("brief is silent (no context) in a non-ClauDHD repo", () => {
   const { dir } = makeRepo();
   try {

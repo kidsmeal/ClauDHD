@@ -14,7 +14,8 @@ const { execFileSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 
-const ROOT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+// Provider-neutral first, then Claude Code's var, then cwd.
+const ROOT = process.env.CLAUDHD_PROJECT_DIR || process.env.CLAUDE_PROJECT_DIR || process.cwd();
 const NOW_MD = path.join(ROOT, "NOW.md");
 const NOW_DIR = path.join(ROOT, ".now");
 
