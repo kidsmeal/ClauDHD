@@ -32,7 +32,7 @@ Confirm the plugin loaded and check which version you're on:
 /claudhd:version
 ```
 
-You should see a line like `ClauDHD v0.5.3`. If the command isn't recognized, the plugin didn't load — run `/reload-plugins` (or restart Claude Code) and try again.
+You should see a line like `ClauDHD v0.5.4`. If the command isn't recognized, the plugin didn't load — run `/reload-plugins` (or restart Claude Code) and try again.
 
 ### 3. Initialize a project
 
