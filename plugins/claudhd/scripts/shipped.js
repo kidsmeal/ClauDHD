@@ -59,11 +59,33 @@ if (!fs.existsSync(SHIPPED)) {
 }
 let body = fs.readFileSync(SHIPPED, "utf8");
 const last = readMarker(body);
+const newMarker = `${MARKER_PREFIX} ${head} -->`;
+
+// First run (no recorded marker): start the trophy case from HERE instead of
+// backfilling history. "Start tracking from now" is what people expect, and
+// backfilling would dump setup/scaffolding commits into a brand-new case.
+// Stamp the marker at HEAD and log nothing; the next run picks up whatever
+// ships after this point.
+if (!last) {
+  const out = [];
+  let stamped = false;
+  for (const line of body.split(/\r?\n/)) {
+    if (!stamped && line.startsWith(MARKER_PREFIX)) { out.push(newMarker); stamped = true; }
+    else out.push(line);
+  }
+  if (!stamped) out.push("", newMarker);
+  try {
+    fs.writeFileSync(SHIPPED, out.join("\n").replace(/\s+$/, "") + "\n");
+  } catch (e) {
+    console.error("! ClauDHD: could not write SHIPPED.md (" + e.message + "). Nothing logged.");
+    process.exit(1);
+  }
+  console.log("Trophy case started from here. Commits you ship from now on will show up - run /claudhd:shipped again after you finish something.");
+  process.exit(0);
+}
 
 const fmt = "--pretty=format:%h\t%cd\t%s";
-const log = last
-  ? git(["log", `${last}..HEAD`, fmt, "--date=short"])
-  : git(["log", "-20", fmt, "--date=short"]);
+const log = git(["log", `${last}..HEAD`, fmt, "--date=short"]);
 
 if (!log.trim()) {
   console.log("Nothing new to log. SHIPPED.md is up to date.");
@@ -83,7 +105,6 @@ for (const line of log.split(/\r?\n/)) {
 }
 const block = order.map((d) => `### ${d}\n` + byDate[d].join("\n")).join("\n\n");
 
-const newMarker = `${MARKER_PREFIX} ${head} -->`;
 const out = [];
 let inserted = false;
 for (const line of body.split(/\r?\n/)) {

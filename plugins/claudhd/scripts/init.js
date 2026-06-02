@@ -100,13 +100,29 @@ if (failed.length) {
 // instead of asking you to name it cold. Pure reads; nothing is modified.
 const branch = git(["rev-parse", "--abbrev-ref", "HEAD"]);
 const recent = git(["log", "-8", "--oneline"]);
-const changed = git(["status", "--short"]);
 
-if (branch || recent || changed) {
+// Real uncommitted work only - filter out ClauDHD's own footprint (the
+// NOW.md/IDEAS.md/SHIPPED.md we just scaffolded, plus the .gitignore we just
+// touched, all already reported above), so init doesn't echo its own changes
+// back as drift. Use plain paths (diff --name-only + ls-files), not
+// `status --short` columns: git() trims its output, which would shift the first
+// line's status code and corrupt column parsing (same reason brief.js avoids it).
+const own = new Set(["NOW.md", "IDEAS.md", "SHIPPED.md", ".gitignore"]);
+const tracked = git(["diff", "--name-only", "HEAD"]);
+const untracked = git(["ls-files", "--others", "--exclude-standard"]);
+const dirty = [...new Set(
+  (tracked + "\n" + untracked)
+    .split(/\r?\n/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .filter((p) => !own.has(p.split(/[\\/]/).pop()))
+)];
+
+if (branch || recent || dirty.length) {
   console.log("\n--- Repo signals (to propose your first active thread) ---");
   if (branch) console.log("Branch: " + branch);
   if (recent) console.log("\nRecent commits:\n" + recent);
-  if (changed) console.log("\nUncommitted paths:\n" + changed);
+  if (dirty.length) console.log("\nUncommitted paths:\n" + dirty.map((p) => "  " + p).join("\n"));
 } else {
   console.log("\n--- Repo signals: none (fresh or non-git project; just ask me what I'm working on) ---");
 }

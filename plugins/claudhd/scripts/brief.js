@@ -109,8 +109,19 @@ try {
 
   const branch = git(["rev-parse", "--abbrev-ref", "HEAD"]);
 
+  // Echo the active thread, minus the static "Rule:" coaching line. That line
+  // is identical every time and just pads /now, /regroup, /wrap and the brief;
+  // it still lives in NOW.md for in-file guidance, we just don't repeat it back.
   const active = section(txt, "## Active thread");
-  if (active) lines.push(active);
+  if (active) {
+    const trimmed = active
+      .split(/\r?\n/)
+      .filter((l) => !/^\s*Rule:/i.test(l))
+      .join("\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+    if (trimmed) lines.push(trimmed);
+  }
 
   const age = ageHours(NOW_MD);
   if (age && age > 72) {
