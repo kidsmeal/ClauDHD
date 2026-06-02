@@ -97,6 +97,16 @@ ClauDHD is single-cursor and single-checkout *by design*. These are deliberate "
 - Claude Code (provides Node).
 - git, for checkpoints and logging shipped commits.
 
+## Development
+
+Zero-dependency tests run on Node's built-in test runner:
+
+```
+npm test        # or: node --test   (from the repo root)
+```
+
+They spin up throwaway git repos and exercise the real scripts. See [test/](test/). Nothing under `test/` or `tools/` ships with the installed plugin.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

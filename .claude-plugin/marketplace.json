@@ -11,7 +11,7 @@
       "name": "claudhd",
       "source": "./plugins/claudhd",
       "description": "A NOW cursor that rides your branch, an idea inbox you can backfill from past chats, a trophy case, mid-session regroup, end-of-chunk wrap-up, and branch-aware session breadcrumbs, so stopping mid-thought is always safe.",
-      "version": "0.5.0",
+      "version": "0.5.1",
       "author": { "name": "kidsmeal" }
     }
   ]

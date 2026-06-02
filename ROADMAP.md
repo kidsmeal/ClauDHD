@@ -4,7 +4,7 @@ ClauDHD's own backlog and decision log — kept the way the plugin asks you to k
 
 ## Now
 
-- Nothing in flight. Branch-aware cursor shipped (see below).
+- Nothing in flight.
 
 ## Next (candidates, not commitments)
 
@@ -13,6 +13,7 @@ ClauDHD's own backlog and decision log — kept the way the plugin asks you to k
 
 ## Shipped
 
+- **Capture-race fix + first test suite (v0.5.1).** `/claudhd:idea` did a read-modify-write on `IDEAS.md` with no mutual exclusion, so two captures racing (two open sessions) could clobber each other and silently drop a parked idea — the one failure a capture tool can't have. Fixed with a cross-process lock (atomic `mkdir`, stale-lock breaking) in [`lock.js`](plugins/claudhd/scripts/lock.js). Added a zero-dependency test suite under [`test/`](test/) using Node's built-in runner; the deterministic lock test proves two holders never overlap (and was verified to go red against a no-op lock). `harvest.js` was checked and does not write `IDEAS.md` itself — it emits guidance for the model, whose Edit fails loud rather than clobbering.
 - **Branch-aware cursor (v0.5.0).** The committed `NOW.md` already rode the branch via git; the local `.now/` breadcrumbs were branch-blind. Now the `Stop` checkpoint also writes `.now/branches/<branch>.md` and the `SessionStart` brief reads the current branch's checkpoint and a per-branch "shipped since last visit" anchor (`.now/branches/<branch>.head`). The brief no longer flags ClauDHD's own live files (`NOW.md`, `IDEAS.md`, `SHIPPED.md`) as uncommitted drift. Serves the "I switch branches too often and lose my place" workflow with no new machinery — git swaps the cursor, ClauDHD swaps the breadcrumb.
 - **Feature-scoped init doctrine.** `/claudhd:init` scopes the cursor to the *work*, not the repo. A feature spanning several repos gets one cursor per repo, each holding that repo's slice.
 

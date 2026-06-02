@@ -10,10 +10,12 @@
 "use strict";
 const fs = require("fs");
 const path = require("path");
+const { withLock } = require("./lock.js");
 
 const ROOT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
 const IDEAS = path.join(ROOT, "IDEAS.md");
 const NOW_MD = path.join(ROOT, "NOW.md");
+const LOCK = path.join(ROOT, ".now", "ideas.lock");
 
 const HEADER =
 `# IDEAS (capture, do not chase)
@@ -61,21 +63,27 @@ if (!text) {
 }
 
 try {
-  if (!fs.existsSync(IDEAS)) fs.writeFileSync(IDEAS, HEADER);
-  let body = fs.readFileSync(IDEAS, "utf8");
-  const entry = `- [ ] ${stampNow()} (while: ${activeThread()}) ${text}`;
-  body = body.replace("\n(empty)\n", "\n");
+  // Serialize the read-modify-write: without the lock, two captures racing (e.g.
+  // /claudhd:idea fired from two open sessions) each read the same body and the
+  // second write clobbers the first, silently dropping a parked idea - the one
+  // failure a capture tool must never have.
+  withLock(LOCK, () => {
+    if (!fs.existsSync(IDEAS)) fs.writeFileSync(IDEAS, HEADER);
+    let body = fs.readFileSync(IDEAS, "utf8");
+    const entry = `- [ ] ${stampNow()} (while: ${activeThread()}) ${text}`;
+    body = body.replace("\n(empty)\n", "\n");
 
-  const inbox = "## Inbox\n";
-  const idx = body.indexOf(inbox);
-  if (idx !== -1) {
-    const head = body.slice(0, idx + inbox.length);
-    const tail = body.slice(idx + inbox.length).replace(/^\n+/, "");
-    body = head + "\n" + entry + "\n" + tail;
-  } else {
-    body = body.replace(/\s+$/, "") + "\n\n## Inbox\n\n" + entry + "\n";
-  }
-  fs.writeFileSync(IDEAS, body);
+    const inbox = "## Inbox\n";
+    const idx = body.indexOf(inbox);
+    if (idx !== -1) {
+      const head = body.slice(0, idx + inbox.length);
+      const tail = body.slice(idx + inbox.length).replace(/^\n+/, "");
+      body = head + "\n" + entry + "\n" + tail;
+    } else {
+      body = body.replace(/\s+$/, "") + "\n\n## Inbox\n\n" + entry + "\n";
+    }
+    fs.writeFileSync(IDEAS, body);
+  });
   console.log(`Captured -> IDEAS.md: ${text}`);
 } catch (e) {
   console.error("! ClauDHD: could not write IDEAS.md (" + e.message + "). Idea not captured.");
