@@ -1,6 +1,9 @@
 # ClauDHD local session state (created in projects that opt in)
 .now/
 
+# Local Claude Code permissions/settings
+.claude/settings.local.json
+
 # Node
 node_modules/
 

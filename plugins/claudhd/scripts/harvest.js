@@ -23,8 +23,9 @@ const path = require("path");
 const ROOT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
 const NOW_DIR = path.join(ROOT, ".now");
 const WATERMARK = path.join(NOW_DIR, "last-harvest");
-const FULL = process.argv.includes("--full");
-const DRY = process.argv.includes("--dry-run");
+const ARGS = process.argv.slice(2).join(" ").split(/\s+/).filter(Boolean);
+const FULL = ARGS.includes("--full");
+const DRY = ARGS.includes("--dry-run");
 
 const CONFIG = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
 const PROJECTS = path.join(CONFIG, "projects");

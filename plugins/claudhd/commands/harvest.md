@@ -3,7 +3,7 @@ description: Harvest unimplemented ideas from this project's past chats into IDE
 argument-hint: "[--dry-run] [--full]"
 allowed-tools: Bash(node:*), Grep, Read, Edit, Write
 ---
-!`node "${CLAUDE_PLUGIN_ROOT}/scripts/harvest.js" $ARGUMENTS`
+!`node "${CLAUDE_PLUGIN_ROOT}/scripts/harvest.js" "$ARGUMENTS"`
 
 The script above located this project's past session transcripts and the files to dedup against. Harvest the ideas that were raised but never captured or built - both mine and yours. Work efficiently; do NOT slurp whole transcripts:
 
