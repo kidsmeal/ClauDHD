@@ -2,16 +2,16 @@
 
 Focus and drift control for [Claude Code](https://claude.com/claude-code).
 
-ClauDHD is built on one idea: **stop trying to finish sessions, and make stopping safe instead.** Real work gets interrupted - you chase a new lead, switch context, or close a chat mid-thought and lose your place. Instead of fighting that, ClauDHD externalizes where you are in the work and automates the remembering, so an abruptly-closed session never costs you anything.
+Most coding sessions don't get finished. You chase a new lead, switch context, or close the chat mid-thought, and your place in the work is gone. ClauDHD doesn't try to stop that. It keeps your place in a few plain files at the repo root and updates them as you go, so a session that ends abruptly is cheap to pick back up.
 
 It is a small, zero-dependency plugin. No accounts, no servers, no data leaves your machine. Just Node (which Claude Code already ships with) and git.
 
 ## What it gives you
 
-- **A NOW cursor** (`NOW.md`). One active thread at a time, the next physical action, and an ordered queue behind it. The first thing you read, the last thing you touch.
+- **A NOW cursor** (`NOW.md`). One active thread at a time, the next physical action, and an ordered queue behind it.
 - **Session breadcrumbs.** A `Stop` hook writes a checkpoint after every turn, and a `SessionStart` hook greets your next session with "where you left off, what shipped, what is drifting." You never have to remember to checkpoint.
 - **An idea inbox** (`IDEAS.md`). When an idea hits mid-task, `/claudhd:idea <it>` parks it in one line so you keep going instead of opening a new chat. Triage later with `/claudhd:triage`.
-- **A trophy case** (`SHIPPED.md`). `/claudhd:shipped` pulls your finished commits into a visible, growing list. Finishing should feel like something.
+- **A trophy case** (`SHIPPED.md`). `/claudhd:shipped` pulls your finished commits into a visible, growing list.
 
 ## Install
 
@@ -77,7 +77,7 @@ Claude Code plugins cannot create scheduled remote agents, but ClauDHD ships two
 ## Requirements
 
 - Claude Code (provides Node).
-- git, for the checkpoint and trophy-case features.
+- git, for checkpoints and logging shipped commits.
 
 ## License
 
