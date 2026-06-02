@@ -26,3 +26,17 @@ jobs:
           node-version: ${{ matrix.node-version }}
 
       - run: npm test
+
+  validate:
+    # Fast, clearly-named guard for release-breaking manifest regressions
+    # (version mismatch, re-declaring the auto-loaded hooks/hooks.json). The
+    # full matrix above also runs this via `npm test`; this surfaces it as its
+    # own check so a manifest failure is obvious without reading matrix logs.
+    name: validate manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: node --test test/manifest.test.js
