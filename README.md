@@ -4,7 +4,7 @@ Focus and drift control for [Claude Code](https://claude.com/claude-code).
 
 ClauDHD is a small Claude Code plugin that remembers where you are in a project, so ending a session mid-thought doesn't lose you the thread. It's easy to wander off a task: you chase a new idea, switch branches, or close the tab and come back days later unsure where you were. Rather than trying to stop that, it writes your place down as you go, into a few plain Markdown files at the root of your repo, so picking the work back up means reading a file instead of reconstructing your own train of thought.
 
-It has zero dependencies and runs entirely on your machine (no accounts, no servers, nothing sent anywhere), using the Node.js runtime that Claude Code already bundles, plus ordinary git.
+It has zero dependencies and runs on local files: no ClauDHD account, no ClauDHD server, and no network calls beyond normal Claude Code usage. It uses the Node.js runtime that Claude Code already bundles, plus ordinary git.
 
 ## What it gives you
 
@@ -20,7 +20,7 @@ It has zero dependencies and runs entirely on your machine (no accounts, no serv
 /plugin install claudhd@claudhd
 ```
 
-Hooks and commands activate immediately, no restart needed.
+If you install during an existing Claude Code session, run `/reload-plugins` to activate it. No restart is needed.
 
 ## Set it up in a project
 
@@ -72,7 +72,7 @@ The engine is nearly free: the `Stop` hook is a pure local script (zero tokens),
 - **Bounded** - `/claudhd:init`, `/claudhd:now`, `/claudhd:regroup`, `/claudhd:wrap`, and `/claudhd:triage` reason over a small, known scope (your cursor, the session already in context, repo signals, or one file) and edit. Cheap and predictable.
 - **Scales with your history - `/claudhd:harvest`** is the deliberate exception, and the first command that reaches *outside* the current session: it reads your past chat transcripts, so its cost grows with how much history it scans. It is built to stay cheap anyway - it greps for idea signals instead of reading whole transcripts, and an incremental watermark means each run only sees sessions newer than the last harvest. A first run (or `--full`) over a long history is the one time ClauDHD spends real tokens; routine runs stay small. Use `/claudhd:harvest --dry-run` to preview what it would capture without writing anything.
 
-Either way nothing leaves your machine - `/claudhd:harvest` reads transcript files already on disk and sends nothing anywhere.
+ClauDHD itself makes no network calls. The command worth calling out is `/claudhd:harvest`, for *what it reads*: it reaches into your **past** session transcripts, where every other command only touches files you can already see and the session in front of you. Harvest has Claude read narrow snippets of those transcripts, so — like anything Claude reads — they enter the normal Claude Code model context. Use `--dry-run` first to preview what it would inspect before it writes.
 
 ## Optional: remote nudges
 
@@ -82,7 +82,7 @@ Claude Code plugins cannot create scheduled remote agents, but ClauDHD ships two
 
 - Silent in any project without a ClauDHD-marked `NOW.md`. The hooks gate on a marker `/claudhd:init` writes, so an unrelated `NOW.md` in some other repo never triggers them. Install it globally without worrying about noise.
 - The `Stop` hook prints nothing and never blocks. It physically cannot loop or delay you.
-- Everything is local files and git. Nothing is sent anywhere.
+- Everything ClauDHD writes is local files and git. It does not call external services of its own.
 
 ## Non-goals
 
