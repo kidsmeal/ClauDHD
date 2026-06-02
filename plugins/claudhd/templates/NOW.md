@@ -4,6 +4,8 @@
 
 One active thread at a time. This file is the cursor: what is live, the next physical action, and what is queued behind it. Read it first, update it as you go.
 
+_Committed, so it rides your branch: `git checkout` swaps this cursor to that branch's thread._
+
 Last touched: (set this when you edit the file)
 
 ## Active thread (only one)

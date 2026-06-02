@@ -2,9 +2,9 @@
 
 Focus and drift control for [Claude Code](https://claude.com/claude-code).
 
-Most coding sessions don't get finished. You chase a new lead, switch context, or close the chat mid-thought, and your place in the work is gone. ClauDHD doesn't try to stop that. It keeps your place in a few plain files at the repo root and updates them as you go, so a session that ends abruptly is cheap to pick back up.
+ClauDHD is a small Claude Code plugin that remembers where you are in a project, so ending a session mid-thought doesn't lose you the thread. It's easy to wander off a task: you chase a new idea, switch branches, or close the tab and come back days later unsure where you were. Rather than trying to stop that, it writes your place down as you go, into a few plain Markdown files at the root of your repo, so picking the work back up means reading a file instead of reconstructing your own train of thought.
 
-It is a small, zero-dependency plugin. No accounts, no servers, no data leaves your machine. Just Node (which Claude Code already ships with) and git.
+It has zero dependencies and runs entirely on your machine (no accounts, no servers, nothing sent anywhere), using the Node.js runtime that Claude Code already bundles, plus ordinary git.
 
 ## What it gives you
 
@@ -32,6 +32,8 @@ ClauDHD does nothing in a project until you opt in. In the project you want to m
 
 That scaffolds `NOW.md`, `IDEAS.md`, and `SHIPPED.md` (without overwriting any you already have) and adds `.now/` to your `.gitignore`. Then Claude reads the repo, proposes your one active thread and its next tiny step, and you confirm or correct it. That is it.
 
+Scope the cursor to the **work you're doing**, not the repo. If a feature spans several repos, run `/claudhd:init` in each and let each repo's `NOW.md` hold that repo's slice of it — there is no cross-repo cursor, by design (see [Non-goals](#non-goals)).
+
 In every other repo, ClauDHD stays completely silent.
 
 ## Commands
@@ -51,8 +53,16 @@ In every other repo, ClauDHD stays completely silent.
 
 Once `/claudhd:init` has set up a marked `NOW.md`:
 
-- **On every turn (`Stop` hook):** a silent checkpoint is written to `.now/last-session.md` (timestamp, branch, uncommitted files, recent commits, active thread). Costs zero tokens; it is a local script. So however a session ends, the breadcrumb is at most one turn stale.
-- **When you return (`SessionStart` hook):** a short brief is injected into the session: your active thread and next action, what shipped since you were last here, and drift flags (uncommitted work piling up, a stale cursor). This is the only *automatic* piece that adds tokens, and only a few hundred, once per session.
+- **On every turn (`Stop` hook):** a silent checkpoint is written to `.now/last-session.md`, plus a per-branch copy at `.now/branches/<branch>.md` (timestamp, branch, uncommitted files, recent commits, active thread). Costs zero tokens; it is a local script. So however a session ends, the breadcrumb is at most one turn stale — and it follows the branch you were on.
+- **When you return (`SessionStart` hook):** a short brief is injected into the session: your active thread and next action, what shipped **on this branch** since you were last here, and drift flags (real uncommitted work piling up, a stale cursor). This is the only *automatic* piece that adds tokens, and only a few hundred, once per session.
+
+## Your cursor follows the branch
+
+If you switch branches a lot, your place in the work usually gets stashed and lost. ClauDHD fixes that without any new machinery, because `NOW.md` is committed and git does the hard part: `git checkout feature-x` swaps `NOW.md` to that branch's cursor, and switching back restores it. The breadcrumbs follow too — the `Stop` checkpoint is written per-branch, and the return brief shows where you left off **on this branch** and what shipped **on this branch**. Many small features in one repo, each on its own branch, each keeping its own cursor — no thread-juggling.
+
+Because the cursor is meant to stay live and uncommitted between commits, the drift check ignores ClauDHD's own files (`NOW.md`, `IDEAS.md`, `SHIPPED.md`) — only your real changes trip the "uncommitted work piling up" flag.
+
+**Solo vs. shared repos.** On your own repos, committing `NOW.md` is the whole trick and costs nothing. On a shared team repo you have a choice: commit `NOW.md` (it rides the branch, but your personal cursor shows up in diffs and PRs), or add `NOW.md` to `.gitignore` (no diff noise, but the active-thread cursor no longer auto-swaps on checkout — the per-branch breadcrumb under `.now/` still tracks where you stopped on each branch). ClauDHD commits `NOW.md` by default because that is what makes branch-tracking free.
 
 ## What it costs you
 
@@ -73,6 +83,14 @@ Claude Code plugins cannot create scheduled remote agents, but ClauDHD ships two
 - Silent in any project without a ClauDHD-marked `NOW.md`. The hooks gate on a marker `/claudhd:init` writes, so an unrelated `NOW.md` in some other repo never triggers them. Install it globally without worrying about noise.
 - The `Stop` hook prints nothing and never blocks. It physically cannot loop or delay you.
 - Everything is local files and git. Nothing is sent anywhere.
+
+## Non-goals
+
+ClauDHD is single-cursor and single-checkout *by design*. These are deliberate "no"s, not unbuilt features:
+
+- **No cross-repo / multi-repo "workspace" cursor.** A feature that spans several repos gets one cursor per repo, each scoped to its local slice. A global workspace view would mean cross-repo state and a sync layer — a heavier, different tool. You only ever type in one repo at a time, so the per-repo cursor already covers it.
+- **No multi-agent orchestration.** It is a continuity and anti-drift tool, not a task runner or workflow harness.
+- **One active thread per repo (or per branch).** The single-cursor constraint is the point — that limit is what keeps you finishing things instead of accumulating half-done threads.
 
 ## Requirements
 

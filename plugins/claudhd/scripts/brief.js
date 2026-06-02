@@ -46,9 +46,23 @@ function ageHours(p) {
   }
 }
 
-function winsSinceLastVisit() {
+// Keep in sync with checkpoint.js: branch -> safe file name under .now/branches/.
+function safeBranch(b) {
+  if (!b || b === "unknown" || b === "HEAD") return "";
+  return b.replace(/[^A-Za-z0-9._-]/g, "-").slice(0, 200);
+}
+
+// "Shipped since you were last here" is computed per-branch: the anchor lives at
+// .now/branches/<branch>.head, so switching branches doesn't make one branch's
+// commits show up as wins on another, and two sessions on different branches
+// don't clobber each other's baseline. Falls back to a global anchor when the
+// branch is unknown (e.g. detached HEAD).
+function winsSinceLastVisit(branch) {
   const head = git(["rev-parse", "HEAD"]);
-  const anchor = path.join(NOW_DIR, "session-start-head");
+  const safe = safeBranch(branch);
+  const anchor = safe
+    ? path.join(NOW_DIR, "branches", safe + ".head")
+    : path.join(NOW_DIR, "session-start-head");
   let prev = "";
   try {
     if (fs.existsSync(anchor)) prev = fs.readFileSync(anchor, "utf8").trim();
@@ -59,7 +73,7 @@ function winsSinceLastVisit() {
     subjects = log.split(/\r?\n/).filter((l) => l.trim());
   }
   try {
-    fs.mkdirSync(NOW_DIR, { recursive: true });
+    fs.mkdirSync(path.dirname(anchor), { recursive: true });
     if (head) fs.writeFileSync(anchor, head);
   } catch { /* ignore */ }
   return subjects;
@@ -93,6 +107,8 @@ try {
   const lines = [];
   const flags = [];
 
+  const branch = git(["rev-parse", "--abbrev-ref", "HEAD"]);
+
   const active = section(txt, "## Active thread");
   if (active) lines.push(active);
 
@@ -101,20 +117,39 @@ try {
     flags.push(`NOW.md has not been touched in ${Math.floor(age / 24)} days. Is the active thread still right?`);
   }
 
-  const status = git(["status", "--short"]);
-  if (status) {
-    flags.push(`${status.split(/\r?\n/).length} uncommitted path(s) in the working tree. Commit, stash, or discard before drifting further.`);
+  // Count only real work as drift. ClauDHD's own bookkeeping files (NOW.md and
+  // friends) are meant to stay live and uncommitted, so flagging them would mean
+  // a working cursor permanently reads as drift. We read plain paths (not the
+  // `status --short` columns) because the shared git() trims its output, which
+  // would shift a leading-space status code and corrupt column parsing.
+  const own = new Set(["NOW.md", "IDEAS.md", "SHIPPED.md"]);
+  const changed = git(["diff", "--name-only", "HEAD"]);              // tracked, staged + unstaged
+  const untracked = git(["ls-files", "--others", "--exclude-standard"]); // new files
+  const dirty = new Set(
+    (changed + "\n" + untracked)
+      .split(/\r?\n/)
+      .map((p) => p.trim())
+      .filter(Boolean)
+      .filter((p) => !own.has(p.split(/[\\/]/).pop()))
+  );
+  if (dirty.size) {
+    flags.push(`${dirty.size} uncommitted path(s) in the working tree. Commit, stash, or discard before drifting further.`);
   }
 
-  const last = path.join(NOW_DIR, "last-session.md");
+  // Prefer this branch's checkpoint, so after a branch switch you see where you
+  // left off HERE, not wherever you last stopped.
+  const safe = safeBranch(branch);
+  const perBranch = safe ? path.join(NOW_DIR, "branches", safe + ".md") : "";
+  const last = (perBranch && fs.existsSync(perBranch)) ? perBranch : path.join(NOW_DIR, "last-session.md");
   if (fs.existsSync(last)) {
     const m = fs.readFileSync(last, "utf8").match(/Stopped:\s*(.+)/);
     if (m) lines.push(`Last session stopped: ${m[1].trim()}`);
   }
 
-  const wins = winsSinceLastVisit();
+  const wins = winsSinceLastVisit(branch);
 
-  let out = "## Where you left off\n\n" + (lines.length ? lines.join("\n\n") : "(no NOW.md cursor found)");
+  const onBranch = branch && branch !== "HEAD" ? ` (on \`${branch}\`)` : "";
+  let out = `## Where you left off${onBranch}\n\n` + (lines.length ? lines.join("\n\n") : "(no NOW.md cursor found)");
   if (wins.length) {
     out += "\n\n## Shipped since you were last here\n\n" + wins.slice(0, 6).map((w) => `- ${w}`).join("\n");
     if (wins.length > 6) out += `\n- ... and ${wins.length - 6} more`;

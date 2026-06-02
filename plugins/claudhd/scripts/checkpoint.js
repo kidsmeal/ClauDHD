@@ -36,6 +36,14 @@ function stampNow() {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+// Branch names become file names under .now/branches/, so a feature/foo style
+// branch can't escape the dir or collide with path separators. Empty for an
+// unknown/missing branch, which tells the caller to skip the per-branch copy.
+function safeBranch(b) {
+  if (!b || b === "unknown") return "";
+  return b.replace(/[^A-Za-z0-9._-]/g, "-").slice(0, 200);
+}
+
 function activeThread() {
   try {
     const lines = fs.readFileSync(NOW_MD, "utf8").split(/\r?\n/);
@@ -93,6 +101,17 @@ ${recent}
 \`\`\`
 `;
   fs.writeFileSync(path.join(NOW_DIR, "last-session.md"), body);
+
+  // A per-branch copy, so the breadcrumb follows the branch you're on. When you
+  // switch branches the brief reads THIS branch's checkpoint, not whichever
+  // branch you happened to stop on last. last-session.md stays as the global
+  // "where did I stop anywhere" fallback.
+  const safe = safeBranch(branch);
+  if (safe) {
+    const bdir = path.join(NOW_DIR, "branches");
+    fs.mkdirSync(bdir, { recursive: true });
+    fs.writeFileSync(path.join(bdir, safe + ".md"), body);
+  }
 } catch {
   // never fail the hook
 }
