@@ -1,5 +1,5 @@
 ---
-description: Harvest unimplemented ideas from this project's past chats into IDEAS.md
+description: Harvest unimplemented ideas from this project's past sessions into IDEAS.md
 argument-hint: "[--dry-run] [--full]"
 allowed-tools: Bash(node:*), Grep, Read, Edit, Write
 ---

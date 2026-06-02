@@ -181,12 +181,12 @@ try {
   if (wins.length) {
     out += "\n\n## Shipped since you were last here\n\n" + wins.slice(0, 6).map((w) => `- ${w}`).join("\n");
     if (wins.length > 6) out += `\n- ... and ${wins.length - 6} more`;
-    out += "\n\n(Run /claudhd:shipped to log these to your trophy case.)";
+    out += "\n\n(Run /claudhd:shipped to log these to SHIPPED.md.)";
   }
   if (flags.length) {
     out += "\n\n## Drift flags\n\n" + flags.map((f) => `- ${f}`).join("\n");
   }
-  out += "\n\n(Read NOW.md first. As you work, keep it live: when you finish a step, check it off in NOW.md and write the next tiny action, instead of waiting until you stop. Run /claudhd:wrap to reconcile NOW.md at the end of a chunk.)";
+  out += "\n\n(Read NOW.md first. As you work, keep it live: when you finish a step, check it off in NOW.md and write the next tiny action, instead of waiting until you stop. Run /claudhd:wrap to reconcile NOW.md at the end of a session.)";
 
   emit(out);
 } catch {

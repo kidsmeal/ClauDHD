@@ -3,8 +3,8 @@
  * ClauDHD shipped - the /claudhd:shipped command.
  *
  * Pulls commits made since the last recorded commit (tracked by a marker in
- * SHIPPED.md) into the trophy case, grouped by date, newest first. Idempotent.
- * Finishing should be visible: it helps to see the pile grow.
+ * SHIPPED.md), grouped by date, newest first. Idempotent.
+ * Completed work should stay visible.
  */
 "use strict";
 const { execFileSync } = require("child_process");
@@ -17,9 +17,9 @@ const SHIPPED = path.join(ROOT, "SHIPPED.md");
 const MARKER_PREFIX = "<!-- last-sha:";
 
 const HEADER =
-`# SHIPPED (trophy case)
+`# SHIPPED
 
-Finished work, newest first. Run \`/claudhd:shipped\` to pull in commits since the last entry. This exists so finishing is visible - it helps to see the pile grow.
+Finished work, newest first. Run \`/claudhd:shipped\` to add commits since the last entry. This file records completed work so progress stays visible.
 
 <!-- last-sha: -->
 `;
@@ -62,9 +62,9 @@ let body = fs.readFileSync(SHIPPED, "utf8");
 const last = readMarker(body);
 const newMarker = `${MARKER_PREFIX} ${head} -->`;
 
-// First run (no recorded marker): start the trophy case from HERE instead of
+// First run (no recorded marker): start the log from HERE instead of
 // backfilling history. "Start tracking from now" is what people expect, and
-// backfilling would dump setup/scaffolding commits into a brand-new case.
+// backfilling would dump setup/scaffolding commits into a brand-new log.
 // Stamp the marker at HEAD and log nothing; the next run picks up whatever
 // ships after this point.
 if (!last) {
@@ -81,7 +81,7 @@ if (!last) {
     console.error("! ClauDHD: could not write SHIPPED.md (" + e.message + "). Nothing logged.");
     process.exit(1);
   }
-  console.log("Trophy case started from here. Commits you ship from now on will show up - run /claudhd:shipped again after you finish something.");
+  console.log("Tracking started from here. Commits you ship from now on will be logged - run /claudhd:shipped again after you finish something.");
   process.exit(0);
 }
 
