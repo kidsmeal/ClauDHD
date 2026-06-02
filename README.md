@@ -137,5 +137,3 @@ They spin up throwaway git repos and exercise the real scripts. See [test/](test
 ## License
 
 MIT. See [LICENSE](LICENSE).
-
-Built by a developer who kept losing the thread.
