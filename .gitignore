@@ -4,6 +4,9 @@
 # Local Claude Code permissions/settings
 .claude/settings.local.json
 
+# Local-only agent instructions (not shipped in the public repo)
+CLAUDE.md
+
 # Node
 node_modules/
 
