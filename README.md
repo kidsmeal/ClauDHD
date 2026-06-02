@@ -9,9 +9,9 @@ It has zero dependencies and runs on local files: no ClauDHD account, no ClauDHD
 ## What it gives you
 
 - **A NOW cursor** (`NOW.md`). One active thread at a time, the next physical action, and an ordered queue behind it.
-- **Session breadcrumbs.** A `Stop` hook writes a checkpoint after every turn, and a `SessionStart` hook greets your next session with "where you left off, what shipped, what is drifting." You never have to remember to checkpoint.
-- **An idea inbox** (`IDEAS.md`). When an idea hits mid-task, `/claudhd:idea <it>` parks it in one line so you keep going instead of opening a new chat. Triage later with `/claudhd:triage`.
-- **A trophy case** (`SHIPPED.md`). `/claudhd:shipped` pulls your finished commits into a visible, growing list.
+- **Session breadcrumbs.** A `Stop` hook writes a checkpoint after every turn, and a `SessionStart` hook opens your next session with a summary: where you left off, what shipped, and what is drifting. You never have to remember to checkpoint.
+- **An idea inbox** (`IDEAS.md`). When an idea comes up mid-task, `/claudhd:idea <text>` records it in one line so you can keep working instead of opening a new chat. Review it later with `/claudhd:triage`.
+- **A shipped log** (`SHIPPED.md`). `/claudhd:shipped` adds your finished commits to a running list.
 
 ## Quick Start
 
@@ -50,30 +50,30 @@ In every other repo, ClauDHD stays completely silent.
 
 ## Usage Flow
 
-A normal day with ClauDHD is mostly the automatic hooks, plus a few commands when you need them. Once a project is initialized, the loop looks like this:
+Once a project is initialized, most of ClauDHD runs through the automatic hooks; the commands cover the points where you act explicitly. A typical session:
 
-1. **Start where you left off.** Opening a session fires the `SessionStart` brief — your active thread, the next action, what shipped on this branch, and any drift flags. No command needed; read it and go.
-2. **Work the one active thread.** `NOW.md` holds a single cursor: the thread, the next physical step, and the queue behind it. Lost the plot mid-session? `/claudhd:now` reprints the cursor.
-3. **Park ideas instead of chasing them.** When something unrelated pops up, `/claudhd:idea <it>` drops it into `IDEAS.md` in one line so you keep moving.
-4. **Snap back when you drift.** `/claudhd:regroup` names the drift, parks side-quests, and points you back at the active thread.
-5. **Wrap up a chunk.** `/claudhd:wrap` reconciles `NOW.md` — checks off done steps, writes the next action, sweeps loose ends — so stopping now costs nothing later.
-6. **Bank the wins.** After you commit, `/claudhd:shipped` pulls finished commits into `SHIPPED.md`.
-7. **Tend the inbox.** Now and then, `/claudhd:triage` walks the idea inbox (promote / park / kill), and `/claudhd:harvest` backfills ideas you mentioned in past chats but never wrote down.
+1. **Resume a session.** Starting a session triggers the `SessionStart` hook, which injects a brief: your active thread, the next action, what shipped on this branch, and any drift flags. No command required.
+2. **Check the current cursor.** `NOW.md` holds one cursor — the active thread, the next physical step, and the queue behind it. Run `/claudhd:now` to reprint it mid-session.
+3. **Capture an idea.** `/claudhd:idea <text>` appends an unrelated idea to `IDEAS.md` as a single line, without changing the active thread.
+4. **Refocus after drift.** `/claudhd:regroup` identifies the current drift, sets aside any side tasks, and returns you to the active thread.
+5. **Reconcile before stopping.** `/claudhd:wrap` updates `NOW.md`: marks completed steps, records the next action, and closes out loose ends so the next session starts clean.
+6. **Record shipped work.** After a commit, `/claudhd:shipped` adds the finished commits to `SHIPPED.md`.
+7. **Process the idea inbox.** Periodically, `/claudhd:triage` reviews `IDEAS.md` (promote, park, or delete each entry), and `/claudhd:harvest` backfills ideas mentioned in past sessions that were never recorded.
 
-Through all of it, the `Stop` hook quietly checkpoints after every turn, so however a session ends your place is at most one turn stale.
+Independent of the commands, the `Stop` hook writes a checkpoint after every turn, so the recorded position is never more than one turn behind, regardless of how a session ends.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
 | `/claudhd:init` | Scaffold the files, opt the project in, and propose your first active thread to confirm. |
-| `/claudhd:now` | Show the cursor: active thread, recent wins, drift flags. |
-| `/claudhd:regroup` | Mid-session reset: name the drift, park side-quests, snap back to the active thread. |
-| `/claudhd:wrap` | End-of-chunk wrap-up: reconcile `NOW.md` - check off done steps, write the next action, sweep loose ends. |
-| `/claudhd:idea <text>` | Park an idea in `IDEAS.md` without breaking your current thread. |
-| `/claudhd:harvest` | Scan this project's past chats and backfill un-captured ideas into `IDEAS.md`. |
-| `/claudhd:triage` | Walk the inbox and promote, park, or kill each idea. |
-| `/claudhd:shipped` | Pull finished commits into `SHIPPED.md` and show the wins. |
+| `/claudhd:now` | Show the cursor: active thread, recent shipped work, drift flags. |
+| `/claudhd:regroup` | Mid-session reset: name the drift, set aside side tasks, and return to the active thread. |
+| `/claudhd:wrap` | End-of-session wrap-up: reconcile `NOW.md` — mark completed steps, write the next action, close out loose ends. |
+| `/claudhd:idea <text>` | Record an idea in `IDEAS.md` without interrupting your current thread. |
+| `/claudhd:harvest` | Scan this project's past sessions and backfill uncaptured ideas into `IDEAS.md`. |
+| `/claudhd:triage` | Review the inbox and promote, park, or delete each idea. |
+| `/claudhd:shipped` | Add finished commits to `SHIPPED.md`. |
 | `/claudhd:version` | Print the installed version — confirms the plugin is active. |
 
 ## What runs automatically
@@ -85,11 +85,11 @@ Once `/claudhd:init` has set up a marked `NOW.md`:
 
 ## Your cursor follows the branch
 
-If you switch branches a lot, your place in the work usually gets stashed and lost. ClauDHD fixes that without any new machinery, because `NOW.md` is committed and git does the hard part: `git checkout feature-x` swaps `NOW.md` to that branch's cursor, and switching back restores it. The breadcrumbs follow too — the `Stop` checkpoint is written per-branch, and the return brief shows where you left off **on this branch** and what shipped **on this branch**. Many small features in one repo, each on its own branch, each keeping its own cursor — no thread-juggling.
+If you switch branches a lot, your place in the work usually gets stashed and lost. ClauDHD fixes that without any new machinery, because `NOW.md` is committed and git handles the swap: `git checkout feature-x` swaps `NOW.md` to that branch's cursor, and switching back restores it. The breadcrumbs follow too — the `Stop` checkpoint is written per-branch, and the return brief shows where you left off **on this branch** and what shipped **on this branch**. Many small features in one repo, each on its own branch, each keeping its own cursor, with no manual thread-tracking.
 
 Because the cursor is meant to stay live and uncommitted between commits, the drift check ignores ClauDHD's own files (`NOW.md`, `IDEAS.md`, `SHIPPED.md`) — only your real changes trip the "uncommitted work piling up" flag.
 
-**Solo vs. shared repos.** On your own repos, committing `NOW.md` is the whole trick and costs nothing. On a shared team repo you have a choice: commit `NOW.md` (it rides the branch, but your personal cursor shows up in diffs and PRs), or add `NOW.md` to `.gitignore` (no diff noise, but the active-thread cursor no longer auto-swaps on checkout — the per-branch breadcrumb under `.now/` still tracks where you stopped on each branch). ClauDHD commits `NOW.md` by default because that is what makes branch-tracking free.
+**Solo vs. shared repos.** On your own repos, committing `NOW.md` is all that's required and costs nothing. On a shared team repo you have a choice: commit `NOW.md` (it follows the branch, but your personal cursor shows up in diffs and PRs), or add `NOW.md` to `.gitignore` (no diff noise, but the active-thread cursor no longer auto-swaps on checkout — the per-branch breadcrumb under `.now/` still tracks where you stopped on each branch). ClauDHD commits `NOW.md` by default because that is what makes branch-tracking free.
 
 ## What it costs you
 
@@ -101,9 +101,9 @@ The engine is nearly free: the `Stop` hook is a pure local script (zero tokens),
 
 ClauDHD itself makes no network calls. The command worth calling out is `/claudhd:harvest`, for *what it reads*: it reaches into your **past** session transcripts, where every other command only touches files you can already see and the session in front of you. Harvest has Claude read narrow snippets of those transcripts, so — like anything Claude reads — they enter the normal Claude Code model context. Use `--dry-run` first to preview what it would inspect before it writes.
 
-## Optional: remote nudges
+## Optional: scheduled reminders
 
-Claude Code plugins cannot create scheduled remote agents, but ClauDHD ships two ready-to-use routine prompts in [`routines/`](routines/): a daily drift sweep and a weekly idea-triage nudge. Set them up with the `/schedule` skill or at [claude.ai/code/routines](https://claude.ai/code/routines). See [routines/README.md](routines/README.md).
+Claude Code plugins cannot create scheduled remote agents, but ClauDHD ships two ready-to-use routine prompts in [`routines/`](routines/): a daily drift check and a weekly idea-triage reminder. Set them up with the `/schedule` skill or at [claude.ai/code/routines](https://claude.ai/code/routines). See [routines/README.md](routines/README.md).
 
 ## How it stays out of your way
 
