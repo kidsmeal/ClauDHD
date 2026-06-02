@@ -1,5 +1,7 @@
 # NOW (read me first)
 
+<!-- claudhd: opt-in marker (do not remove) - ClauDHD's hooks only act on a NOW.md that has this line -->
+
 One active thread at a time. This file is the cursor: what is live, the next physical action, and what is queued behind it. Read it first, update it as you go.
 
 Last touched: (set this when you edit the file)
@@ -20,7 +22,7 @@ Rule: when you finish a step, check it off and write the next single tiny step. 
 
 ## Idea flow (do not open a new chat)
 
-New idea mid-task: `/claudhd:idea <it>` parks it in IDEAS.md and you keep going. `/claudhd:triage` clears the inbox. Finished work lands in SHIPPED.md via `/claudhd:shipped`.
+New idea mid-task: `/claudhd:idea <it>` parks it in IDEAS.md and you keep going. `/claudhd:harvest` backfills ideas from past chats you never parked. `/claudhd:triage` clears the inbox. Finished work lands in SHIPPED.md via `/claudhd:shipped`.
 
 ## Loose ends (small, drift-y)
 

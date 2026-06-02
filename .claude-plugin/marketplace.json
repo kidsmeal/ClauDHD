@@ -10,8 +10,8 @@
     {
       "name": "claudhd",
       "source": "./plugins/claudhd",
-      "description": "A NOW cursor, an idea inbox, a trophy case, mid-session regroup, end-of-chunk wrap-up, and session breadcrumbs, so stopping mid-thought is always safe.",
-      "version": "0.3.0",
+      "description": "A NOW cursor, an idea inbox you can backfill from past chats, a trophy case, mid-session regroup, end-of-chunk wrap-up, and session breadcrumbs, so stopping mid-thought is always safe.",
+      "version": "0.4.0",
       "author": { "name": "kidsmeal" }
     }
   ]

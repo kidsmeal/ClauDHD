@@ -21,6 +21,7 @@ const HEADER =
 When an idea hits mid-task it lands here in one line. Do NOT open a new chat for it; the current thread survives. Triage regularly: each idea is promoted to the NOW.md Queue, kept parked, or killed.
 
 Capture: \`/claudhd:idea <your idea>\` in any chat.
+Harvest: \`/claudhd:harvest\` to backfill ideas from past chats you never parked.
 Triage: \`/claudhd:triage\` to walk this list.
 
 Legend: \`[ ]\` new, \`[~]\` promoted to NOW.md Queue, \`[x]\` done or killed.
@@ -59,19 +60,24 @@ if (!text) {
   process.exit(0);
 }
 
-if (!fs.existsSync(IDEAS)) fs.writeFileSync(IDEAS, HEADER);
-let body = fs.readFileSync(IDEAS, "utf8");
-const entry = `- [ ] ${stampNow()} (while: ${activeThread()}) ${text}`;
-body = body.replace("\n(empty)\n", "\n");
+try {
+  if (!fs.existsSync(IDEAS)) fs.writeFileSync(IDEAS, HEADER);
+  let body = fs.readFileSync(IDEAS, "utf8");
+  const entry = `- [ ] ${stampNow()} (while: ${activeThread()}) ${text}`;
+  body = body.replace("\n(empty)\n", "\n");
 
-const marker = "## Inbox\n";
-const idx = body.indexOf(marker);
-if (idx !== -1) {
-  const head = body.slice(0, idx + marker.length);
-  const tail = body.slice(idx + marker.length).replace(/^\n+/, "");
-  body = head + "\n" + entry + "\n" + tail;
-} else {
-  body = body.replace(/\s+$/, "") + "\n\n## Inbox\n\n" + entry + "\n";
+  const inbox = "## Inbox\n";
+  const idx = body.indexOf(inbox);
+  if (idx !== -1) {
+    const head = body.slice(0, idx + inbox.length);
+    const tail = body.slice(idx + inbox.length).replace(/^\n+/, "");
+    body = head + "\n" + entry + "\n" + tail;
+  } else {
+    body = body.replace(/\s+$/, "") + "\n\n## Inbox\n\n" + entry + "\n";
+  }
+  fs.writeFileSync(IDEAS, body);
+  console.log(`Captured -> IDEAS.md: ${text}`);
+} catch (e) {
+  console.error("! ClauDHD: could not write IDEAS.md (" + e.message + "). Idea not captured.");
+  process.exit(1);
 }
-fs.writeFileSync(IDEAS, body);
-console.log(`Captured -> IDEAS.md: ${text}`);

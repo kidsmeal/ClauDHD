@@ -2,7 +2,7 @@
 
 Focus and drift control for [Claude Code](https://claude.com/claude-code).
 
-ClauDHD is built on one idea: **stop trying to finish sessions, and make stopping safe instead.** Real work gets interrupted — you chase a new lead, switch context, or close a chat mid-thought and lose your place. Instead of fighting that, ClauDHD externalizes where you are in the work and automates the remembering, so an abruptly-closed session never costs you anything.
+ClauDHD is built on one idea: **stop trying to finish sessions, and make stopping safe instead.** Real work gets interrupted - you chase a new lead, switch context, or close a chat mid-thought and lose your place. Instead of fighting that, ClauDHD externalizes where you are in the work and automates the remembering, so an abruptly-closed session never costs you anything.
 
 It is a small, zero-dependency plugin. No accounts, no servers, no data leaves your machine. Just Node (which Claude Code already ships with) and git.
 
@@ -41,17 +41,28 @@ In every other repo, ClauDHD stays completely silent.
 | `/claudhd:init` | Scaffold the files, opt the project in, and propose your first active thread to confirm. |
 | `/claudhd:now` | Show the cursor: active thread, recent wins, drift flags. |
 | `/claudhd:regroup` | Mid-session reset: name the drift, park side-quests, snap back to the active thread. |
-| `/claudhd:wrap` | End-of-chunk wrap-up: reconcile `NOW.md` — check off done steps, write the next action, sweep loose ends. |
+| `/claudhd:wrap` | End-of-chunk wrap-up: reconcile `NOW.md` - check off done steps, write the next action, sweep loose ends. |
 | `/claudhd:idea <text>` | Park an idea in `IDEAS.md` without breaking your current thread. |
+| `/claudhd:harvest` | Scan this project's past chats and backfill un-captured ideas into `IDEAS.md`. |
 | `/claudhd:triage` | Walk the inbox and promote, park, or kill each idea. |
 | `/claudhd:shipped` | Pull finished commits into `SHIPPED.md` and show the wins. |
 
 ## What runs automatically
 
-Once a project has a `NOW.md`:
+Once `/claudhd:init` has set up a marked `NOW.md`:
 
 - **On every turn (`Stop` hook):** a silent checkpoint is written to `.now/last-session.md` (timestamp, branch, uncommitted files, recent commits, active thread). Costs zero tokens; it is a local script. So however a session ends, the breadcrumb is at most one turn stale.
-- **When you return (`SessionStart` hook):** a short brief is injected into the session: your active thread and next action, what shipped since you were last here, and drift flags (uncommitted work piling up, a stale cursor). This is the only piece that adds tokens, and only a few hundred, once per session.
+- **When you return (`SessionStart` hook):** a short brief is injected into the session: your active thread and next action, what shipped since you were last here, and drift flags (uncommitted work piling up, a stale cursor). This is the only *automatic* piece that adds tokens, and only a few hundred, once per session.
+
+## What it costs you
+
+The engine is nearly free: the `Stop` hook is a pure local script (zero tokens), and the `SessionStart` brief adds only a few hundred tokens once per session (see above). The commands fall into three tiers:
+
+- **Effectively zero** - `/claudhd:idea` and `/claudhd:shipped` run a local script and the model just confirms in a line.
+- **Bounded** - `/claudhd:init`, `/claudhd:now`, `/claudhd:regroup`, `/claudhd:wrap`, and `/claudhd:triage` reason over a small, known scope (your cursor, the session already in context, repo signals, or one file) and edit. Cheap and predictable.
+- **Scales with your history - `/claudhd:harvest`** is the deliberate exception, and the first command that reaches *outside* the current session: it reads your past chat transcripts, so its cost grows with how much history it scans. It is built to stay cheap anyway - it greps for idea signals instead of reading whole transcripts, and an incremental watermark means each run only sees sessions newer than the last harvest. A first run (or `--full`) over a long history is the one time ClauDHD spends real tokens; routine runs stay small. Use `/claudhd:harvest --dry-run` to preview what it would capture without writing anything.
+
+Either way nothing leaves your machine - `/claudhd:harvest` reads transcript files already on disk and sends nothing anywhere.
 
 ## Optional: remote nudges
 
@@ -59,7 +70,7 @@ Claude Code plugins cannot create scheduled remote agents, but ClauDHD ships two
 
 ## How it stays out of your way
 
-- Silent in any project without a `NOW.md`. Install it globally without worrying about noise.
+- Silent in any project without a ClauDHD-marked `NOW.md`. The hooks gate on a marker `/claudhd:init` writes, so an unrelated `NOW.md` in some other repo never triggers them. Install it globally without worrying about noise.
 - The `Stop` hook prints nothing and never blocks. It physically cannot loop or delay you.
 - Everything is local files and git. Nothing is sent anywhere.
 

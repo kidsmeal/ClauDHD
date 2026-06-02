@@ -3,8 +3,13 @@
  * ClauDHD init - the /claudhd:init command.
  *
  * Scaffolds NOW.md, IDEAS.md, and SHIPPED.md into the current project from the
- * bundled templates (never overwriting an existing file), and adds .now/ to the
- * project's .gitignore. This is how a project opts in to ClauDHD.
+ * bundled templates (never overwriting an existing file), ensures NOW.md carries
+ * the opt-in marker the hooks gate on, and adds .now/ to the project's
+ * .gitignore. This is how a project opts in to ClauDHD.
+ *
+ * Unlike the silent Stop/SessionStart hooks, init is an explicit command: if it
+ * cannot write a file it says so clearly and exits non-zero, rather than
+ * shrugging.
  *
  * After scaffolding it prints a few read-only repo signals (branch, recent
  * commits, uncommitted files) so the /claudhd:init command can propose a first
@@ -17,6 +22,7 @@ const path = require("path");
 
 const ROOT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
 const TEMPLATES = path.join(__dirname, "..", "templates");
+const MARKER = "<!-- claudhd: opt-in marker (do not remove) -->";
 
 function git(args) {
   try {
@@ -32,32 +38,63 @@ function git(args) {
 
 const created = [];
 const kept = [];
+const failed = [];
 for (const name of ["NOW.md", "IDEAS.md", "SHIPPED.md"]) {
   const dest = path.join(ROOT, name);
   if (fs.existsSync(dest)) { kept.push(name); continue; }
   try {
     fs.copyFileSync(path.join(TEMPLATES, name), dest);
     created.push(name);
-  } catch { /* template missing; skip */ }
+  } catch (e) {
+    failed.push(name + " (" + e.message + ")");
+  }
+}
+
+// Ensure NOW.md carries the opt-in marker the hooks gate on, even if it
+// pre-existed without one. Without this, an already-present NOW.md would go
+// dormant under the marker gate.
+let markerNote = "present";
+const nowPath = path.join(ROOT, "NOW.md");
+try {
+  if (fs.existsSync(nowPath)) {
+    const c = fs.readFileSync(nowPath, "utf8");
+    if (!c.includes("<!-- claudhd")) {
+      fs.writeFileSync(nowPath, MARKER + "\n\n" + c);
+      markerNote = "added to existing NOW.md";
+    }
+  }
+} catch (e) {
+  failed.push("NOW.md marker (" + e.message + ")");
 }
 
 const gi = path.join(ROOT, ".gitignore");
 let giTxt = "";
 try { giTxt = fs.existsSync(gi) ? fs.readFileSync(gi, "utf8") : ""; } catch { /* ignore */ }
-let giChanged = false;
-if (!/(^|\n)\.now\/?\s*(\n|$)/.test(giTxt)) {
+let giNote;
+if (/(^|\n)\.now\/?\s*(\n|$)/.test(giTxt)) {
+  giNote = "already ignores .now/";
+} else {
   try {
     fs.writeFileSync(gi, giTxt.replace(/\s*$/, "") + "\n\n# ClauDHD local session state\n.now/\n");
-    giChanged = true;
-  } catch { /* ignore */ }
+    giNote = "added .now/";
+  } catch (e) {
+    giNote = "FAILED to update (" + e.message + ")";
+  }
 }
 
 console.log(
   "ClauDHD init complete.\n" +
   "  Created: " + (created.length ? created.join(", ") : "none (all already present)") + "\n" +
   "  Kept existing: " + (kept.length ? kept.join(", ") : "none") + "\n" +
-  "  .gitignore: " + (giChanged ? "added .now/" : "already ignores .now/")
+  "  NOW.md marker: " + markerNote + "\n" +
+  "  .gitignore: " + giNote
 );
+
+if (failed.length) {
+  console.error("! ClauDHD: could not write " + failed.join("; ") + ".\n" +
+    "  Fix the cause (permissions / disk) and re-run /claudhd:init.");
+  process.exit(1);
+}
 
 // Read-only repo signals, so the command can PROPOSE a first active thread
 // instead of asking you to name it cold. Pure reads; nothing is modified.

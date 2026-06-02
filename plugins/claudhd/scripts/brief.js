@@ -6,8 +6,9 @@
  *   default : emits SessionStart additionalContext JSON (hook mode).
  *   --plain : prints plain markdown to stdout (command mode).
  *
- * Stays silent (empty) in projects without NOW.md, so it is invisible in
- * repos that have not opted in to ClauDHD. Never throws; exits 0.
+ * Stays silent (empty) unless NOW.md exists AND carries ClauDHD's opt-in
+ * marker, so an unrelated NOW.md in some other repo never triggers it.
+ * Never throws; exits 0.
  */
 "use strict";
 const { execFileSync } = require("child_process");
@@ -78,14 +79,17 @@ function emit(context) {
 }
 
 try {
-  if (!fs.existsSync(NOW_MD)) {
+  // Only act on a NOW.md that ClauDHD created/marked, so an unrelated NOW.md
+  // in someone else's repo never triggers the brief.
+  let txt = "";
+  try { txt = fs.existsSync(NOW_MD) ? fs.readFileSync(NOW_MD, "utf8") : ""; } catch { txt = ""; }
+  if (!txt || !txt.includes("<!-- claudhd")) {
     if (PLAIN) {
-      process.stdout.write("No NOW.md here. Run /claudhd:init to set up ClauDHD in this project.\n");
+      process.stdout.write("No ClauDHD NOW.md here. Run /claudhd:init to set up ClauDHD in this project.\n");
     }
     process.exit(0); // silent in non-ClauDHD projects
   }
 
-  const txt = fs.readFileSync(NOW_MD, "utf8");
   const lines = [];
   const flags = [];
 

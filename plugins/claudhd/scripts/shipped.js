@@ -18,7 +18,7 @@ const MARKER_PREFIX = "<!-- last-sha:";
 const HEADER =
 `# SHIPPED (trophy case)
 
-Finished work, newest first. Run \`/claudhd:shipped\` to pull in commits since the last entry. This exists so finishing is visible — it helps to see the pile grow.
+Finished work, newest first. Run \`/claudhd:shipped\` to pull in commits since the last entry. This exists so finishing is visible - it helps to see the pile grow.
 
 <!-- last-sha: -->
 `;
@@ -49,7 +49,14 @@ if (!head) {
   console.log("Not a git repo or no commits found.");
   process.exit(0);
 }
-if (!fs.existsSync(SHIPPED)) fs.writeFileSync(SHIPPED, HEADER);
+if (!fs.existsSync(SHIPPED)) {
+  try {
+    fs.writeFileSync(SHIPPED, HEADER);
+  } catch (e) {
+    console.error("! ClauDHD: could not create SHIPPED.md (" + e.message + ").");
+    process.exit(1);
+  }
+}
 let body = fs.readFileSync(SHIPPED, "utf8");
 const last = readMarker(body);
 
@@ -89,5 +96,10 @@ for (const line of body.split(/\r?\n/)) {
 }
 if (!inserted) out.push("", newMarker, "", block);
 
-fs.writeFileSync(SHIPPED, out.join("\n").replace(/\s+$/, "") + "\n");
+try {
+  fs.writeFileSync(SHIPPED, out.join("\n").replace(/\s+$/, "") + "\n");
+} catch (e) {
+  console.error("! ClauDHD: could not write SHIPPED.md (" + e.message + "). Nothing logged.");
+  process.exit(1);
+}
 console.log(`Logged ${log.split(/\r?\n/).length} shipped item(s) to SHIPPED.md.`);
