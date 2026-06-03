@@ -27,12 +27,12 @@ const LOCK = path.join(ROOT, ".now", "quick.lock");
 // Keep CAP in sync with brief.js (QUICK_CAP). It is a signal, not a hard stop:
 // adds past it still land, but loudly, so the batch gets cleared instead of
 // growing into a backlog.
-const CAP = 5;
+const CAP = 3;
 const HEADING_RE = /^##\s+Quick fixes\b/i;
 const PLACEHOLDER = "(nothing queued yet)";
 const INTRO =
   "Small, self-contained chores that need no plan and aren't worth their own thread. " +
-  "Capped at 5 - overflow means clear some or promote one out, so this stays a batch and never a second backlog. " +
+  "Capped at 3 - overflow means clear some or promote one out, so this stays a batch and never a second backlog. " +
   "Add with `/claudhd:quick <text>`, clear them in one focused pass with `/claudhd:quick`. " +
   "The active thread has right of way: clear these between threads, not mid-thread.";
 

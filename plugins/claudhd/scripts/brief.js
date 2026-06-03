@@ -139,7 +139,7 @@ try {
   // Surface the quick-fixes batch: a count line when any are waiting, and a drift
   // flag when it outgrows its cap (a batch quietly becoming a backlog). Keep
   // QUICK_CAP in sync with quick.js.
-  const QUICK_CAP = 5;
+  const QUICK_CAP = 3;
   const quickSection = section(txt, "## Quick fixes");
   const quickOpen = quickSection ? (quickSection.match(/^\s*-\s*\[ \]/gm) || []).length : 0;
   if (quickOpen > 0) {

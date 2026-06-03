@@ -75,7 +75,7 @@ test("signals when the batch grows past its cap", () => {
     write(dir, "NOW.md", nowWithQuick());
     let r;
     for (let i = 1; i <= 6; i++) r = run(dir, "quick.js", [`chore ${i}`]);
-    assert.match(r.stdout, /cap/i); // the 6th add is over the cap of 5
+    assert.match(r.stdout, /cap/i); // the 6th add is well over the cap of 3
     const now = read(dir, "NOW.md");
     for (let i = 1; i <= 6; i++) assert.match(now, new RegExp(`- \\[ \\] chore ${i}`));
   } finally { cleanup(dir); }
@@ -88,7 +88,7 @@ test("list mode prints open items with the count", () => {
     run(dir, "quick.js", ["only chore"]);
     const r = run(dir, "quick.js", []); // no args -> list
     assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /BATCH \(1\/5\)/);
+    assert.match(r.stdout, /BATCH \(1\/3\)/);
     assert.match(r.stdout, /only chore/);
   } finally { cleanup(dir); }
 });
