@@ -136,6 +136,19 @@ try {
     if (trimmed) lines.push(trimmed);
   }
 
+  // Surface the quick-fixes batch: a count line when any are waiting, and a drift
+  // flag when it outgrows its cap (a batch quietly becoming a backlog). Keep
+  // QUICK_CAP in sync with quick.js.
+  const QUICK_CAP = 5;
+  const quickSection = section(txt, "## Quick fixes");
+  const quickOpen = quickSection ? (quickSection.match(/^\s*-\s*\[ \]/gm) || []).length : 0;
+  if (quickOpen > 0) {
+    lines.push(`Quick fixes waiting: ${quickOpen} (clear in one pass with /claudhd:quick).`);
+  }
+  if (quickOpen > QUICK_CAP) {
+    flags.push(`Quick-fixes batch is over its cap (${quickOpen}). Clear it, or promote the important one to the Queue - don't let the batch become a backlog.`);
+  }
+
   const age = ageHours(NOW_MD);
   if (age && age > 72) {
     flags.push(`NOW.md has not been touched in ${Math.floor(age / 24)} days. Is the active thread still right?`);

@@ -24,6 +24,12 @@ What is eligible to become active next, in order. Items clear triage's readiness
 
 (nothing queued yet)
 
+## Quick fixes (clear in one pass)
+
+Small, self-contained chores that need no plan and aren't worth their own thread. Capped at 5 — overflow means clear some or promote one out, so this stays a batch and never a second backlog. Add with `/claudhd:quick <text>`, clear them in one focused pass with `/claudhd:quick`. The active thread has right of way: clear these between threads, not mid-thread. A fix that turns out to need real thinking gets kicked back to IDEAS.md.
+
+(nothing queued yet)
+
 ## Idea flow (do not open a new chat)
 
 New idea mid-task: `/claudhd:idea <text>` records it in IDEAS.md so you can keep working. `/claudhd:harvest` backfills ideas from past sessions you never recorded. `/claudhd:triage` clears the inbox. Finished work is recorded in SHIPPED.md via `/claudhd:shipped`.

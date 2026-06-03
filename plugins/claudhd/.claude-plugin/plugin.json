@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "claudhd",
   "displayName": "ClauDHD",
-  "version": "0.5.5",
+  "version": "0.6.0",
   "description": "Focus and drift control for Claude Code: a NOW cursor that follows your branch, an idea inbox you can backfill from past sessions, a shipped log, mid-session regroup, end-of-session wrap-up, and branch-aware session breadcrumbs so stopping mid-thought is always safe.",
   "author": {
     "name": "kidsmeal",

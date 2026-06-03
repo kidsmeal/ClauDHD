@@ -11,6 +11,7 @@ It has zero dependencies and runs on local files: no ClauDHD account, no ClauDHD
 - **A NOW cursor** (`NOW.md`). One active thread at a time, the next physical action, and an ordered queue behind it.
 - **Session breadcrumbs.** A `Stop` hook writes a checkpoint after every turn, and a `SessionStart` hook opens your next session with a summary: where you left off, what shipped, and what is drifting. You never have to remember to checkpoint.
 - **An idea inbox** (`IDEAS.md`). When an idea comes up mid-task, `/claudhd:idea <text>` records it in one line so you can keep working instead of opening a new chat. Review it later with `/claudhd:triage`.
+- **A quick-fixes lane** (`/claudhd:quick`). Small, self-contained chores that aren't worth their own thread go into a capped batch in `NOW.md`, cleared in one focused pass — so they skip the queue without becoming a second backlog or fragmenting your focus.
 - **A shipped log** (`SHIPPED.md`). `/claudhd:shipped` adds your finished commits to a running list.
 
 ## Quick Start
@@ -32,7 +33,7 @@ Confirm the plugin loaded and check which version you're on:
 /claudhd:version
 ```
 
-You should see a line like `ClauDHD v0.5.5`. If the command isn't recognized, the plugin didn't load — run `/reload-plugins` (or restart Claude Code) and try again.
+You should see a line like `ClauDHD v0.6.0`. If the command isn't recognized, the plugin didn't load — run `/reload-plugins` (or restart Claude Code) and try again.
 
 ### 3. Initialize a project
 
@@ -58,7 +59,9 @@ Once a project is initialized, most of ClauDHD runs through the automatic hooks;
 4. **Refocus after drift.** `/claudhd:regroup` identifies the current drift, sets aside any side tasks, and returns you to the active thread.
 5. **Reconcile before stopping.** `/claudhd:wrap` updates `NOW.md`: marks completed steps, records the next action, and closes out loose ends so the next session starts clean.
 6. **Record shipped work.** After a commit, `/claudhd:shipped` adds the finished commits to `SHIPPED.md`.
-7. **Process the idea inbox.** Periodically, `/claudhd:triage` reviews `IDEAS.md` (promote, park, or delete each entry — promotion runs a readiness gate, so nothing under-baked reaches the cursor), and `/claudhd:harvest` backfills ideas mentioned in past sessions that were never recorded.
+7. **Process the idea inbox.** Periodically, `/claudhd:triage` reviews `IDEAS.md` (promote, park, or delete each entry, or route a small chore to the quick-fixes batch — promotion runs a readiness gate, so nothing under-baked reaches the cursor), and `/claudhd:harvest` backfills ideas mentioned in past sessions that were never recorded.
+
+Small, self-contained chores don't need the full loop. `/claudhd:quick <text>` drops one into a capped quick-fixes batch in `NOW.md` in a single local, zero-token write; run `/claudhd:quick` with no argument to clear the batch in one focused pass (anything that turns out to need real thinking gets kicked back to `IDEAS.md`). Triage routes small ideas here too, so they skip the queue without fragmenting your focus — and the single-cursor rule still holds, because the batch is a batch, not a second active thread.
 
 Independent of the commands, the `Stop` hook writes a checkpoint after every turn, so the recorded position is never more than one turn behind, regardless of how a session ends.
 
@@ -72,7 +75,8 @@ Independent of the commands, the `Stop` hook writes a checkpoint after every tur
 | `/claudhd:wrap` | End-of-session wrap-up: reconcile `NOW.md` — mark completed steps, write the next action, close out loose ends. |
 | `/claudhd:idea <text>` | Record an idea in `IDEAS.md` without interrupting your current thread. |
 | `/claudhd:harvest` | Scan this project's past sessions and backfill uncaptured ideas into `IDEAS.md`. |
-| `/claudhd:triage` | Review the inbox and promote, park, or delete each idea. |
+| `/claudhd:triage` | Review the inbox and promote, park, or delete each idea (or route a small one to quick fixes). |
+| `/claudhd:quick [text]` | Add a small chore to the quick-fixes batch, or (no argument) clear the batch in one focused pass. |
 | `/claudhd:shipped` | Add finished commits to `SHIPPED.md`. |
 | `/claudhd:version` | Print the installed version — confirms the plugin is active. |
 
@@ -95,7 +99,7 @@ Because the cursor is meant to stay live and uncommitted between commits, the dr
 
 The engine is nearly free: the `Stop` hook is a pure local script (zero tokens), and the `SessionStart` brief adds only a few hundred tokens once per session (see above). The commands fall into three tiers:
 
-- **Effectively zero** - `/claudhd:idea` and `/claudhd:shipped` run a local script and the model just confirms in a line.
+- **Effectively zero** - `/claudhd:idea`, `/claudhd:quick <text>`, and `/claudhd:shipped` run a local script and the model just confirms in a line. (Clearing the batch with bare `/claudhd:quick` costs as much as making the small fixes themselves — that is the point of keeping them small.)
 - **Bounded** - `/claudhd:init`, `/claudhd:now`, `/claudhd:regroup`, `/claudhd:wrap`, and `/claudhd:triage` reason over a small, known scope (your cursor, the session already in context, repo signals, or one file) and edit. Cheap and predictable.
 - **Scales with your history - `/claudhd:harvest`** is the deliberate exception, and the first command that reaches *outside* the current session: it reads your past chat transcripts, so its cost grows with how much history it scans. It is built to stay cheap anyway - it greps for idea signals instead of reading whole transcripts, and an incremental watermark means each run only sees sessions newer than the last harvest. A first run (or `--full`) over a long history is the one time ClauDHD spends real tokens; routine runs stay small. Use `/claudhd:harvest --dry-run` to preview what it would capture without writing anything.
 
