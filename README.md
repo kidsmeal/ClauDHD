@@ -58,7 +58,7 @@ Once a project is initialized, most of ClauDHD runs through the automatic hooks;
 4. **Refocus after drift.** `/claudhd:regroup` identifies the current drift, sets aside any side tasks, and returns you to the active thread.
 5. **Reconcile before stopping.** `/claudhd:wrap` updates `NOW.md`: marks completed steps, records the next action, and closes out loose ends so the next session starts clean.
 6. **Record shipped work.** After a commit, `/claudhd:shipped` adds the finished commits to `SHIPPED.md`.
-7. **Process the idea inbox.** Periodically, `/claudhd:triage` reviews `IDEAS.md` (promote, park, or delete each entry), and `/claudhd:harvest` backfills ideas mentioned in past sessions that were never recorded.
+7. **Process the idea inbox.** Periodically, `/claudhd:triage` reviews `IDEAS.md` (promote, park, or delete each entry — promotion runs a readiness gate, so nothing under-baked reaches the cursor), and `/claudhd:harvest` backfills ideas mentioned in past sessions that were never recorded.
 
 Independent of the commands, the `Stop` hook writes a checkpoint after every turn, so the recorded position is never more than one turn behind, regardless of how a session ends.
 

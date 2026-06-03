@@ -20,6 +20,8 @@ Rule: when you finish a step, check it off and write the next single tiny step. 
 
 ## Queue (in order, not now)
 
+What is eligible to become active next, in order. Items clear triage's readiness gate before they land here: each is either a ready task (carries a one-line "done" + first action) or a spike (the unknown to resolve before it can be built). Nothing queues as a bare one-liner.
+
 (nothing queued yet)
 
 ## Idea flow (do not open a new chat)
