@@ -8,7 +8,6 @@ ClauDHD's own backlog and decision log — kept the way the plugin asks you to k
 
 ## Next (candidates, not commitments)
 
-- [ ] `ROADMAP.md` template + `/claudhd:roadmap` — an optional project-level backlog above the `NOW.md` cursor. Only if it stays dumb (checkboxes); drop it the moment it grows into a planner.
 - [ ] Worktree fleet view (`/claudhd:fleet`) — list each worktree's active thread + checkpoint age. **Deferred:** only build once worktrees are part of an actual workflow we use.
 
 ## Shipped
@@ -25,6 +24,7 @@ ClauDHD's own backlog and decision log — kept the way the plugin asks you to k
 - **No cross-repo / multi-repo "workspace" cursor.** A feature that spans repos gets one cursor per repo. A global workspace cursor would mean cross-repo state, a sync layer, and a global index — a second, heavier product. Killed deliberately to keep ClauDHD lightweight and zero-dependency. The per-repo, feature-scoped cursor already covers the common case (you only ever type in one repo at a time).
 - **No multi-agent orchestration.** ClauDHD is a continuity / anti-drift tool, not a task runner or workflow harness.
 - **One active thread per repo (or per branch).** The single-cursor constraint is the point, not a limitation to engineer around.
+- **No project-level roadmap.** A project-level backlog template and schema belongs to Cartographer and Compass, not ClauDHD. The template lives in the Cartographer plugin; the row schema and parser live in Compass. Standalone ClauDHD users who want a lightweight roadmap starting point can take Cartographer's template.
 
 ## Why this file exists
 

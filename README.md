@@ -87,6 +87,14 @@ Once `/claudhd:init` has set up a marked `NOW.md`:
 - **On every turn (`Stop` hook):** a silent checkpoint is written to `.now/last-session.md`, plus a per-branch copy at `.now/branches/<branch>.md` (timestamp, branch, uncommitted files, recent commits, active thread). Costs zero tokens; it is a local script. So however a session ends, the breadcrumb is at most one turn stale — and it follows the branch you were on.
 - **When you return (`SessionStart` hook):** a short brief is injected into the session: your active thread and next action, what shipped **on this branch** since you were last here, and drift flags (real uncommitted work piling up, a stale cursor — flagged after 72 hours without a touch). This is the only *automatic* piece that adds tokens, and only a few hundred, once per session.
 
+## Optional: statusline
+
+Claude Code can run a script every time the status bar updates and show its output as a one-line indicator. `/claudhd:statusline` wires ClauDHD into that slot: it prints the active thread name, a quick-fixes count (`q:<n>`) when the batch is non-empty, and `[stale]` when the cursor hasn't been touched in over 72 hours.
+
+The command writes a `statusLine` entry into the project's `.claude/settings.json`. The path it writes is the installed plugin's current cache location, which changes when the plugin updates — re-running the command after an update repairs it.
+
+The script reads only local files and makes no git calls, so it runs in well under a second and is safe to call on every status bar tick.
+
 ## Your cursor follows the branch
 
 If you switch branches a lot, your place in the work usually gets stashed and lost. ClauDHD fixes that without any new machinery, because `NOW.md` is committed and git handles the swap: `git checkout feature-x` swaps `NOW.md` to that branch's cursor, and switching back restores it. The breadcrumbs follow too — the `Stop` checkpoint is written per-branch, and the return brief shows where you left off **on this branch** and what shipped **on this branch**. Many small features in one repo, each on its own branch, each keeping its own cursor, with no manual thread-tracking.
