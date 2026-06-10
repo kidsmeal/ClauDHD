@@ -45,6 +45,18 @@ function readMarker(body) {
   return "";
 }
 
+// Gate: only act when NOW.md carries ClauDHD's opt-in marker, so shipped.js
+// never creates or stamps SHIPPED.md in a foreign repo.
+const NOW_MD = path.join(ROOT, "NOW.md");
+{
+  let nowTxt = "";
+  try { nowTxt = fs.existsSync(NOW_MD) ? fs.readFileSync(NOW_MD, "utf8") : ""; } catch { /* ignore */ }
+  if (!nowTxt.includes("<!-- claudhd")) {
+    console.log("not a ClauDHD project here; run /claudhd:init first");
+    process.exit(0);
+  }
+}
+
 const head = git(["rev-parse", "HEAD"]);
 if (!head) {
   console.log("Not a git repo or no commits found.");

@@ -62,7 +62,7 @@ try {
     console.log(
       "No transcripts found for this project.\n" +
       "  Looked in: " + dir + "\n" +
-      "  (Expected Claude Code's ~/.claude/projects/<slug> layout.)\n" +
+      "  (Expected Claude Code's ~/.claude/projects/<slug> layout. Set CLAUDE_CONFIG_DIR to point at a non-standard Claude Code data directory.)\n" +
       "Nothing to harvest."
     );
     process.exit(0);

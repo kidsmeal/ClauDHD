@@ -4,11 +4,40 @@
  */
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { makeRepo, cleanup, run, read, write } = require("../tools/helpers.js");
+const { makeRepo, cleanup, run, read, write, exists, optIn } = require("../tools/helpers.js");
+
+test("shipped exits without creating SHIPPED.md when NOW.md is missing", () => {
+  const { dir, git } = makeRepo();
+  try {
+    write(dir, "README.md", "# app\n");
+    git(["add", "README.md"]);
+    git(["commit", "-q", "-m", "initial"]);
+
+    const r = run(dir, "shipped.js");
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /not a ClauDHD project/);
+    assert.ok(!exists(dir, "SHIPPED.md"), "SHIPPED.md should not be created in a non-ClauDHD repo");
+  } finally { cleanup(dir); }
+});
+
+test("shipped exits without creating SHIPPED.md when NOW.md lacks the claudhd marker", () => {
+  const { dir, git } = makeRepo();
+  try {
+    write(dir, "NOW.md", "# NOW\n\n## Active thread\n\nsome work\n");
+    git(["add", "NOW.md"]);
+    git(["commit", "-q", "-m", "initial"]);
+
+    const r = run(dir, "shipped.js");
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /not a ClauDHD project/);
+    assert.ok(!exists(dir, "SHIPPED.md"), "SHIPPED.md should not be created");
+  } finally { cleanup(dir); }
+});
 
 test("shipped starts tracking from current HEAD on first run", () => {
   const { dir, git } = makeRepo();
   try {
+    optIn(dir, git);
     write(dir, "README.md", "# app\n");
     git(["add", "README.md"]);
     git(["commit", "-q", "-m", "initial"]);
@@ -25,6 +54,7 @@ test("shipped starts tracking from current HEAD on first run", () => {
 test("shipped logs only commits after the first-run marker", () => {
   const { dir, git } = makeRepo();
   try {
+    optIn(dir, git);
     write(dir, "README.md", "# app\n");
     git(["add", "README.md"]);
     git(["commit", "-q", "-m", "initial"]);

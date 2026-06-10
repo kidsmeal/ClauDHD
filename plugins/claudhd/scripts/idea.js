@@ -11,6 +11,7 @@
 const fs = require("fs");
 const path = require("path");
 const { withLock } = require("./lock.js");
+const { activeThread } = require("./nowfile.js");
 
 // Provider-neutral first, then Claude Code's var, then cwd.
 const ROOT = process.env.CLAUDHD_PROJECT_DIR || process.env.CLAUDE_PROJECT_DIR || process.cwd();
@@ -40,22 +41,6 @@ function stampNow() {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-function activeThread() {
-  try {
-    const lines = fs.readFileSync(NOW_MD, "utf8").split(/\r?\n/);
-    let grabbing = false;
-    for (const line of lines) {
-      const s = line.trim();
-      if (s.startsWith("## Active thread")) { grabbing = true; continue; }
-      if (grabbing && s.startsWith("## ")) break;
-      if (grabbing && s.includes("**")) {
-        const m = s.match(/\*\*(.+?)\*\*/);
-        if (m) return m[1].trim();
-      }
-    }
-  } catch { /* ignore */ }
-  return "?";
-}
 
 const text = process.argv.slice(2).join(" ").trim();
 if (!text) {
@@ -71,7 +56,9 @@ try {
   withLock(LOCK, () => {
     if (!fs.existsSync(IDEAS)) fs.writeFileSync(IDEAS, HEADER);
     let body = fs.readFileSync(IDEAS, "utf8");
-    const entry = `- [ ] ${stampNow()} (while: ${activeThread()}) ${text}`;
+    let nowTxt = ""; try { nowTxt = fs.existsSync(NOW_MD) ? fs.readFileSync(NOW_MD, "utf8") : ""; } catch { /* ignore */ }
+    const thread = activeThread(nowTxt) || "?";
+    const entry = `- [ ] ${stampNow()} (while: ${thread}) ${text}`;
     body = body.replace("\n(empty)\n", "\n");
 
     const inbox = "## Inbox\n";

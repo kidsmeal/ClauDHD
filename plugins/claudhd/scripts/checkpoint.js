@@ -41,26 +41,11 @@ function stampNow() {
 // branch can't escape the dir or collide with path separators. Empty for an
 // unknown/missing branch, which tells the caller to skip the per-branch copy.
 function safeBranch(b) {
-  if (!b || b === "unknown") return "";
+  if (!b || b === "unknown" || b === "HEAD") return "";
   return b.replace(/[^A-Za-z0-9._-]/g, "-").slice(0, 200);
 }
 
-function activeThread() {
-  try {
-    const lines = fs.readFileSync(NOW_MD, "utf8").split(/\r?\n/);
-    let grabbing = false;
-    const out = [];
-    for (const line of lines) {
-      const s = line.trim();
-      if (s.startsWith("## Active thread")) { grabbing = true; continue; }
-      if (grabbing && s.startsWith("## ")) break;
-      if (grabbing) out.push(line);
-    }
-    return out.join("\n").trim();
-  } catch {
-    return "";
-  }
-}
+const { activeThread } = require("./nowfile.js");
 
 try {
   if (!fs.existsSync(NOW_MD)) process.exit(0); // not a ClauDHD project
@@ -75,7 +60,7 @@ try {
   const status = git(["status", "--short"]);
   const diffstat = git(["diff", "--stat"]);
   const recent = git(["log", "-5", "--oneline"]);
-  const active = activeThread() || "(NOW.md had no Active thread section)";
+  const active = activeThread(nowTxt) || "(NOW.md had no Active thread section)";
 
   const body =
 `# Last session checkpoint (auto-written, do not edit by hand)

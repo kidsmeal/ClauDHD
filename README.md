@@ -85,7 +85,7 @@ Independent of the commands, the `Stop` hook writes a checkpoint after every tur
 Once `/claudhd:init` has set up a marked `NOW.md`:
 
 - **On every turn (`Stop` hook):** a silent checkpoint is written to `.now/last-session.md`, plus a per-branch copy at `.now/branches/<branch>.md` (timestamp, branch, uncommitted files, recent commits, active thread). Costs zero tokens; it is a local script. So however a session ends, the breadcrumb is at most one turn stale — and it follows the branch you were on.
-- **When you return (`SessionStart` hook):** a short brief is injected into the session: your active thread and next action, what shipped **on this branch** since you were last here, and drift flags (real uncommitted work piling up, a stale cursor). This is the only *automatic* piece that adds tokens, and only a few hundred, once per session.
+- **When you return (`SessionStart` hook):** a short brief is injected into the session: your active thread and next action, what shipped **on this branch** since you were last here, and drift flags (real uncommitted work piling up, a stale cursor — flagged after 72 hours without a touch). This is the only *automatic* piece that adds tokens, and only a few hundred, once per session.
 
 ## Your cursor follows the branch
 

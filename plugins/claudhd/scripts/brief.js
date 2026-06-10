@@ -136,10 +136,10 @@ try {
     if (trimmed) lines.push(trimmed);
   }
 
+  const { QUICK_CAP, CURSOR_STALE_HOURS } = require("./constants.js");
   // Surface the quick-fixes batch: a count line when any are waiting, and a drift
-  // flag when it outgrows its cap (a batch quietly becoming a backlog). Keep
-  // QUICK_CAP in sync with quick.js.
-  const QUICK_CAP = 3;
+  // flag when it outgrows its cap (a batch quietly becoming a backlog).
+  // QUICK_CAP and CURSOR_STALE_HOURS live in constants.js.
   const quickSection = section(txt, "## Quick fixes");
   const quickOpen = quickSection ? (quickSection.match(/^\s*-\s*\[ \]/gm) || []).length : 0;
   if (quickOpen > 0) {
@@ -150,7 +150,7 @@ try {
   }
 
   const age = ageHours(NOW_MD);
-  if (age && age > 72) {
+  if (age && age > CURSOR_STALE_HOURS) {
     flags.push(`NOW.md has not been touched in ${Math.floor(age / 24)} days. Is the active thread still right?`);
   }
 

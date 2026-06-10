@@ -18,16 +18,16 @@
 const fs = require("fs");
 const path = require("path");
 const { withLock } = require("./lock.js");
+const { QUICK_CAP } = require("./constants.js");
 
 // Provider-neutral first, then Claude Code's var, then cwd.
 const ROOT = process.env.CLAUDHD_PROJECT_DIR || process.env.CLAUDE_PROJECT_DIR || process.cwd();
 const NOW_MD = path.join(ROOT, "NOW.md");
 const LOCK = path.join(ROOT, ".now", "quick.lock");
 
-// Keep CAP in sync with brief.js (QUICK_CAP). It is a signal, not a hard stop:
-// adds past it still land, but loudly, so the batch gets cleared instead of
-// growing into a backlog.
-const CAP = 3;
+// CAP is a signal, not a hard stop: adds past it still land, but loudly, so
+// the batch gets cleared instead of growing into a backlog.
+const CAP = QUICK_CAP;
 const HEADING_RE = /^##\s+Quick fixes\b/i;
 const PLACEHOLDER = "(nothing queued yet)";
 const INTRO =
