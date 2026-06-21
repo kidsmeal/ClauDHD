@@ -14,6 +14,14 @@
 const { execFileSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
+const {
+  QUICK_CAP,
+  CURSOR_STALE_HOURS,
+  BRIEF_SECTION_CAP,
+  BRIEF_CONTEXT_CAP,
+  capText,
+  fenceData,
+} = require("./constants.js");
 
 // Provider-neutral first, then Claude Code's var, then cwd. Lets the same
 // scripts run under a different host (or in tests) by setting CLAUDHD_PROJECT_DIR.
@@ -93,10 +101,19 @@ function winsSinceLastVisit(branch) {
 }
 
 function emit(context) {
+  // Make the silent SessionStart injection auditable. In hook (JSON) mode the
+  // documented top-level `systemMessage` field surfaces a short visible notice to
+  // the user without becoming part of the model's additionalContext, so it does
+  // not pollute the context it is reporting on. In --plain (command) mode the
+  // user invoked the command and already sees the output on stdout, so the same
+  // notice goes to stderr to keep stdout exactly the brief markdown.
+  const notice = `ClauDHD: injected brief from NOW.md (${context.length} chars)`;
   if (PLAIN) {
+    process.stderr.write(notice + "\n");
     process.stdout.write(context + "\n");
   } else {
     process.stdout.write(JSON.stringify({
+      systemMessage: notice,
       hookSpecificOutput: {
         hookEventName: "SessionStart",
         additionalContext: context,
@@ -133,10 +150,12 @@ try {
       .join("\n")
       .replace(/\n{3,}/g, "\n\n")
       .trim();
-    if (trimmed) lines.push(trimmed);
+    // This text is copied verbatim from NOW.md, which is committed and may be
+    // authored by someone else. Cap it so it can't flood the window, then fence
+    // it as untrusted data so embedded text can't steer the model as instructions.
+    if (trimmed) lines.push(fenceData(capText(trimmed, BRIEF_SECTION_CAP), "NOW.md"));
   }
 
-  const { QUICK_CAP, CURSOR_STALE_HOURS } = require("./constants.js");
   // Surface the quick-fixes batch: a count line when any are waiting, and a drift
   // flag when it outgrows its cap (a batch quietly becoming a backlog).
   // QUICK_CAP and CURSOR_STALE_HOURS live in constants.js.
@@ -200,6 +219,11 @@ try {
     out += "\n\n## Drift flags\n\n" + flags.map((f) => `- ${f}`).join("\n");
   }
   out += "\n\n(Read NOW.md first. As you work, keep it live: when you finish a step, check it off in NOW.md and write the next tiny action, instead of waiting until you stop. Run /claudhd:wrap to reconcile NOW.md at the end of a session.)";
+
+  // Backstop the total injected size. The data fence sits early in `out`, so a
+  // total-cap truncation only trims ClauDHD's own trailing guidance and leaves
+  // the fenced untrusted block (already section-capped) intact and closed.
+  out = capText(out, BRIEF_CONTEXT_CAP);
 
   emit(out);
 } catch {
