@@ -19,6 +19,9 @@ const CURSOR_STALE_HOURS = 72;
 // total assembled context so a huge or hostile NOW.md can't flood the window.
 const BRIEF_SECTION_CAP = 2000;
 const BRIEF_CONTEXT_CAP = 4000;
+// Per-line cap so one giant commit subject can't eat the whole shipped block
+// (or smuggle a wall of injected text) before the other wins are shown.
+const BRIEF_LINE_CAP = 200;
 
 // Fence for externally-authored text that gets injected into the model's context
 // (NOW.md sections in brief.js; past transcripts referenced by harvest.js). The
@@ -57,6 +60,7 @@ module.exports = {
   CURSOR_STALE_HOURS,
   BRIEF_SECTION_CAP,
   BRIEF_CONTEXT_CAP,
+  BRIEF_LINE_CAP,
   DATA_BEGIN,
   DATA_END,
   dataPreamble,

@@ -19,6 +19,7 @@ const {
   CURSOR_STALE_HOURS,
   BRIEF_SECTION_CAP,
   BRIEF_CONTEXT_CAP,
+  BRIEF_LINE_CAP,
   capText,
   fenceData,
 } = require("./constants.js");
@@ -211,9 +212,15 @@ try {
   const onBranch = branch && branch !== "HEAD" ? ` (on \`${branch}\`)` : "";
   let out = `## Where you left off${onBranch}\n\n` + (lines.length ? lines.join("\n\n") : "(no NOW.md cursor found)");
   if (wins.length) {
-    out += "\n\n## Shipped since you were last here\n\n" + wins.slice(0, 6).map((w) => `- ${w}`).join("\n");
-    if (wins.length > 6) out += `\n- ... and ${wins.length - 6} more`;
-    out += "\n\n(Run /claudhd:shipped to log these to SHIPPED.md.)";
+    // Commit subjects are externally authored too: a cloned or pulled repo
+    // carries other people's commit messages, which we'd otherwise inject
+    // verbatim. Cap each line and fence the block as untrusted data, same as the
+    // NOW.md content. The fixed bullets/guidance stay outside the fence.
+    let body = wins.slice(0, 6).map((w) => `- ${capText(w, BRIEF_LINE_CAP)}`).join("\n");
+    if (wins.length > 6) body += `\n- ... and ${wins.length - 6} more`;
+    out += "\n\n## Shipped since you were last here\n\n"
+      + fenceData(capText(body, BRIEF_SECTION_CAP), "git commit messages")
+      + "\n\n(Run /claudhd:shipped to log these to SHIPPED.md.)";
   }
   if (flags.length) {
     out += "\n\n## Drift flags\n\n" + flags.map((f) => `- ${f}`).join("\n");
