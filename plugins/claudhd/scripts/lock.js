@@ -25,10 +25,19 @@ function withLock(lockDir, fn, opts = {}) {
   for (;;) {
     try { fs.mkdirSync(lockDir); break; } // atomic acquire
     catch (e) {
-      if (e.code !== "EEXIST") throw e;
-      let age = Infinity;
-      try { age = Date.now() - fs.statSync(lockDir).mtimeMs; } catch { /* ignore */ }
-      if (age > staleMs) { try { fs.rmdirSync(lockDir); } catch { /* ignore */ } continue; }
+      if (e.code === "EEXIST") {
+        // Held elsewhere: break it if the holder died (stale), else wait below.
+        let age = Infinity;
+        try { age = Date.now() - fs.statSync(lockDir).mtimeMs; } catch { /* ignore */ }
+        if (age > staleMs) { try { fs.rmdirSync(lockDir); } catch { /* ignore */ } continue; }
+      } else if (e.code === "EPERM" || e.code === "EACCES") {
+        // Windows throws these transiently when the holder is concurrently
+        // creating/removing the same directory (some AV/indexers do too). It is
+        // not a hard failure - treat it as "not acquired yet" and retry within
+        // the timeout instead of failing the caller's write outright.
+      } else {
+        throw e;
+      }
       if (Date.now() > deadline) throw new Error("timed out acquiring lock: " + lockDir);
       sleep(pollMs);
     }

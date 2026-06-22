@@ -73,3 +73,33 @@ test("withLock breaks a stale lock left by a crashed holder", () => {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test("withLock retries a transient EPERM from mkdir (Windows) instead of failing", () => {
+  // On Windows, mkdir on the lock dir can throw EPERM/EACCES transiently while
+  // the holder is concurrently removing it. That is "not acquired yet", not a
+  // hard failure - the lock must retry, not propagate it to the caller (which is
+  // what dropped a capture on the Windows CI runner). Simulate it deterministically.
+  const { withLock } = require("../plugins/claudhd/scripts/lock.js");
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "claudhd-eperm-"));
+  const lockDir = path.join(tmp, "eperm.lock");
+  const realMkdir = fs.mkdirSync;
+  let transient = 0;
+  fs.mkdirSync = function (p, opts) {
+    if (p === lockDir && transient < 1) {
+      transient++;
+      const e = new Error("EPERM: operation not permitted, mkdir");
+      e.code = "EPERM";
+      throw e;
+    }
+    return realMkdir.call(fs, p, opts);
+  };
+  try {
+    let ran = false;
+    withLock(lockDir, () => { ran = true; }, { timeoutMs: 2000, pollMs: 5 });
+    assert.equal(transient, 1, "the simulated transient EPERM should have fired once");
+    assert.ok(ran, "withLock must retry past a transient EPERM and run the critical section");
+  } finally {
+    fs.mkdirSync = realMkdir;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
