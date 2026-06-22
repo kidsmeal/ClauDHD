@@ -55,6 +55,15 @@ function section(text, heading) {
   return m ? m[0].trim() : "";
 }
 
+// Neutralize an externally-authored single token (a branch name on a checked-out
+// PR, a checkpoint timestamp) before injecting it into the brief. These sit in
+// ClauDHD's own framing, outside the data fence, so strip backticks (git ref
+// names are allowed to contain them) to stop a break-out from the inline code
+// span, drop any line breaks, and length-cap so it can't pad the brief.
+function safeInline(s) {
+  return capText(String(s).replace(/[`\r\n]/g, " ").trim(), BRIEF_LINE_CAP);
+}
+
 function ageHours(p) {
   try {
     return (Date.now() - fs.statSync(p).mtimeMs) / 3600000;
@@ -204,12 +213,12 @@ try {
   const last = (perBranch && fs.existsSync(perBranch)) ? perBranch : path.join(NOW_DIR, "last-session.md");
   if (fs.existsSync(last)) {
     const m = fs.readFileSync(last, "utf8").match(/Stopped:\s*(.+)/);
-    if (m) lines.push(`Last session stopped: ${m[1].trim()}`);
+    if (m) lines.push(`Last session stopped: ${safeInline(m[1])}`);
   }
 
   const wins = winsSinceLastVisit(branch);
 
-  const onBranch = branch && branch !== "HEAD" ? ` (on \`${branch}\`)` : "";
+  const onBranch = branch && branch !== "HEAD" ? ` (on \`${safeInline(branch)}\`)` : "";
   let out = `## Where you left off${onBranch}\n\n` + (lines.length ? lines.join("\n\n") : "(no NOW.md cursor found)");
   if (wins.length) {
     // Commit subjects are externally authored too: a cloned or pulled repo

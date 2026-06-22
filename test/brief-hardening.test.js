@@ -151,6 +151,22 @@ test("caps an oversized commit subject in the shipped list", () => {
   } finally { cleanup(dir); }
 });
 
+test("neutralizes a hostile branch name in the brief heading", () => {
+  const { dir, git } = makeRepo();
+  try {
+    optIn(dir, git, "wire up auth");
+    // Git ref names may contain backticks; a checked-out PR branch is attacker
+    // controlled, so a name crafted to break out of the inline code span must be
+    // defanged rather than injected verbatim into the heading.
+    git(["checkout", "-q", "-b", "x`echo`y"]);
+    const r = run(dir, "brief.js", ["--plain"]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /## Where you left off/);
+    // The raw backtick-bearing name must not survive into the output.
+    assert.equal(r.stdout.includes("x`echo`y"), false, "backtick branch name must be neutralized");
+  } finally { cleanup(dir); }
+});
+
 test("harvest warns the model to treat transcript contents as untrusted data", () => {
   const fs = require("node:fs");
   const os = require("node:os");
