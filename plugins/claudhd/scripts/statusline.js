@@ -13,7 +13,7 @@
 const fs = require("fs");
 const path = require("path");
 const { activeThread } = require("./nowfile.js");
-const { CURSOR_STALE_HOURS } = require("./constants.js");
+const { CURSOR_STALE_HOURS, STATUSLINE_THREAD_CAP } = require("./constants.js");
 
 function ageHours(p) {
   try { return (Date.now() - fs.statSync(p).mtimeMs) / 3600000; } catch { return null; }
@@ -43,8 +43,15 @@ try {
   try { txt = fs.existsSync(nowPath) ? fs.readFileSync(nowPath, "utf8") : ""; } catch { txt = ""; }
   if (!txt || !txt.includes("<!-- claudhd")) process.exit(0);
 
-  const thread = activeThread(txt);
+  let thread = activeThread(txt);
   if (!thread) process.exit(0);
+  // NOW.md is committed/branch-aware, so a pulled file could carry a huge or
+  // multi-line active thread. Collapse to one line and cap it so it can't flood
+  // or garble the status bar (single-line ellipsis, not the brief's marker).
+  thread = thread.replace(/\s+/g, " ").trim();
+  if (thread.length > STATUSLINE_THREAD_CAP) {
+    thread = thread.slice(0, STATUSLINE_THREAD_CAP - 1).trimEnd() + "…";
+  }
 
   const quickSection = section(txt, "## Quick fixes");
   const quickOpen = quickSection ? (quickSection.match(/^\s*-\s*\[ \]/gm) || []).length : 0;

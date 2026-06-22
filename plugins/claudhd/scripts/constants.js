@@ -12,6 +12,12 @@
 const QUICK_CAP = 3;
 const CURSOR_STALE_HOURS = 72;
 
+// Max chars of the active-thread name shown in the status bar (statusline.js).
+// NOT a model-context path — the status line is for the user — but NOW.md is
+// committed and branch-aware, so a pulled file shouldn't be able to flood or
+// garble the status bar with a huge/multi-line "active thread".
+const STATUSLINE_THREAD_CAP = 60;
+
 // Caps for the SessionStart brief injection (brief.js). NOW.md is committed and
 // branch-aware by design, so its content can be authored by someone other than
 // the user (cloned repo, pulled branch, checked-out PR) and is injected silently
@@ -58,6 +64,7 @@ function fenceData(body, source) {
 module.exports = {
   QUICK_CAP,
   CURSOR_STALE_HOURS,
+  STATUSLINE_THREAD_CAP,
   BRIEF_SECTION_CAP,
   BRIEF_CONTEXT_CAP,
   BRIEF_LINE_CAP,

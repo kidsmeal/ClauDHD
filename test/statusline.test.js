@@ -12,6 +12,7 @@ const path = require("node:path");
 
 const SCRIPT = path.join(__dirname, "..", "plugins", "claudhd", "scripts", "statusline.js");
 const MARKER = "<!-- claudhd: opt-in marker -->";
+const { STATUSLINE_THREAD_CAP } = require("../plugins/claudhd/scripts/constants.js");
 
 function mk() { return fs.mkdtempSync(path.join(os.tmpdir(), "claudhd-sl-")); }
 function write(dir, rel, content) {
@@ -75,6 +76,22 @@ test("[stale] flag appears when NOW.md has not been touched recently", () => {
     const r = run(dir, JSON.stringify({ cwd: dir }));
     assert.equal(r.status, 0);
     assert.match(r.stdout, /\[stale\]/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("caps an oversized active thread so a pulled NOW.md can't flood the bar", () => {
+  const dir = mk();
+  try {
+    const huge = "x".repeat(STATUSLINE_THREAD_CAP * 4);
+    write(dir, "NOW.md", nowFile(huge, 1));
+    const r = run(dir, JSON.stringify({ cwd: dir }));
+    assert.equal(r.status, 0);
+    const line = r.stdout.trim();
+    // One line, capped, ellipsized — and the appended q: marker still survives.
+    assert.equal(line.includes("\n"), false, "status line must stay single-line");
+    assert.match(line, /…/, "an over-cap thread should be ellipsized");
+    assert.match(line, /q:1/, "the q: marker must remain visible after the cap");
+    assert.equal(line.includes("x".repeat(STATUSLINE_THREAD_CAP + 1)), false, "thread was not capped");
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
