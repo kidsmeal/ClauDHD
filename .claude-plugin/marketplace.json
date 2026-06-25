@@ -10,8 +10,8 @@
     {
       "name": "claudhd",
       "source": "./plugins/claudhd",
-      "description": "A NOW cursor that follows your branch, an idea inbox you can backfill from past sessions, a shipped log, mid-session regroup, end-of-session wrap-up, and branch-aware session breadcrumbs, so stopping mid-thought is always safe.",
-      "version": "0.6.1",
+      "description": "A NOW cursor that follows your branch, an idea inbox you can backfill from past sessions, a project roadmap, a shipped log, mid-session regroup, end-of-session wrap-up, and branch-aware session breadcrumbs, so stopping mid-thought is always safe.",
+      "version": "0.7.0",
       "author": { "name": "kidsmeal" }
     }
   ]

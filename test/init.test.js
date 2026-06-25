@@ -19,12 +19,13 @@ test("init filters its own scaffolded files from repo signals", () => {
 
     const r = run(dir, "init.js");
     assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /Created: NOW.md, IDEAS.md, SHIPPED.md/);
+    assert.match(r.stdout, /Created: NOW.md, IDEAS.md, SHIPPED.md, ROADMAP.md/);
     assert.doesNotMatch(r.stdout, /\?\? NOW\.md/);
     assert.doesNotMatch(r.stdout, /\?\? IDEAS\.md/);
     assert.doesNotMatch(r.stdout, /\?\? SHIPPED\.md/);
     assert.doesNotMatch(r.stdout, /\?\? \.gitignore/);
     assert.equal(fs.existsSync(path.join(dir, "NOW.md")), true);
+    assert.equal(fs.existsSync(path.join(dir, "ROADMAP.md")), true);
   } finally { cleanup(dir); }
 });
 

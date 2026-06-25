@@ -26,6 +26,10 @@ ordinary git.
 - **An idea inbox** (`IDEAS.md`). When an idea comes up mid-task,
   `/claudhd:idea <text>` records it in one line so you can keep working
   instead of opening a new chat. Review it later with `/claudhd:triage`.
+- **A roadmap** (`ROADMAP.md`). The committed, ordered lane between the idea
+  inbox and the active cursor: what you have decided to do and in what order,
+  before any of it goes live. `/claudhd:roadmap` shows it or adds an intent.
+  One cursor still rules; the roadmap orders many, `NOW.md` points at one.
 - **A quick-fixes lane** (`/claudhd:quick`). Small self-contained chores go
   into a capped batch in `NOW.md` and get cleared in one focused pass, so they
   skip the queue without turning into a second backlog.
@@ -50,7 +54,7 @@ to activate it. No restart is needed.
 /claudhd:version
 ```
 
-You should see a line like `ClauDHD v0.6.0`. If the command isn't recognized,
+You should see a line like `ClauDHD v0.7.0`. If the command isn't recognized,
 the plugin didn't load. Run `/reload-plugins` (or restart Claude Code) and try
 again.
 
@@ -63,8 +67,8 @@ manage:
 /claudhd:init
 ```
 
-That scaffolds `NOW.md`, `IDEAS.md`, and `SHIPPED.md` (without overwriting any
-you already have) and adds `.now/` to your `.gitignore`. Claude then reads the
+That scaffolds `NOW.md`, `IDEAS.md`, `SHIPPED.md`, and `ROADMAP.md` (without
+overwriting any you already have) and adds `.now/` to your `.gitignore`. Claude then reads the
 repo, proposes your one active thread and its next step, and you confirm or
 correct it.
 
@@ -126,6 +130,7 @@ of how a session ends.
 | `/claudhd:idea <text>` | Record an idea in `IDEAS.md` without interrupting your current thread. |
 | `/claudhd:harvest` | Scan this project's past sessions and backfill uncaptured ideas into `IDEAS.md`. |
 | `/claudhd:triage` | Review the inbox and promote, park, or delete each idea (or route a small one to quick fixes). |
+| `/claudhd:roadmap [intent]` | Show the project roadmap, or add a committed intent to it (the ordered lane between the idea inbox and the active cursor). |
 | `/claudhd:quick [text]` | Add a small chore to the quick-fixes batch, or (no argument) clear the batch in one focused pass. |
 | `/claudhd:shipped` | Add finished commits to `SHIPPED.md`. |
 | `/claudhd:version` | Print the installed version to confirm the plugin is active. |
@@ -173,7 +178,7 @@ and the return brief reports what happened on the current branch. Each feature
 branch keeps its own cursor with no manual tracking.
 
 The drift check ignores ClauDHD's own files (`NOW.md`, `IDEAS.md`,
-`SHIPPED.md`), since the cursor is meant to stay live and uncommitted between
+`SHIPPED.md`, `ROADMAP.md`), since the cursor is meant to stay live and uncommitted between
 commits. Only your real changes trip the "uncommitted work piling up" flag.
 
 On your own repos, committing `NOW.md` is all you need. On a shared team repo

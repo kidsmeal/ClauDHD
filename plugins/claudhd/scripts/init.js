@@ -40,7 +40,7 @@ function git(args) {
 const created = [];
 const kept = [];
 const failed = [];
-for (const name of ["NOW.md", "IDEAS.md", "SHIPPED.md"]) {
+for (const name of ["NOW.md", "IDEAS.md", "SHIPPED.md", "ROADMAP.md"]) {
   const dest = path.join(ROOT, name);
   if (fs.existsSync(dest)) { kept.push(name); continue; }
   try {
@@ -110,7 +110,7 @@ const recent = git(["log", "-8", "--oneline"]);
 // line's status code and corrupt column parsing (same reason brief.js avoids it).
 // Match the exact root-relative path git reports, NOT the basename - else a real
 // file like docs/NOW.md would be wrongly swallowed as our own scaffolding.
-const own = new Set(["NOW.md", "IDEAS.md", "SHIPPED.md", ".gitignore"]);
+const own = new Set(["NOW.md", "IDEAS.md", "SHIPPED.md", "ROADMAP.md", ".gitignore"]);
 const tracked = git(["diff", "--name-only", "HEAD"]);
 const untracked = git(["ls-files", "--others", "--exclude-standard"]);
 const dirty = [...new Set(

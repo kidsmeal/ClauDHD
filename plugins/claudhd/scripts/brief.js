@@ -166,6 +166,19 @@ try {
     if (trimmed) lines.push(fenceData(capText(trimmed, BRIEF_SECTION_CAP), "NOW.md"));
   }
 
+  // Surface the top committed roadmap intent, so what is next is visible without
+  // opening ROADMAP.md. One cheap file read; an absent roadmap stays silent. The
+  // intent text is external (ROADMAP.md is committed), so sanitize it inline the
+  // same way as the other externally-authored tokens below.
+  try {
+    const roadmap = path.join(ROOT, "ROADMAP.md");
+    if (fs.existsSync(roadmap)) {
+      const rtxt = fs.readFileSync(roadmap, "utf8");
+      const nextSection = section(rtxt, "## Next");
+      const m = nextSection.match(/^\s*-\s*\[ \]\s*(.+?)\s*$/m);
+      if (m) lines.push(`Roadmap next: ${safeInline(m[1])}`);
+    }
+  } catch { /* ignore */ }
   // Surface the quick-fixes batch: a count line when any are waiting, and a drift
   // flag when it outgrows its cap (a batch quietly becoming a backlog).
   // QUICK_CAP and CURSOR_STALE_HOURS live in constants.js.
@@ -192,7 +205,7 @@ try {
   // Match the exact root-relative path git reports (always forward-slash), NOT
   // the basename - otherwise a real file like docs/NOW.md or notes/IDEAS.md would
   // be silently waved through as ClauDHD bookkeeping and never counted as drift.
-  const own = new Set(["NOW.md", "IDEAS.md", "SHIPPED.md"]);
+  const own = new Set(["NOW.md", "IDEAS.md", "SHIPPED.md", "ROADMAP.md"]);
   const changed = git(["diff", "--name-only", "HEAD"]);              // tracked, staged + unstaged
   const untracked = git(["ls-files", "--others", "--exclude-standard"]); // new files
   const dirty = new Set(
