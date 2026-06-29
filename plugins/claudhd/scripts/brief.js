@@ -17,6 +17,7 @@ const path = require("path");
 const {
   QUICK_CAP,
   CURSOR_STALE_HOURS,
+  ACTIVE_THREAD_STALE_DAYS,
   BRIEF_SECTION_CAP,
   BRIEF_CONTEXT_CAP,
   BRIEF_LINE_CAP,
@@ -110,6 +111,41 @@ function winsSinceLastVisit(branch) {
   return subjects;
 }
 
+// How many days the current active thread has been THE active thread. The mtime
+// freshness check (CURSOR_STALE_HOURS) only sees the file: you can keep a NOW.md
+// fresh by editing a running header narrative while the "## Active thread" pointer
+// underneath it rots for weeks, so that check never fires on a forgotten thread.
+// Track the thread by its own identity instead - the first bold name in the
+// section - and stamp when that name FIRST appeared in .now/active-thread.json.
+// The clock resets whenever you promote a different thread (the name changes), so
+// it measures the life of THIS thread, not the life of the file. A thread already
+// stale when this ships starts its clock fresh, so the first flag can take up to
+// the threshold to appear; accurate from then on. Writing the stamp on a name
+// change is a pure correctness update (unlike the wins anchor, it loses nothing),
+// so it is not gated on --record-visit and stays right under /now and /regroup.
+function activeThreadAgeDays(activeSection) {
+  if (!activeSection) return null;
+  const m = activeSection.match(/\*\*(.+?)\*\*/);
+  if (!m) return null;
+  const key = m[1].replace(/\s+/g, " ").trim();
+  if (!key) return null;
+  const store = path.join(NOW_DIR, "active-thread.json");
+  let prev = null;
+  try {
+    if (fs.existsSync(store)) prev = JSON.parse(fs.readFileSync(store, "utf8"));
+  } catch { prev = null; }
+  let since = Date.now();
+  if (prev && prev.key === key && Number.isFinite(prev.since)) {
+    since = prev.since;
+  } else {
+    try {
+      fs.mkdirSync(NOW_DIR, { recursive: true });
+      fs.writeFileSync(store, JSON.stringify({ key, since }));
+    } catch { /* ignore */ }
+  }
+  return { name: key, days: Math.floor((Date.now() - since) / 86400000) };
+}
+
 function emit(context) {
   // Make the silent SessionStart injection auditable. In hook (JSON) mode the
   // documented top-level `systemMessage` field surfaces a short visible notice to
@@ -194,6 +230,13 @@ try {
   const age = ageHours(NOW_MD);
   if (age && age > CURSOR_STALE_HOURS) {
     flags.push(`NOW.md has not been touched in ${Math.floor(age / 24)} days. Is the active thread still right?`);
+  }
+
+  // A thread that has quietly overstayed: the file stays fresh but THIS thread has
+  // been active too long. Catches the drift the mtime check above cannot see.
+  const threadAge = activeThreadAgeDays(active);
+  if (threadAge && threadAge.days > ACTIVE_THREAD_STALE_DAYS) {
+    flags.push(`Active thread "${safeInline(threadAge.name)}" has been active for ${threadAge.days} days. If its headline criteria are met, close it with /claudhd:wrap and promote the next on purpose; if it is genuinely still in flight, carry on.`);
   }
 
   // Count only real work as drift. ClauDHD's own bookkeeping files (NOW.md and

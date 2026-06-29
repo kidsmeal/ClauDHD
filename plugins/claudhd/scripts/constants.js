@@ -12,6 +12,15 @@
 const QUICK_CAP = 3;
 const CURSOR_STALE_HOURS = 72;
 
+// ACTIVE_THREAD_STALE_DAYS: how long one active thread can stay the active thread
+// before brief.js flags it to close-or-recommit on purpose. Independent of file
+// mtime / CURSOR_STALE_HOURS: a NOW.md can stay fresh (you keep editing a running
+// header narrative) while the "## Active thread" pointer underneath it rots for
+// weeks, so the mtime check never fires. We track the thread by its own identity
+// (the first bold name in the section) + first-seen in .now/active-thread.json
+// instead. Default 14 days (a real campaign can legitimately run a couple weeks).
+const ACTIVE_THREAD_STALE_DAYS = 14;
+
 // Max chars of the active-thread name shown in the status bar (statusline.js).
 // NOT a model-context path — the status line is for the user — but NOW.md is
 // committed and branch-aware, so a pulled file shouldn't be able to flood or
@@ -64,6 +73,7 @@ function fenceData(body, source) {
 module.exports = {
   QUICK_CAP,
   CURSOR_STALE_HOURS,
+  ACTIVE_THREAD_STALE_DAYS,
   STATUSLINE_THREAD_CAP,
   BRIEF_SECTION_CAP,
   BRIEF_CONTEXT_CAP,
