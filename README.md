@@ -54,7 +54,7 @@ to activate it. No restart is needed.
 /claudhd:version
 ```
 
-You should see a line like `ClauDHD v0.7.0`. If the command isn't recognized,
+You should see a line like `ClauDHD v0.8.0`. If the command isn't recognized,
 the plugin didn't load. Run `/reload-plugins` (or restart Claude Code) and try
 again.
 
