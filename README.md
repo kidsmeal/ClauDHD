@@ -54,7 +54,7 @@ to activate it. No restart is needed.
 /claudhd:version
 ```
 
-You should see a line like `ClauDHD v0.8.0`. If the command isn't recognized,
+You should see a line like `ClauDHD v0.9.0`. If the command isn't recognized,
 the plugin didn't load. Run `/reload-plugins` (or restart Claude Code) and try
 again.
 
@@ -99,7 +99,10 @@ session:
    aside any side tasks, and returns you to the active thread.
 5. **Reconcile before stopping.** `/claudhd:wrap` updates `NOW.md`: it marks
    completed steps, records the next action, and closes out loose ends so the
-   next session starts clean.
+   next session starts clean. If the active thread has outgrown its line budget,
+   wrap first runs a migrate pass: shipped work moves to `SHIPPED.md`, parked or
+   future material moves to `ROADMAP.md` or `IDEAS.md`, and the thread keeps only
+   its summary, live state, and next action.
 6. **Record shipped work.** After a commit, `/claudhd:shipped` adds the
    finished commits to `SHIPPED.md`.
 7. **Process the idea inbox.** Periodically, run `/claudhd:triage` to review
@@ -126,7 +129,7 @@ of how a session ends.
 | `/claudhd:init` | Scaffold the files, opt the project in, and propose your first active thread to confirm. |
 | `/claudhd:now` | Show the cursor: active thread, recent shipped work, drift flags. |
 | `/claudhd:regroup` | Mid-session reset: name the drift, set aside side tasks, and return to the active thread. |
-| `/claudhd:wrap` | End-of-session wrap-up: mark completed steps, write the next action, close out loose ends. |
+| `/claudhd:wrap` | End-of-session wrap-up: mark completed steps, write the next action, close out loose ends, and migrate an over-budget active thread. |
 | `/claudhd:idea <text>` | Record an idea in `IDEAS.md` without interrupting your current thread. |
 | `/claudhd:harvest` | Scan this project's past sessions and backfill uncaptured ideas into `IDEAS.md`. |
 | `/claudhd:triage` | Review the inbox and promote, park, or delete each idea (or route a small one to quick fixes). |
@@ -143,7 +146,9 @@ Once `/claudhd:init` has set up a marked `NOW.md`:
   `.now/last-session.md`, plus a per-branch copy at
   `.now/branches/<branch>.md` with the timestamp, branch, uncommitted files,
   recent commits, and active thread. It is a local script and costs no tokens.
-  The breadcrumb is at most one turn old no matter how the session ends.
+  The breadcrumb is at most one turn old no matter how the session ends. The
+  same hook writes `.now/state.json`, a machine-readable snapshot of the same
+  facts (see below).
 - **When you return (`SessionStart` hook):** a short brief is injected into
   Claude's context, without being printed to you: your active thread and next
   action, what shipped on this branch since you were last here, and drift
@@ -151,13 +156,38 @@ Once `/claudhd:init` has set up a marked `NOW.md`:
   hours). This is the only automatic piece that adds tokens, a few hundred
   once per session.
 
+## Machine-readable state
+
+The `Stop` hook also writes `.now/state.json`, a facts-only snapshot of the
+cursor so an external tool can read a project's state without parsing freeform
+`NOW.md` prose. It carries the active thread name and line count, the next
+action, queue and quick-fix counts, idea and shipped tallies with dates, the
+top roadmap intent, and git status (uncommitted, unpushed, last commit). It is
+counts and dates only, with no thresholds or judgments; a consumer derives its
+own flags. A missing source file becomes a `null` section rather than an error,
+and the file carries a `schemaVersion` so a reader can guard against format
+changes.
+
+It is written atomically (a temp file then a rename) so a watcher never reads a
+half-written file, and it lives under the gitignored `.now/` directory, so it
+never shows up in your diffs. ClauDHD's own statusline reads it for the `[over]`
+and `[drift]` flags; nothing else in the plugin depends on it.
+
 ## Optional: statusline
 
 Claude Code can run a script every time the status bar updates and show its
 output as a one-line indicator. `/claudhd:statusline` wires ClauDHD into that
 slot. It prints the active thread name, a quick-fixes count (`q:<n>`) when the
-batch is non-empty, and `[stale]` when the cursor hasn't been touched in over
-72 hours.
+batch is non-empty, and at most one attention flag when the cursor needs it:
+
+- `[over]` when the active thread has outgrown its line budget (run
+  `/claudhd:wrap` to migrate it).
+- `[drift]` when you are actively working but the cursor's own "Last touched"
+  date has fallen behind that activity.
+- `[stale]` when `NOW.md` hasn't been touched in over 72 hours.
+
+The `[over]` and `[drift]` flags read `.now/state.json`, so they appear only in
+projects initialized under 0.9 or later; `[stale]` works everywhere.
 
 The command writes a `statusLine` entry into the project's
 `.claude/settings.json`. The path it writes is the installed plugin's current

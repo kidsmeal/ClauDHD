@@ -18,6 +18,8 @@ Next physical action:
 
 Rule: when you finish a step, check it off and write the next single tiny step. Do not start another thread until this one ships or you consciously move it to the Queue.
 
+Keep this section lean (about 40 lines): a summary, the live state, and the next action, not a running shipped log. When it grows past that, `/claudhd:wrap` migrates the settled parts out (shipped work to SHIPPED.md, parked or future material to ROADMAP.md or IDEAS.md).
+
 ## Queue (in order, not now)
 
 What is eligible to become active next, in order. Items clear triage's readiness gate before they land here: each is either a ready task (carries a one-line "done" + first action) or a spike (the unknown to resolve before it can be built). Nothing queues as a bare one-liner.

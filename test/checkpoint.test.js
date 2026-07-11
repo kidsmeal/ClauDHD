@@ -60,6 +60,60 @@ test("breadcrumb written with fallback note when Active thread section is absent
   } finally { cleanup(dir); }
 });
 
+test("state.json is written alongside the breadcrumb with valid facts", () => {
+  const { dir, git } = makeRepo();
+  try {
+    optIn(dir, git, "the active thread");
+    const r = run(dir, "checkpoint.js");
+    assert.equal(r.status, 0, r.stderr);
+    const statePath = path.join(dir, ".now", "state.json");
+    assert.ok(exists(dir, path.join(".now", "state.json")), "state.json should exist");
+    const state = JSON.parse(fs.readFileSync(statePath, "utf8"));
+    assert.equal(state.schemaVersion, 1);
+    assert.match(state.generatedAt, /^\d{4}-\d{2}-\d{2}T.*Z$/, "generatedAt is an ISO 8601 timestamp");
+    assert.equal(state.branch, "main");
+    assert.equal(state.cursor.activeThread, "the active thread");
+    assert.equal(state.cursor.nextAction, "step");
+    assert.equal(state.ideas, null, "no IDEAS.md -> null section");
+    assert.equal(state.shipped, null);
+    assert.equal(state.roadmap, null);
+    assert.equal(state.git.uncommitted, 0, "clean tree, ClauDHD's own files excluded");
+    assert.equal(state.git.unpushed, null, "no upstream -> null, not 0");
+    assert.equal(state.git.lastCommitMsg, "init claudhd");
+  } finally { cleanup(dir); }
+});
+
+test("no state.json when NOW.md lacks the claudhd marker", () => {
+  const { dir, git } = makeRepo();
+  try {
+    write(dir, "NOW.md", "# NOW\n\n## Active thread\n\n**x**\n");
+    git(["add", "NOW.md"]);
+    git(["commit", "-q", "-m", "init"]);
+    const r = run(dir, "checkpoint.js");
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(!exists(dir, path.join(".now", "state.json")), "unmarked NOW.md must not produce state.json");
+  } finally { cleanup(dir); }
+});
+
+test("state.json reflects IDEAS/SHIPPED/ROADMAP when present", () => {
+  const { dir, git } = makeRepo();
+  try {
+    optIn(dir, git, "thread");
+    write(dir, "IDEAS.md", "# IDEAS\n## Inbox\n\n- [ ] 2026-07-01 (while: t) an idea\n");
+    write(dir, "SHIPPED.md", "# SHIPPED\n\n### 2026-07-08\n- shipped a thing (`1234567`)\n");
+    write(dir, "ROADMAP.md", "# ROADMAP\n## Next\n- [ ] a committed intent - done: y\n");
+    const r = run(dir, "checkpoint.js");
+    assert.equal(r.status, 0, r.stderr);
+    const state = JSON.parse(fs.readFileSync(path.join(dir, ".now", "state.json"), "utf8"));
+    assert.equal(state.ideas.untriaged, 1);
+    assert.equal(state.ideas.oldestUntriagedDate, "2026-07-01");
+    assert.equal(state.shipped.total, 1);
+    assert.equal(state.shipped.lastEntryDate, "2026-07-08");
+    assert.equal(state.roadmap.count, 1);
+    assert.equal(state.roadmap.topItem, "a committed intent - done: y");
+  } finally { cleanup(dir); }
+});
+
 test("detached HEAD writes global breadcrumb but skips the per-branch copy", () => {
   const { dir, git } = makeRepo();
   try {

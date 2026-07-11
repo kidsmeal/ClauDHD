@@ -46,6 +46,11 @@ function safeBranch(b) {
 }
 
 const { activeThread } = require("./nowfile.js");
+const { buildState, writeStateAtomic } = require("./state.js");
+
+function readOrNull(p) {
+  try { return fs.existsSync(p) ? fs.readFileSync(p, "utf8") : null; } catch { return null; }
+}
 
 try {
   if (!fs.existsSync(NOW_MD)) process.exit(0); // not a ClauDHD project
@@ -98,6 +103,43 @@ ${recent}
     fs.mkdirSync(bdir, { recursive: true });
     fs.writeFileSync(path.join(bdir, safe + ".md"), body);
   }
+
+  // Machine-readable snapshot for external watchers, written atomically so a
+  // reader never catches a half-written file. Best-effort and isolated: the
+  // breadcrumb above already landed, so a failure here loses nothing and the
+  // next Stop rewrites it. State facts only; consumers derive their own flags.
+  try {
+    const own = new Set(["NOW.md", "IDEAS.md", "SHIPPED.md", "ROADMAP.md"]);
+    const changed = git(["diff", "--name-only", "HEAD"]);              // tracked, staged + unstaged
+    const untracked = git(["ls-files", "--others", "--exclude-standard"]); // new files
+    const dirty = new Set(
+      (changed + "\n" + untracked)
+        .split(/\r?\n/)
+        .map((p) => p.trim())
+        .filter(Boolean)
+        .filter((p) => !own.has(p))            // ClauDHD's own live files are not "work"
+    );
+    // "" (no upstream) stays null so a consumer can tell "no tracking branch"
+    // from "0 commits ahead"; a clean count parses to a number.
+    const unpushedRaw = git(["rev-list", "--count", "@{u}..HEAD"]);
+    const unpushed = /^\d+$/.test(unpushedRaw) ? Number(unpushedRaw) : null;
+
+    const snapshot = buildState({
+      generatedAt: new Date().toISOString(),
+      branch: (branch && branch !== "unknown" && branch !== "HEAD") ? branch : null,
+      now: nowTxt,
+      ideas: readOrNull(path.join(ROOT, "IDEAS.md")),
+      shipped: readOrNull(path.join(ROOT, "SHIPPED.md")),
+      roadmap: readOrNull(path.join(ROOT, "ROADMAP.md")),
+      git: {
+        uncommitted: dirty.size,
+        unpushed,
+        lastCommitAt: git(["log", "-1", "--format=%cI"]) || null,
+        lastCommitMsg: git(["log", "-1", "--format=%s"]) || null,
+      },
+    });
+    writeStateAtomic(NOW_DIR, snapshot);
+  } catch { /* state.json is best-effort; the breadcrumb already landed */ }
 } catch {
   // never fail the hook
 }

@@ -12,7 +12,17 @@ const path = require("node:path");
 
 const SCRIPT = path.join(__dirname, "..", "plugins", "claudhd", "scripts", "statusline.js");
 const MARKER = "<!-- claudhd: opt-in marker -->";
-const { STATUSLINE_THREAD_CAP } = require("../plugins/claudhd/scripts/constants.js");
+const { STATUSLINE_THREAD_CAP, ACTIVE_THREAD_LINE_BUDGET } = require("../plugins/claudhd/scripts/constants.js");
+
+function stateJson({ lineCount, lastTouched, generatedAt }) {
+  return JSON.stringify({
+    schemaVersion: 1,
+    generatedAt: generatedAt,
+    cursor: { activeThreadLineCount: lineCount, lastTouched: lastTouched || null },
+  });
+}
+const daysAgoISO = (n) => new Date(Date.now() - n * 86400000).toISOString();
+const daysAgoDate = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
 
 function mk() { return fs.mkdtempSync(path.join(os.tmpdir(), "claudhd-sl-")); }
 function write(dir, rel, content) {
@@ -111,6 +121,72 @@ test("silent when NOW.md has no claudhd marker", () => {
     const r = run(dir, JSON.stringify({ cwd: dir }));
     assert.equal(r.status, 0);
     assert.equal(r.stdout.trim(), "");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("[over] appears when state.json reports the thread past its budget", () => {
+  const dir = mk();
+  try {
+    write(dir, "NOW.md", nowFile("t", 0));
+    write(dir, ".now/state.json", stateJson({
+      lineCount: ACTIVE_THREAD_LINE_BUDGET + 10, lastTouched: daysAgoDate(0), generatedAt: daysAgoISO(0),
+    }));
+    const r = run(dir, JSON.stringify({ cwd: dir }));
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /\[over\]/);
+    assert.doesNotMatch(r.stdout, /\[drift\]|\[stale\]/, "one flag only");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("[drift] appears when active recently but Last touched lags behind", () => {
+  const dir = mk();
+  try {
+    write(dir, "NOW.md", nowFile("t", 0));
+    write(dir, ".now/state.json", stateJson({
+      lineCount: 5, lastTouched: daysAgoDate(6), generatedAt: daysAgoISO(0),
+    }));
+    const r = run(dir, JSON.stringify({ cwd: dir }));
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /\[drift\]/);
+    assert.doesNotMatch(r.stdout, /\[over\]/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("[over] wins over [drift] when both conditions hold", () => {
+  const dir = mk();
+  try {
+    write(dir, "NOW.md", nowFile("t", 0));
+    write(dir, ".now/state.json", stateJson({
+      lineCount: ACTIVE_THREAD_LINE_BUDGET + 5, lastTouched: daysAgoDate(6), generatedAt: daysAgoISO(0),
+    }));
+    const r = run(dir, JSON.stringify({ cwd: dir }));
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /\[over\]/);
+    assert.doesNotMatch(r.stdout, /\[drift\]/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("no [over]/[drift] when state.json is absent (pre-0.9 project)", () => {
+  const dir = mk();
+  try {
+    write(dir, "NOW.md", nowFile("t", 0)); // fresh mtime, no state.json
+    const r = run(dir, JSON.stringify({ cwd: dir }));
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /\bt\b/);
+    assert.doesNotMatch(r.stdout, /\[over\]|\[drift\]|\[stale\]/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("[drift] is suppressed when there has been no recent activity", () => {
+  const dir = mk();
+  try {
+    write(dir, "NOW.md", nowFile("t", 0)); // fresh mtime, so no [stale] either
+    write(dir, ".now/state.json", stateJson({
+      lineCount: 5, lastTouched: daysAgoDate(20), generatedAt: daysAgoISO(10),
+    }));
+    const r = run(dir, JSON.stringify({ cwd: dir }));
+    assert.equal(r.status, 0);
+    assert.doesNotMatch(r.stdout, /\[drift\]/, "generatedAt is old -> not active -> no drift flag");
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 

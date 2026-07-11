@@ -13,7 +13,12 @@
 const fs = require("fs");
 const path = require("path");
 const { activeThread } = require("./nowfile.js");
-const { CURSOR_STALE_HOURS, STATUSLINE_THREAD_CAP } = require("./constants.js");
+const {
+  CURSOR_STALE_HOURS,
+  STATUSLINE_THREAD_CAP,
+  ACTIVE_THREAD_LINE_BUDGET,
+  CURSOR_DRIFT_DAYS,
+} = require("./constants.js");
 
 function ageHours(p) {
   try { return (Date.now() - fs.statSync(p).mtimeMs) / 3600000; } catch { return null; }
@@ -56,12 +61,43 @@ try {
   const quickSection = section(txt, "## Quick fixes");
   const quickOpen = quickSection ? (quickSection.match(/^\s*-\s*\[ \]/gm) || []).length : 0;
 
+  // The attention flag reads .now/state.json (facts, written every Stop) rather
+  // than re-parsing markdown. Pre-0.9 projects have no state.json, so the new
+  // rungs simply don't fire and the mtime [stale] fallback still works. At most
+  // one flag shows, worst first: size problem, then a rotting cursor, then away.
+  let state = null;
+  try {
+    const p = path.join(root, ".now", "state.json");
+    if (fs.existsSync(p)) state = JSON.parse(fs.readFileSync(p, "utf8"));
+  } catch { state = null; }
+
+  const cursor = state && state.cursor ? state.cursor : null;
+  const over = cursor && Number.isFinite(cursor.activeThreadLineCount)
+    && cursor.activeThreadLineCount > ACTIVE_THREAD_LINE_BUDGET;
+
+  // [drift]: you are active (a fresh checkpoint) but the cursor's own "Last
+  // touched" date lags well behind that activity - the cursor is rotting while you
+  // keep working. Distinct from [stale], which is the file simply going untouched
+  // because you are away.
+  const genMs = state && state.generatedAt ? Date.parse(state.generatedAt) : NaN;
+  const activeRecent = Number.isFinite(genMs) && (Date.now() - genMs) < CURSOR_STALE_HOURS * 3600000;
+  let drift = false;
+  if (activeRecent && cursor && cursor.lastTouched) {
+    const touchedMs = Date.parse(cursor.lastTouched + "T00:00:00Z");
+    if (Number.isFinite(touchedMs)) drift = (genMs - touchedMs) / 86400000 > CURSOR_DRIFT_DAYS;
+  }
+
   const age = ageHours(nowPath);
   const stale = age !== null && age > CURSOR_STALE_HOURS;
 
+  let flag = "";
+  if (over) flag = "[over]";
+  else if (drift) flag = "[drift]";
+  else if (stale) flag = "[stale]";
+
   const parts = [thread];
   if (quickOpen > 0) parts.push("q:" + quickOpen);
-  if (stale) parts.push("[stale]");
+  if (flag) parts.push(flag);
 
   process.stdout.write(parts.join(" ") + "\n");
 } catch { /* stay silent */ }
