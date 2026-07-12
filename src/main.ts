@@ -3,14 +3,16 @@
 // (vite dev): the frozen fixture snapshot, labeled as such.
 
 import "./ui/styles.css";
-import { DEFAULT_CONFIG, parseConfigText, type Config } from "./core/config.js";
+import { substituteTemplate, tokenizeCommand } from "./core/capture.js";
+import { DEFAULT_CONFIG, parseConfigText, type Config, type LauncherTemplates } from "./core/config.js";
 import { gapLabel, sinceLastOpen } from "./core/diff.js";
 import { appendTransitions, computeTransitions, readTransitions } from "./core/history.js";
 import { CONFIG_FILE, loadSnapshot, saveSnapshot } from "./core/persistence.js";
 import { revalidate } from "./core/revalidate.js";
 import { scanFleet, scanOneProject, withCard } from "./core/scan.js";
 import { loadFixtureSnapshot } from "./adapters/fixture.js";
-import { isTauri, startWatch, tauriClock, tauriFs, tauriGit, tauriStore } from "./adapters/tauri.js";
+import { isTauri, launchDetached, startWatch, tauriClock, tauriFs, tauriGit, tauriStore } from "./adapters/tauri.js";
+import { bootCaptureWindow, CAPTURE_TARGETS_FILE } from "./ui/capture-window.js";
 import { parseHash } from "./ui/router.js";
 import { initRender, paint } from "./ui/render.js";
 import { onPaint, seedExpandedCrit, store, update } from "./ui/store.js";
@@ -45,8 +47,48 @@ async function loadHistoryIfNeeded(): Promise<void> {
   });
 }
 
+// The launcher: substitute {path}, tokenize, spawn detached through the
+// courier. A failed spawn (missing executable, bad path) is reported on the
+// page, never a silent no-op.
+async function launch(action: string, projectName: string): Promise<void> {
+  const card = store.snapshot?.cards.find((c) => c.name === projectName);
+  const template = cfg.launcher[action as keyof LauncherTemplates];
+  if (card == null || template == null) {
+    update((s) => {
+      s.launchError = `launch failed: no ${card == null ? "project" : "template"} for ${projectName}/${action}`;
+    });
+    return;
+  }
+  const tokens = tokenizeCommand(substituteTemplate(template, card.path));
+  if (tokens == null) {
+    update((s) => {
+      s.launchError = `launch failed: empty template for ${action}`;
+    });
+    return;
+  }
+  const ok = await launchDetached(tokens.exe, tokens.args);
+  update((s) => {
+    s.launchError = ok ? null : `launch failed: could not start ${tokens.exe} (missing executable or bad path)`;
+  });
+}
+
+async function openDataFolder(): Promise<void> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  const dir = await invoke<string | null>("data_dir_path");
+  if (dir != null) {
+    const ok = await launchDetached("explorer", [dir]);
+    update((s) => {
+      s.launchError = ok ? null : "launch failed: could not start explorer";
+    });
+  }
+}
+
 onPaint(paint);
-initRender(app, { rescan: () => void fullRescan("manual rescan") });
+initRender(app, {
+  rescan: () => void fullRescan("manual rescan"),
+  launch: (action, project) => void launch(action, project),
+  openDataFolder: () => void openDataFolder(),
+});
 store.route = parseHash(location.hash);
 
 async function fullRescan(reason: "boot" | "focus" | "poll" | "manual rescan"): Promise<void> {
@@ -70,6 +112,12 @@ async function fullRescan(reason: "boot" | "focus" | "poll" | "manual rescan"): 
         seedExpandedCrit(fresh);
       });
       recordTransitions(prev, fresh);
+      // The capture popover reads its target list from the store, so it
+      // never needs a scan of its own. Recency order = picker order.
+      void tauriStore.write(
+        CAPTURE_TARGETS_FILE,
+        JSON.stringify(fresh.cards.map((c) => ({ name: c.name, path: c.path })))
+      );
     } else {
       const snap = await loadFixtureSnapshot();
       update((s) => {
@@ -127,6 +175,36 @@ function onFsEvent(path: string): void {
   );
 }
 
+async function registerCaptureHotkey(): Promise<void> {
+  try {
+    const { register } = await import("@tauri-apps/plugin-global-shortcut");
+    await register(cfg.hotkey, (event) => {
+      if (event.state !== "Pressed") return;
+      void (async () => {
+        const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
+        const capture = await WebviewWindow.getByLabel("capture");
+        if (capture != null) {
+          await capture.center();
+          await capture.show();
+          await capture.setFocus();
+        }
+      })();
+    });
+    update((s) => {
+      s.hotkeyArmed = { armed: true, combo: cfg.hotkey, reason: null };
+    });
+  } catch (err) {
+    // The app never pretends a capture channel is armed when it is not.
+    update((s) => {
+      s.hotkeyArmed = {
+        armed: false,
+        combo: cfg.hotkey,
+        reason: err instanceof Error ? err.message : String(err),
+      };
+    });
+  }
+}
+
 async function bootTauri(): Promise<void> {
   // config: first run writes the defaults so the file exists to edit
   const configText = await tauriStore.read(CONFIG_FILE);
@@ -134,6 +212,10 @@ async function bootTauri(): Promise<void> {
   if (configText == null) {
     await tauriStore.write(CONFIG_FILE, JSON.stringify(cfg, null, 2));
   }
+  update((s) => {
+    s.config = cfg;
+  });
+  void registerCaptureHotkey();
 
   // The baseline is "what you last looked at", nothing else. It persists on
   // focus LOSS only (blur; close-to-tray hides and therefore blurs), so
@@ -197,10 +279,25 @@ async function bootTauri(): Promise<void> {
 
 window.addEventListener("hashchange", () => void loadHistoryIfNeeded());
 
-paint();
-if (isTauri()) {
-  void bootTauri();
-  void loadHistoryIfNeeded();
-} else {
-  void fullRescan("boot");
+async function boot(): Promise<void> {
+  if (isTauri()) {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    if (getCurrentWindow().label === "capture") {
+      // The popover window runs only the capture surface, no scans, no store.
+      document.body.classList.add("capture-body");
+      await bootCaptureWindow(app!);
+      return;
+    }
+    paint();
+    void bootTauri();
+    void loadHistoryIfNeeded();
+  } else {
+    update((s) => {
+      s.config = DEFAULT_CONFIG;
+    });
+    paint();
+    void fullRescan("boot");
+  }
 }
+
+void boot();

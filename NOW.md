@@ -6,15 +6,15 @@ One active thread at a time. This file is the cursor: what is live, the next phy
 
 _Committed, so it follows your branch: `git checkout` swaps this cursor to that branch's thread._
 
-Last touched: 2026-07-12 (phase 4 SHIPPED: flag transitions + fire-rate log. live proof: stuffing our own Queue to 6 landed a raised section-budgets entry in history.jsonl with evidence "queue 6, budget 5", reverting landed the cleared entry. 116 tests. reviewer PASS-WITH-NOTES, fix-nows applied. USER NOTE from phase 3 stands: design section 12 amendment pending your ratification)
+Last touched: 2026-07-12 (phase 5 SHIPPED, v1 BUILD COMPLETE: capture hotkey proven with real global keystrokes (line shape exact, idea.js contract), launcher live, NSIS per-user installer built. 124 tests. reviewer PASS-WITH-NOTES, fix-nows applied incl the directory-lock parity catch. USER NOTES: design section 12 amendment pending ratification; two-week kill-criteria trial starts at first real use)
 
 ## Active thread (only one)
 
-**v1 build, gantry-gated, momentum-authorized ("commit and go until its done").** Contract: `design/object_permanence_v1_reviewed.md` (LOCKED, one pending-ratification amendment in section 12). Plan: `design/object_permanence_v1_reviewed-plan.md`. Phases 1 (core), 2 (window), 3 (watcher + memory), 4 (fire-rate log) committed, each through its phase-reviewer gate.
+**v1 SHIPPED (all 5 phases through the gantry gates, one momentum session 2026-07-12).** Contract: `design/object_permanence_v1_reviewed.md` (LOCKED, one pending-ratification amendment in section 12). Plan: `design/object_permanence_v1_reviewed-plan.md`. Installer: `src-tauri/target/release/bundle/nsis/Object Permanence_0.1.0_x64-setup.exe`. The two-week kill-criteria trial (design section 1) starts at first real use.
 
 Next physical action:
 
-- [ ] phase 5: capture hotkey + resume launcher + settings + NSIS installer, then its review gate, then wrap
+- [ ] user: install the NSIS build (or run `npm run tauri:dev`), use it at session starts for two weeks, and ratify or reverse the section-12 amendment
 
 Rule: when you finish a step, check it off and write the next single tiny step. Do not start another thread until this one ships or you consciously move it to the Queue.
 

@@ -44,6 +44,15 @@ export async function startWatch(paths: string[]): Promise<boolean> {
   return await invoke<boolean>("watch_start", { paths });
 }
 
+// The single project-file write (design section 9): one line into IDEAS.md.
+export async function ideaAppend(projectPath: string, entryLine: string): Promise<boolean> {
+  return await invoke<boolean>("idea_append", { project: projectPath, entry: entryLine });
+}
+
+export async function launchDetached(exe: string, args: string[]): Promise<boolean> {
+  return await invoke<boolean>("launch_detached", { exe, args });
+}
+
 export function isTauri(): boolean {
   return "__TAURI_INTERNALS__" in window;
 }

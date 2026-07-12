@@ -8,7 +8,8 @@ Tauri 2 shell, Vite + vanilla TypeScript frontend, no framework. Test runner is 
 
 ## Layout
 
-- `src/core/` pure logic, platform-free. Discovery lives inside `scan.ts`; the IDEAS/SHIPPED/ROADMAP count parsers share `parse/counts.ts`; NOW.md, state.json, plans, and checkpoints each have their own `parse/` module; `flags.ts` is the flag engine; `persistence.ts` (baseline + history through AppStore), `diff.ts` (since-last-open), `revalidate.ts` (focus reconcile), and `history.ts` (flag transitions + fire rates) are the memory layer.
+- `src/core/` pure logic, platform-free. Discovery lives inside `scan.ts`; the IDEAS/SHIPPED/ROADMAP count parsers share `parse/counts.ts`; NOW.md, state.json, plans, and checkpoints each have their own `parse/` module; `flags.ts` is the flag engine; `persistence.ts` (baseline + history through AppStore), `diff.ts` (since-last-open), `revalidate.ts` (focus reconcile), and `history.ts` (flag transitions + fire rates) are the memory layer; `capture.ts` holds the pure capture-line and launcher-template logic.
+- `src/ui/capture-window.ts` boots the capture popover window (tauri window label `capture`); everything else in `src/ui/` serves the main window.
 - `src/adapters/` fills the core's ports: `node.ts` (vitest + acceptance), `tauri.ts` (the app).
 - `src/ui/` store, render, router, views. DOM only here.
 - `src-tauri/` the Rust courier (phase 2+).

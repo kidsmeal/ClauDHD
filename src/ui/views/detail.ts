@@ -76,6 +76,8 @@ export function detailHtml(card: ProjectCard, state: UiState, nowMs: number): st
     card.source === "state.json"
       ? `state.json (generated ${esc(card.stateJson?.generatedAt ?? "?")})`
       : "lenient NOW.md parse" + (card.stateJson == null ? " (no state.json on disk yet)" : " (state.json stale, superseded)");
+  const launchErr =
+    state.launchError != null ? `<div class="provenance"><span class="scan-error">${esc(state.launchError)}</span></div>` : "";
 
   return `
     <div class="detail">
@@ -85,11 +87,24 @@ export function detailHtml(card: ProjectCard, state: UiState, nowMs: number): st
           <h1 class="detail-name">${esc(card.name)}${title}</h1>
         </span>
         <span class="titlebar-actions">
-          <button disabled title="launcher lands in phase 5">resume ▾</button>
-          <button disabled title="launcher lands in phase 5">open folder</button>
+          <span class="launch-menu">
+            <button data-launch="resume" data-project="${esc(card.name)}">resume</button>
+            <button data-launch-menu="${esc(card.name)}">▾</button>
+            ${
+              state.launchMenuFor === card.name
+                ? `<span class="launch-items">
+                    <button data-launch="resume" data-project="${esc(card.name)}">resume (fresh claude session)</button>
+                    <button data-launch="continueLast" data-project="${esc(card.name)}">continue last conversation</button>
+                    <button data-launch="terminalOnly" data-project="${esc(card.name)}">terminal only</button>
+                    <button data-launch="openFolder" data-project="${esc(card.name)}">open folder</button>
+                  </span>`
+                : ""
+            }
+          </span>
         </span>
       </div>
       <div class="provenance">source: ${sourceNote} · ${esc(gitLine)}</div>
+      ${launchErr}
       ${section("cursor (NOW.md)", cursor)}
       ${section("flags", flags)}
       ${pipeline ? section("pipeline (gantry)", pipeline) : ""}

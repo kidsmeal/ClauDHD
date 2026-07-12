@@ -1,6 +1,7 @@
 // One plain store object (the unwoven discipline). Mutate through update(),
 // which repaints. No framework, no reactivity, just mutate-then-paint.
 
+import type { Config } from "../core/config.js";
 import type { DiffLine } from "../core/diff.js";
 import type { Transition } from "../core/history.js";
 import type { FleetSnapshot } from "../core/model.js";
@@ -34,6 +35,13 @@ export interface UiState {
   // The fire-rate log for the history view. Null until loaded; loading is
   // lazy (first navigation) and refreshed by new appends.
   history: Transition[] | null;
+  // Phase 5: capture hotkey armed state (null = unknown/browser), the open
+  // launch menu, and the last launcher failure (reported, never swallowed).
+  hotkeyArmed: { armed: boolean; combo: string; reason: string | null } | null;
+  launchMenuFor: string | null;
+  launchError: string | null;
+  // The loaded config, for the settings surface. Null until boot loads it.
+  config: Config | null;
 }
 
 export const store: UiState = {
@@ -49,6 +57,10 @@ export const store: UiState = {
   lastRevalidation: null,
   sinceLastOpen: null,
   history: null,
+  hotkeyArmed: null,
+  launchMenuFor: null,
+  launchError: null,
+  config: null,
 };
 
 let painter: (() => void) | null = null;

@@ -369,3 +369,86 @@ button:disabled {
   padding: 20px 0;
   text-align: center;
 }
+
+body.capture-body {
+  background: transparent;
+}
+
+body.capture-body #app {
+  max-width: none;
+  padding: 4px;
+}
+
+/* the capture popover window */
+.capture {
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.capture-row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 13px;
+}
+
+.capture-target {
+  font-weight: 600;
+}
+
+.capture-hint {
+  margin-left: auto;
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.capture-input {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 6px 10px;
+  outline: none;
+}
+
+.capture-input:focus {
+  border-color: var(--accent);
+}
+
+/* the resume split menu */
+.launch-menu {
+  position: relative;
+  display: inline-block;
+}
+
+.launch-items {
+  position: absolute;
+  right: 0;
+  top: 110%;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  min-width: 230px;
+  z-index: 10;
+}
+
+.launch-items button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  border-radius: 0;
+  background: none;
+  padding: 5px 10px;
+}
+
+.launch-items button:hover {
+  background: var(--panel);
+}

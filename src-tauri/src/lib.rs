@@ -84,6 +84,11 @@ fn safe_name(name: &str) -> bool {
 }
 
 #[tauri::command]
+fn data_dir_path() -> Option<String> {
+    Some(data_dir()?.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
 fn store_read(name: String) -> Option<String> {
     if !safe_name(&name) {
         return None;
@@ -158,6 +163,86 @@ fn watch_start(app: tauri::AppHandle, state: tauri::State<WatcherState>, paths: 
     any
 }
 
+// --- the single project-file write (design section 9) ------------------------
+// Capture appends one line to a project's IDEAS.md, mirroring ClauDHD's
+// idea.js exactly: newest-first under "## Inbox", the "(empty)" placeholder
+// removed, the file created from the same header when missing, and the same
+// .now/ideas.lock held so a popover capture and a live session capture can
+// never clobber each other. Atomic temp+rename. This command and store_*
+// are the only writes the courier can perform.
+
+const IDEAS_HEADER: &str = "# IDEAS (capture, do not chase)\n\nWhen an idea comes up mid-task, it is recorded here in one line. Do NOT open a new chat for it; the current thread survives. Triage regularly: each idea is promoted to the NOW.md Queue, kept parked, or dropped.\n\nCapture: `/claudhd:idea <your idea>` in any chat.\nHarvest: `/claudhd:harvest` to backfill ideas from past sessions you never recorded.\nTriage: `/claudhd:triage` to review this list.\n\nLegend: `[ ]` new, `[~]` promoted to NOW.md Queue, `[x]` done or dropped.\n\n## Inbox\n\n(empty)\n";
+
+#[tauri::command]
+fn idea_append(project: String, entry: String) -> bool {
+    if entry.contains('\n') || entry.trim().is_empty() {
+        return false; // one line, always
+    }
+    let root = PathBuf::from(&project);
+    if !root.join("NOW.md").exists() {
+        return false; // only claudhd projects are capture targets
+    }
+    let ideas = root.join("IDEAS.md");
+    let lock_dir = root.join(".now");
+    let _ = std::fs::create_dir_all(&lock_dir);
+    let lock = lock_dir.join("ideas.lock");
+
+    // Directory lock, the exact primitive claudhd's lock.js takes (mkdir /
+    // rmdir), so stale-lock recovery stays symmetric between the two tools
+    // after a crash: either one can see and clear the other's leftover.
+    let mut held = false;
+    for _ in 0..40 {
+        match std::fs::create_dir(&lock) {
+            Ok(_) => {
+                held = true;
+                break;
+            }
+            Err(_) => std::thread::sleep(std::time::Duration::from_millis(50)),
+        }
+    }
+    if !held {
+        return false; // a stuck lock reports failure, never a silent drop
+    }
+
+    let ok = (|| -> Option<()> {
+        let mut body = std::fs::read_to_string(&ideas).unwrap_or_else(|_| IDEAS_HEADER.to_string());
+        body = body.replace("\n(empty)\n", "\n");
+        let inbox = "## Inbox\n";
+        if let Some(idx) = body.find(inbox) {
+            let split = idx + inbox.len();
+            let head = &body[..split];
+            let tail = body[split..].trim_start_matches('\n');
+            body = format!("{}\n{}\n{}", head, entry, tail);
+        } else {
+            body = format!("{}\n\n## Inbox\n\n{}\n", body.trim_end(), entry);
+        }
+        let tmp = root.join(format!("IDEAS.md.{}.tmp", std::process::id()));
+        std::fs::write(&tmp, &body).ok()?;
+        std::fs::rename(&tmp, &ideas).ok()
+    })()
+    .is_some();
+
+    let _ = std::fs::remove_dir(&lock);
+    ok
+}
+
+// Launch a configured template (resume, terminal, open folder) as a detached
+// process. False when the spawn fails (missing executable, bad path), so the
+// UI reports instead of silently doing nothing.
+#[tauri::command]
+fn launch_detached(exe: String, args: Vec<String>) -> bool {
+    let mut cmd = Command::new(&exe);
+    cmd.args(&args);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+    }
+    cmd.spawn().is_ok()
+}
+
 // --- tray + residency --------------------------------------------------------
 
 fn show_main(app: &tauri::AppHandle) {
@@ -174,6 +259,7 @@ pub fn run() {
             // a second launch focuses the existing window
             show_main(app);
         }))
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(WatcherState(Mutex::new(None)))
         .setup(|app| {
             use tauri::menu::{MenuBuilder, MenuItemBuilder};
@@ -202,7 +288,8 @@ pub fn run() {
         .on_window_event(|window, event| {
             // close-to-tray: X hides, quit is explicit from the tray menu.
             // Hiding fires a blur, and the frontend saves its snapshot on
-            // blur, so nothing is lost by the hide.
+            // blur, so nothing is lost by the hide. The capture popover hides
+            // the same way (esc/enter also hide it from the frontend).
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();
@@ -217,7 +304,10 @@ pub fn run() {
             store_read,
             store_write,
             store_append,
-            watch_start
+            watch_start,
+            idea_append,
+            launch_detached,
+            data_dir_path
         ])
         .run(tauri::generate_context!())
         .expect("error while running object permanence");

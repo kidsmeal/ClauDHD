@@ -14,6 +14,8 @@ let root: HTMLElement | null = null;
 let mountedView = "";
 let nowMs = () => Date.now();
 let onRescan: (() => void) | null = null;
+let onLaunch: ((action: string, project: string) => void) | null = null;
+let onOpenDataFolder: (() => void) | null = null;
 
 // Per-card memo: rebuild a card's DOM only when its data hash changed. The
 // hash also covers the expanded-set entries that card renders.
@@ -27,7 +29,15 @@ function hashCard(card: ProjectCard, state: UiState): string {
   return JSON.stringify(card) + "|" + expandedBits;
 }
 
-export function initRender(el: HTMLElement, opts: { now?: () => number; rescan?: () => void } = {}): void {
+export function initRender(
+  el: HTMLElement,
+  opts: {
+    now?: () => number;
+    rescan?: () => void;
+    launch?: (action: string, project: string) => void;
+    openDataFolder?: () => void;
+  } = {}
+): void {
   root = el;
   // A fresh mount owns none of the previous mount's memory; without this a
   // re-init paints into an empty root believing the skeleton already exists.
@@ -35,6 +45,8 @@ export function initRender(el: HTMLElement, opts: { now?: () => number; rescan?:
   cardHash.clear();
   if (opts.now) nowMs = opts.now;
   onRescan = opts.rescan ?? null;
+  onLaunch = opts.launch ?? null;
+  onOpenDataFolder = opts.openDataFolder ?? null;
   el.addEventListener("click", onClick);
   window.addEventListener("hashchange", () => {
     update((s) => {
@@ -44,7 +56,9 @@ export function initRender(el: HTMLElement, opts: { now?: () => number; rescan?:
 }
 
 function onClick(ev: Event): void {
-  const target = (ev.target as HTMLElement).closest("[data-nav],[data-toggle-flag],[data-rescan]");
+  const target = (ev.target as HTMLElement).closest(
+    "[data-nav],[data-toggle-flag],[data-rescan],[data-launch],[data-launch-menu],[data-open-data-folder]"
+  );
   if (target == null) return;
   const nav = target.getAttribute("data-nav");
   if (nav != null) {
@@ -57,6 +71,26 @@ function onClick(ev: Event): void {
       if (s.expanded.has(key)) s.expanded.delete(key);
       else s.expanded.add(key);
     });
+    return;
+  }
+  const launchAction = target.getAttribute("data-launch");
+  if (launchAction != null) {
+    const project = target.getAttribute("data-project") ?? "";
+    update((s) => {
+      s.launchMenuFor = null;
+    });
+    onLaunch?.(launchAction, project);
+    return;
+  }
+  const menuFor = target.getAttribute("data-launch-menu");
+  if (menuFor != null) {
+    update((s) => {
+      s.launchMenuFor = s.launchMenuFor === menuFor ? null : menuFor;
+    });
+    return;
+  }
+  if (target.hasAttribute("data-open-data-folder")) {
+    onOpenDataFolder?.();
     return;
   }
   if (target.hasAttribute("data-rescan")) onRescan?.();
@@ -95,7 +129,7 @@ export function paint(): void {
         ? detailHtml(card, state, nowMs())
         : `<div class="detail"><div class="titlebar"><span><button data-nav="${FLEET_NAV}" class="back">← fleet</button><h1 class="detail-name">${name}</h1></span></div><div class="provenance">no card with that name in the snapshot</div></div>`;
   } else {
-    byId("page").innerHTML = settingsHtml(state);
+    byId("page").innerHTML = settingsHtml(state, state.config);
   }
 }
 

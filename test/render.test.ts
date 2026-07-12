@@ -136,7 +136,7 @@ describe("escaping", () => {
 });
 
 describe("detail view", () => {
-  it("renders the card's sections and the phase-5 stubs stay inert", () => {
+  it("renders the card's sections with a live resume launcher", () => {
     const a = card("alpha", {
       shippedRecent: [
         { date: "2026-07-08", text: "prose style guide shipped" },
@@ -151,7 +151,11 @@ describe("detail view", () => {
     expect(page.textContent).toContain("recent shipped");
     expect(page.textContent).toContain("prose style guide shipped");
     expect(page.textContent).toContain("??"); // the honest null-date marker
-    const resume = Array.from(page.querySelectorAll("button")).find((b) => b.textContent?.includes("resume"));
-    expect(resume?.disabled).toBe(true);
+    const resume = page.querySelector('[data-launch="resume"]') as HTMLButtonElement | null;
+    expect(resume).not.toBeNull();
+    expect(resume?.disabled).toBe(false);
+    // the split menu opens on the toggle and lists all four templates
+    (page.querySelector("[data-launch-menu]") as HTMLElement).click();
+    expect(page.querySelectorAll("[data-launch]").length).toBeGreaterThanOrEqual(4);
   });
 });
