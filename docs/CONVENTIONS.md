@@ -8,7 +8,7 @@ Tauri 2 shell, Vite + vanilla TypeScript frontend, no framework. Test runner is 
 
 ## Layout
 
-- `src/core/` pure logic: discovery, parsers, git facts, flags, scan. Platform-free.
+- `src/core/` pure logic, platform-free. Discovery lives inside `scan.ts`; the IDEAS/SHIPPED/ROADMAP count parsers share `parse/counts.ts`; NOW.md, state.json, plans, and checkpoints each have their own `parse/` module; `flags.ts` is the flag engine.
 - `src/adapters/` fills the core's ports: `node.ts` (vitest + acceptance), `tauri.ts` (the app).
 - `src/ui/` store, render, router, views. DOM only here.
 - `src-tauri/` the Rust courier (phase 2+).

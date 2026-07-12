@@ -42,10 +42,11 @@ Everything else in the design is resolved. Minor computation definitions the fla
 - `src/core/model.ts` (types: `FleetSnapshot`, `ProjectCard`, `Flag`, `Severity` = crit|warn|info, `CardSource` = state.json|now.md, `ParseStatus` = ok|raw-fallback+reason, `Provenance`, `UntrackedRepo`)
 - `src/core/ports.ts` (adapter interfaces: `GitRunner`, `FileSystem`, `Clock`, `DataDir`, so the core stays free of node and Tauri APIs and both fill it)
 - `src/core/config.ts` (schema, defaults per the Cross-cutting config block, tolerant merge of a partial `config.json`)
-- `src/core/discovery.ts` (root scan one level deep; classify full-card vs untracked-shelf vs invisible; marker detect on the substring `<!-- claudhd`)
+- discovery (as-built: folded into `src/core/scan.ts`, no separate discovery.ts): root scan to `scanDepth` levels (default 1, qualifying dirs never descended); classify full-card vs untracked-shelf vs invisible; marker detect on the substring `<!-- claudhd`
 - `src/core/parse/now.ts` (lenient NOW.md parser porting `nowfile.js` semantics to TS: `activeThread` first bold span, `activeThreadSection`/`activeThreadLineCount` from `## Active thread` heading through the last non-blank line before the next `## `, `### ` does not close the section, `nextAction`, `lastTouchedDate`, `queueCount`, `quickFixCount`, plus loose-ends count and non-template section names; returns a `ParseStatus`)
 - `src/core/parse/state.ts` (state.json reader: schemaVersion 1, tolerate null sections and ignore unknown fields)
-- `src/core/parse/ideas.ts`, `src/core/parse/shipped.ts`, `src/core/parse/roadmap.ts` (fallback counts porting the `state.js` regexes)
+- `src/core/parse/counts.ts` (parseIdeas/parseShipped/parseRoadmap fallback counts porting the `state.js` regexes; as-built consolidation of the ideas/shipped/roadmap modules)
+- `src/core/parse/checkpoint.ts` (as-built plan amendment, phase-1 review: `.now/last-session.md` parse, structurally required by cursor-stale, dead-cursor, hooks-not-firing, idle, and lastActivity)
 - `src/core/parse/plan.ts` (gantry plan discovery: `.gantry/active-phase.json` sentinel authoritative when present, reading plan/phase/started and ignoring the extra `files`/`allow`/`session` fields the real sentinel carries; else recursive glob for `*-plan.md` and `*.plan.md` with the section-6 skip set; phase-progress read is gated by Open Question 1)
 - `src/core/git.ts` (branch, dirty count, unpushed count, last commit, commit dates and touched paths in the drought window, all through the injected `GitRunner`)
 - `src/core/precedence.ts` (choose state.json vs NOW.md by `stateJsonMaxLagDays`; label the source on the card)
