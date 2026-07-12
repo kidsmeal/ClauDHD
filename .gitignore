@@ -2,3 +2,6 @@
 
 # ClauDHD local session state
 .now/
+.gantry/active-phase.json
+.gantry/models.json
+.gantry/headless-implementer-settings.json
