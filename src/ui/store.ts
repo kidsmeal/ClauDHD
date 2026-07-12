@@ -2,13 +2,15 @@
 // which repaints. No framework, no reactivity, just mutate-then-paint.
 
 import type { DiffLine } from "../core/diff.js";
+import type { Transition } from "../core/history.js";
 import type { FleetSnapshot } from "../core/model.js";
 import type { RevalidationResult } from "../core/revalidate.js";
 
 export type Route =
   | { view: "fleet" }
   | { view: "detail"; name: string }
-  | { view: "settings" };
+  | { view: "settings" }
+  | { view: "history"; project: string | null };
 
 export interface UiState {
   route: Route;
@@ -29,6 +31,9 @@ export interface UiState {
   // The since-last-open diff, computed once per focus gain against the
   // persisted snapshot. Null before the first computation or with no baseline.
   sinceLastOpen: { gap: string; savedAtMs: number; lines: DiffLine[] } | null;
+  // The fire-rate log for the history view. Null until loaded; loading is
+  // lazy (first navigation) and refreshed by new appends.
+  history: Transition[] | null;
 }
 
 export const store: UiState = {
@@ -43,6 +48,7 @@ export const store: UiState = {
   lastEventMs: null,
   lastRevalidation: null,
   sinceLastOpen: null,
+  history: null,
 };
 
 let painter: (() => void) | null = null;

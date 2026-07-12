@@ -7,6 +7,7 @@ import { store, update, type UiState } from "./store.js";
 import { parseHash } from "./router.js";
 import { detailHtml, FLEET_NAV } from "./views/detail.js";
 import { cardHtml, fleetChromeHtml, splitCards } from "./views/fleet.js";
+import { historyHtml } from "./views/history.js";
 import { settingsHtml } from "./views/settings.js";
 
 let root: HTMLElement | null = null;
@@ -84,6 +85,8 @@ export function paint(): void {
 
   if (view === "fleet") {
     paintFleet(state);
+  } else if (view === "history" && state.route.view === "history") {
+    byId("page").innerHTML = historyHtml(state, state.route.project);
   } else if (view === "detail" && state.route.view === "detail") {
     const name = state.route.name;
     const card = state.snapshot?.cards.find((c) => c.name === name);

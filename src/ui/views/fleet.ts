@@ -39,6 +39,7 @@ export function fleetHeaderHtml(state: UiState, nowMs: number): string {
       <h1>OBJECT PERMANENCE</h1>
       <span class="titlebar-actions">
         <button data-rescan ${state.scanning ? "disabled" : ""}>${state.scanning ? "scanning..." : "rescan"}</button>
+        <a href="${esc(routeHash({ view: "history", project: null }))}" class="quiet-link">history</a>
         <a href="${esc(routeHash({ view: "settings" }))}" class="quiet-link">settings</a>
       </span>
     </div>

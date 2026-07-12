@@ -324,6 +324,15 @@ button:disabled {
   color: var(--dim);
 }
 
+.transition {
+  border-bottom: 1px dashed var(--line);
+  padding: 4px 0;
+}
+
+.transition:last-child {
+  border-bottom: none;
+}
+
 .detail-section {
   background: var(--panel);
   border: 1px solid var(--line);

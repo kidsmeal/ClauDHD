@@ -5,6 +5,7 @@
 import "./ui/styles.css";
 import { DEFAULT_CONFIG, parseConfigText, type Config } from "./core/config.js";
 import { gapLabel, sinceLastOpen } from "./core/diff.js";
+import { appendTransitions, computeTransitions, readTransitions } from "./core/history.js";
 import { CONFIG_FILE, loadSnapshot, saveSnapshot } from "./core/persistence.js";
 import { revalidate } from "./core/revalidate.js";
 import { scanFleet, scanOneProject, withCard } from "./core/scan.js";
@@ -19,6 +20,30 @@ if (app == null) throw new Error("#app missing");
 
 let cfg: Config = DEFAULT_CONFIG;
 const deps = { fs: tauriFs, git: tauriGit, clock: tauriClock };
+
+// Every snapshot adoption records flag transitions to the fire-rate log,
+// with the evidence they fired on. Standing state records nothing; only
+// change does, so boot does not inflate the counts.
+function recordTransitions(prev: typeof store.snapshot, next: NonNullable<typeof store.snapshot>): void {
+  if (!isTauri() || prev == null) return;
+  const transitions = computeTransitions(prev, next, Date.now());
+  if (transitions.length === 0) return;
+  void appendTransitions(tauriStore, transitions);
+  if (store.history != null) {
+    update((s) => {
+      s.history = [...(s.history ?? []), ...transitions];
+    });
+  }
+}
+
+async function loadHistoryIfNeeded(): Promise<void> {
+  if (!isTauri()) return;
+  if (store.route.view !== "history" || store.history != null) return;
+  const transitions = await readTransitions(tauriStore);
+  update((s) => {
+    s.history = transitions;
+  });
+}
 
 onPaint(paint);
 initRender(app, { rescan: () => void fullRescan("manual rescan") });
@@ -44,6 +69,7 @@ async function fullRescan(reason: "boot" | "focus" | "poll" | "manual rescan"): 
         s.dataMode = "live scan (tauri)";
         seedExpandedCrit(fresh);
       });
+      recordTransitions(prev, fresh);
     } else {
       const snap = await loadFixtureSnapshot();
       update((s) => {
@@ -91,9 +117,11 @@ function onFsEvent(path: string): void {
       void (async () => {
         const rebuilt = await scanOneProject(deps, cfg, card.path, card.name);
         if (rebuilt == null) return; // project stopped qualifying; next full rescan handles it
+        const prev = store.snapshot;
         update((st) => {
           if (st.snapshot != null) st.snapshot = withCard(st.snapshot, rebuilt, cfg);
         });
+        if (store.snapshot != null) recordTransitions(prev, store.snapshot);
       })();
     }, 800)
   );
@@ -167,9 +195,12 @@ async function bootTauri(): Promise<void> {
   setInterval(() => void fullRescan("poll"), 120_000);
 }
 
+window.addEventListener("hashchange", () => void loadHistoryIfNeeded());
+
 paint();
 if (isTauri()) {
   void bootTauri();
+  void loadHistoryIfNeeded();
 } else {
   void fullRescan("boot");
 }
