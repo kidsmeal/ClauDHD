@@ -28,6 +28,7 @@ function facts(over: Partial<CardFacts>): CardFacts {
     },
     ideas: { total: 3, untriaged: 2, oldestUntriagedDate: "2026-07-01" },
     shipped: { total: 10, lastEntryDate: "2026-07-11" },
+    shippedRecent: [],
     roadmap: { count: 2, topItem: "x" },
     git: {
       branch: "main",

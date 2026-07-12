@@ -6,7 +6,7 @@ import { computeFleetFlags, computeProjectFlags, type CardFacts } from "./flags.
 import { countCommitsSince, readGitFacts, readShelfGit } from "./git.js";
 import type { CursorFacts, FleetSnapshot, ProjectCard, UntrackedRepo } from "./model.js";
 import { parseCheckpoint, checkpointStampMs } from "./parse/checkpoint.js";
-import { parseIdeas, parseRoadmap, parseShipped } from "./parse/counts.js";
+import { parseIdeas, parseRoadmap, parseShipped, parseShippedRecent } from "./parse/counts.js";
 import { parseNow } from "./parse/now.js";
 import { findPlanFiles, parsePlanProgress, parseSentinel } from "./parse/plan.js";
 import { parseStateJson } from "./parse/state.js";
@@ -67,10 +67,10 @@ async function buildCard(deps: ScanDeps, cfg: Config, path: string, name: string
     source === "state.json" && state?.ideas != null
       ? state.ideas
       : parseIdeas(await fs.readText(joinPath(path, "IDEAS.md")));
+  const shippedText = await fs.readText(joinPath(path, "SHIPPED.md"));
   const shipped =
-    source === "state.json" && state?.shipped != null
-      ? state.shipped
-      : parseShipped(await fs.readText(joinPath(path, "SHIPPED.md")));
+    source === "state.json" && state?.shipped != null ? state.shipped : parseShipped(shippedText);
+  const shippedRecent = parseShippedRecent(shippedText);
   const roadmap =
     source === "state.json" && state?.roadmap != null
       ? state.roadmap
@@ -115,6 +115,7 @@ async function buildCard(deps: ScanDeps, cfg: Config, path: string, name: string
     cursor,
     ideas,
     shipped,
+    shippedRecent,
     roadmap,
     git: gitFacts,
     checkpoint,

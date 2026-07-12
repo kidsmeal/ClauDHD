@@ -6,15 +6,15 @@ One active thread at a time. This file is the cursor: what is live, the next phy
 
 _Committed, so it follows your branch: `git checkout` swaps this cursor to that branch's thread._
 
-Last touched: 2026-07-12 (phase 1 SHIPPED: core read layer, 84 tests green, real-fleet acceptance ORACLE PASS; reviewer PASS-WITH-NOTES, all fix-nows applied. user authorized "commit and go until its done", momentum run in progress)
+Last touched: 2026-07-12 (phase 2 SHIPPED: tauri shell + read-only window; 93 tests, cargo builds, real window launched clean, fleet/detail/evidence verified in-browser on a frozen real scan; reviewer PASS-WITH-NOTES, 5 fix-nows applied. momentum run continues)
 
 ## Active thread (only one)
 
-**v1 build, gantry-gated, momentum-authorized. Phase 1 done, phase 2 (window) next.** The grill resolved everything: silent tray watcher (manual start, no autostart), trust-on-open (no push UI, no toasts, no widget), 11 flags + wip-spread with crit/warn/info tiers, evidence-linked everything, capture hotkey Ctrl+Alt+A (the single write), resume launcher templates, NSIS per-user packaging, unwoven render discipline. Vocabulary rule: zero coined terms (checkpoint, never heartbeat). ClauDHD 0.9 shipped same day (state.json contract live). Doc: `design/object_permanence_v1.md`.
+**v1 build, gantry-gated, momentum-authorized ("commit and go until its done").** Contract: `design/object_permanence_v1_reviewed.md` (LOCKED). Plan: `design/object_permanence_v1_reviewed-plan.md`. Phases 1 (core read layer) and 2 (tauri shell + read-only window) are committed; each passed its phase-reviewer gate with fix-nows applied in-commit.
 
 Next physical action:
 
-- [ ] phase 2: tauri shell + read-only window (fleet + detail views over the phase-1 core), then its review gate
+- [ ] phase 3: fs-watch + git poll + focus revalidation + tray residency + snapshot/history persistence + since-last-open diff, then its review gate
 
 Rule: when you finish a step, check it off and write the next single tiny step. Do not start another thread until this one ships or you consciously move it to the Queue.
 

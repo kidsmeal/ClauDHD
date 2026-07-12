@@ -56,6 +56,13 @@ export interface ShippedFacts {
   lastEntryDate: string | null;
 }
 
+// The newest few SHIPPED.md entries for the detail view's feed. Always parsed
+// from the file (state.json carries counts only), newest first.
+export interface ShippedEntry {
+  date: string | null;
+  text: string;
+}
+
 export interface RoadmapFacts {
   count: number;
   topItem: string | null;
@@ -131,6 +138,7 @@ export interface ProjectCard {
   cursor: CursorFacts | null;
   ideas: IdeasFacts | null;
   shipped: ShippedFacts | null;
+  shippedRecent: ShippedEntry[];
   roadmap: RoadmapFacts | null;
   git: GitFacts | null;
   checkpoint: CheckpointFacts | null;

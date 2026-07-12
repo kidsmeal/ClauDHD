@@ -13,6 +13,7 @@ Tauri 2 shell, Vite + vanilla TypeScript frontend, no framework. Test runner is 
 - `src/ui/` store, render, router, views. DOM only here.
 - `src-tauri/` the Rust courier (phase 2+).
 - `scripts/acceptance.ts` live scan of the real fleet, manual hand-check surface.
+- `scripts/snapshot.ts` freezes a real scan to `public/dev-fleet.json` (gitignored) so `npm run dev` renders the UI in a plain browser through `src/adapters/fixture.ts`; provenance labels it "frozen scan", it never masquerades as live.
 - `test/` vitest suites + `test/fixtures/` frozen real-file-derived fixtures.
 
 ## The seam rule

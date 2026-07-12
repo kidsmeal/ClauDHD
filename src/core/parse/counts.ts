@@ -37,6 +37,28 @@ export function parseShipped(text: string | null): ShippedFacts | null {
   return { total, lastEntryDate };
 }
 
+// The newest entries with their ### date headers, for the detail feed.
+// SHIPPED.md is newest-first (state.js takes the FIRST date header as the
+// last entry), so reading top-down collects newest-first too.
+export function parseShippedRecent(text: string | null, limit = 5): { date: string | null; text: string }[] {
+  if (text == null) return [];
+  const out: { date: string | null; text: string }[] = [];
+  let currentDate: string | null = null;
+  for (const line of lines(text)) {
+    const h = line.match(/^###\s+(\d{4}-\d{2}-\d{2})/);
+    if (h && h[1] !== undefined) {
+      currentDate = h[1];
+      continue;
+    }
+    const m = line.match(/^\s*-\s+(\S.*?)\s*$/);
+    if (m && m[1] !== undefined) {
+      out.push({ date: currentDate, text: m[1] });
+      if (out.length >= limit) break;
+    }
+  }
+  return out;
+}
+
 // Body lines of a "## <name>" section, heading excluded, to the next "## ".
 function sectionBody(text: string, headingStartsWith: string): string[] {
   const ls = lines(text);
