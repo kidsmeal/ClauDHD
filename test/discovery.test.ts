@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { mergeConfig } from "../src/core/config.js";
-import { scanFleet } from "../src/core/scan.js";
+import { scanFleet, scanOneProject, withCard } from "../src/core/scan.js";
 import { cannedGit, memFs } from "./helpers.js";
 
 const MARKED_NOW = `# NOW (read me first)
@@ -138,6 +138,30 @@ describe("scanFleet discovery", () => {
     expect(card.cursor?.activeThread).toBe("from state");
     // the NOW.md-only facts still ride along
     expect(card.cursor?.grownSections).toEqual([]);
+  });
+
+  it("scanOneProject rebuilds a single card and withCard reintegrates it", async () => {
+    const fs = memFs({
+      "/root/a/NOW.md": MARKED_NOW,
+      "/root/b/NOW.md": MARKED_NOW,
+    });
+    const snap = await scanFleet({ fs, git, clock }, cfg);
+    expect(snap.cards.length).toBe(2);
+
+    const edited = MARKED_NOW.replace("**a real thread**", "**an edited thread**");
+    const fs2 = memFs({ "/root/a/NOW.md": edited });
+    const rebuilt = await scanOneProject({ fs: fs2, git, clock }, cfg, "/root/a", "a");
+    expect(rebuilt?.cursor?.activeThread).toBe("an edited thread");
+
+    const merged = withCard(snap, rebuilt!, cfg);
+    expect(merged.cards.find((c) => c.name === "a")?.cursor?.activeThread).toBe("an edited thread");
+    expect(merged.cards.find((c) => c.name === "b")?.cursor?.activeThread).toBe("a real thread");
+    expect(merged.cards.length).toBe(2);
+  });
+
+  it("scanOneProject returns null when the project stopped qualifying", async () => {
+    const fs = memFs({ "/root/a/readme.md": "no NOW.md anymore" });
+    expect(await scanOneProject({ fs, git, clock }, cfg, "/root/a", "a")).toBeNull();
   });
 
   it("falls back to the NOW.md parse when state.json is stale", async () => {

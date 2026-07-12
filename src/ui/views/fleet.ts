@@ -2,14 +2,38 @@
 // collapse to one row), the untracked shelf. Layout per the locked mockups.
 
 import type { FleetSnapshot, ProjectCard } from "../../core/model.js";
+import { revalidationLabel } from "../../core/revalidate.js";
 import { routeHash } from "../router.js";
 import type { UiState } from "../store.js";
 import { debtLabel, esc, flagBlock, freshnessDot, relTime, sevBadge, sevCounts } from "./evidence.js";
 
+// "session active: X (checkpoint 2m ago)" when some project's checkpoint is
+// minutes old, else the newest checkpoint stamp. The checkpoint is the fact;
+// the label never claims more than the file shows.
+function sessionLabel(s: FleetSnapshot, nowMs: number): string {
+  let best: { name: string; ms: number } | null = null;
+  for (const c of s.cards) {
+    const ms = c.checkpoint?.mtimeMs ?? null;
+    if (ms != null && (best == null || ms > best.ms)) best = { name: c.name, ms };
+  }
+  if (best == null) return "no checkpoints seen";
+  if (nowMs - best.ms <= 10 * 60_000) return `session active: ${best.name} (checkpoint ${relTime(best.ms, nowMs)})`;
+  return `no session active · last checkpoint ${relTime(best.ms, nowMs)} (${best.name})`;
+}
+
 export function fleetHeaderHtml(state: UiState, nowMs: number): string {
   const s = state.snapshot;
   const scanned = s != null ? new Date(s.scannedAtMs).toLocaleTimeString() : "";
-  const counts = s != null ? `${s.cards.length} projects · ${s.untracked.length} on the shelf` : "";
+  const counts = s != null ? `${s.cards.length} projects · ${s.untracked.length} shelf` : "";
+  const watcherBits: string[] = [];
+  if (s != null) {
+    watcherBits.push(sessionLabel(s, nowMs));
+    if (state.watching && state.watcherStartedMs != null) {
+      watcherBits.push(`watcher up since ${new Date(state.watcherStartedMs).toLocaleTimeString()}`);
+      if (state.lastEventMs != null) watcherBits.push(`last event ${relTime(state.lastEventMs, nowMs)}`);
+      watcherBits.push(revalidationLabel(state.lastRevalidation));
+    }
+  }
   return `
     <div class="titlebar">
       <h1>OBJECT PERMANENCE</h1>
@@ -21,6 +45,28 @@ export function fleetHeaderHtml(state: UiState, nowMs: number): string {
     <div class="provenance">
       ${state.scanError != null ? `<span class="scan-error">${esc(state.scanError)}</span>` : ""}
       ${s == null ? esc(state.dataMode) : `${esc(state.dataMode)} · scanned ${esc(scanned)} · ${esc(counts)}`}
+      ${watcherBits.length > 0 ? `<br>${esc(watcherBits.join(" · "))}` : ""}
+    </div>`;
+}
+
+export function sinceLastOpenHtml(state: UiState): string {
+  const slo = state.sinceLastOpen;
+  if (slo == null) return "";
+  const when = new Date(slo.savedAtMs).toLocaleString();
+  const lines =
+    slo.lines.length === 0
+      ? `<div class="ev-line">nothing changed while you were away</div>`
+      : slo.lines
+          .slice(0, 12)
+          .map(
+            (l) =>
+              `<div class="ev-line"><button class="slo-project" data-nav="${esc(routeHash({ view: "detail", name: l.project }))}">${esc(l.project)}</button> ${esc(l.kind)} ${esc(l.text)}</div>`
+          )
+          .join("") + (slo.lines.length > 12 ? `<div class="ev-line">(+${slo.lines.length - 12} more)</div>` : "");
+  return `
+    <div class="since-open">
+      <div class="shelf-title">SINCE LAST OPEN (${esc(when)}, ${esc(slo.gap)})</div>
+      ${lines}
     </div>`;
 }
 
@@ -125,10 +171,14 @@ export function splitCards(s: FleetSnapshot): { full: ProjectCard[]; quiet: Proj
   return { full, quiet };
 }
 
-export function fleetChromeHtml(state: UiState, nowMs: number): { header: string; banner: string; quiet: string; shelf: string } {
+export function fleetChromeHtml(
+  state: UiState,
+  nowMs: number
+): { header: string; since: string; banner: string; quiet: string; shelf: string } {
   const s = state.snapshot;
   return {
     header: fleetHeaderHtml(state, nowMs),
+    since: sinceLastOpenHtml(state),
     banner: s != null ? bannerHtml(s) : "",
     quiet: s != null ? quietRowHtml(splitCards(s).quiet, nowMs) : "",
     shelf: s != null ? shelfHtml(s) : "",

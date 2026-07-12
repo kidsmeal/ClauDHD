@@ -8,7 +8,7 @@ Tauri 2 shell, Vite + vanilla TypeScript frontend, no framework. Test runner is 
 
 ## Layout
 
-- `src/core/` pure logic, platform-free. Discovery lives inside `scan.ts`; the IDEAS/SHIPPED/ROADMAP count parsers share `parse/counts.ts`; NOW.md, state.json, plans, and checkpoints each have their own `parse/` module; `flags.ts` is the flag engine.
+- `src/core/` pure logic, platform-free. Discovery lives inside `scan.ts`; the IDEAS/SHIPPED/ROADMAP count parsers share `parse/counts.ts`; NOW.md, state.json, plans, and checkpoints each have their own `parse/` module; `flags.ts` is the flag engine; `persistence.ts` (baseline + history through AppStore), `diff.ts` (since-last-open), `revalidate.ts` (focus reconcile) are the memory layer.
 - `src/adapters/` fills the core's ports: `node.ts` (vitest + acceptance), `tauri.ts` (the app).
 - `src/ui/` store, render, router, views. DOM only here.
 - `src-tauri/` the Rust courier (phase 2+).
@@ -18,7 +18,7 @@ Tauri 2 shell, Vite + vanilla TypeScript frontend, no framework. Test runner is 
 
 ## The seam rule
 
-`src/core/` imports nothing from `@tauri-apps/*`, nothing from `node:*`, and touches no globals (`Date.now`, `process`, `fs`). Everything environmental comes through the ports in `src/core/ports.ts` (`GitRunner`, `FileSystem`, `Clock`, `DataDir`). A core module importing an adapter or a platform API is a review FAIL.
+`src/core/` imports nothing from `@tauri-apps/*`, nothing from `node:*`, and touches no globals (`Date.now`, `process`, `fs`). Everything environmental comes through the ports in `src/core/ports.ts` (`GitRunner`, `FileSystem`, `Clock`, `DataDir`, `AppStore`). `AppStore` is the only write port and reaches nothing outside `%APPDATA%\object-permanence` (bare filenames, path shapes refused in the courier). A core module importing an adapter or a platform API is a review FAIL.
 
 ## Render discipline (the unwoven rule)
 

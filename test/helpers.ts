@@ -1,7 +1,7 @@
 // In-memory FileSystem and canned GitRunner for the suites. The fake FS is a
 // flat map of forward-slash paths; directories are implied by their children.
 
-import type { DirEntry, FileSystem, GitRunner } from "../src/core/ports.js";
+import type { AppStore, DirEntry, FileSystem, GitRunner } from "../src/core/ports.js";
 
 export interface MemFile {
   text: string;
@@ -72,3 +72,36 @@ export const deadGit: GitRunner = {
     return null;
   },
 };
+
+// In-memory AppStore for the persistence suites.
+export function memStore(initial: Record<string, string> = {}): AppStore & { files: Map<string, string> } {
+  const files = new Map(Object.entries(initial));
+  return {
+    files,
+    async read(name: string): Promise<string | null> {
+      return files.get(name) ?? null;
+    },
+    async write(name: string, text: string): Promise<boolean> {
+      files.set(name, text);
+      return true;
+    },
+    async append(name: string, line: string): Promise<boolean> {
+      files.set(name, (files.get(name) ?? "") + line + "\n");
+      return true;
+    },
+  };
+}
+
+export function failingStore(): AppStore {
+  return {
+    async read(): Promise<string | null> {
+      return null;
+    },
+    async write(): Promise<boolean> {
+      return false;
+    },
+    async append(): Promise<boolean> {
+      return false;
+    },
+  };
+}

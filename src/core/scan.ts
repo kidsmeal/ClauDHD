@@ -29,6 +29,28 @@ function firstH1(text: string | null): string | null {
   return null;
 }
 
+// Rebuild one project's card (fs events drive this; a full rescan is the
+// poll/focus path). Null when the project no longer qualifies.
+export async function scanOneProject(
+  deps: ScanDeps,
+  cfg: Config,
+  path: string,
+  name: string
+): Promise<ProjectCard | null> {
+  const nowText = await deps.fs.readText(joinPath(path, "NOW.md"));
+  if (nowText == null || !nowText.includes("<!-- claudhd")) return null;
+  return buildCard(deps, cfg, path, name, nowText);
+}
+
+// Swap one card into a snapshot: resort, recompute fleet flags. Returns a new
+// snapshot object (the store paints off identity change per card).
+export function withCard(snapshot: FleetSnapshot, card: ProjectCard, cfg: Config): FleetSnapshot {
+  const cards = snapshot.cards.filter((c) => c.name !== card.name);
+  cards.push(card);
+  cards.sort((a, b) => b.lastActivityMs - a.lastActivityMs);
+  return { ...snapshot, cards, fleetFlags: computeFleetFlags(cards, snapshot.untracked, cfg) };
+}
+
 async function buildCard(deps: ScanDeps, cfg: Config, path: string, name: string, nowText: string): Promise<ProjectCard> {
   const { fs, git } = deps;
   const nowMs = deps.clock.nowMs();

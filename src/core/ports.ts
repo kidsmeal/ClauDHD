@@ -31,6 +31,16 @@ export interface DataDir {
   path(): string;
 }
 
+// The app's own folder is the ONLY place it writes (plus the single capture
+// append in phase 5). Project files stay unreachable through this port: names
+// are bare filenames inside the data dir, never paths.
+export interface AppStore {
+  read(name: string): Promise<string | null>;
+  // Atomic: temp file then rename. False on failure, never a throw.
+  write(name: string, text: string): Promise<boolean>;
+  append(name: string, line: string): Promise<boolean>;
+}
+
 // Forward slashes work on windows everywhere we shell out or read; core code
 // never touches node:path.
 export function joinPath(...parts: string[]): string {

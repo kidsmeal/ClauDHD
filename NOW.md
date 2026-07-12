@@ -6,15 +6,15 @@ One active thread at a time. This file is the cursor: what is live, the next phy
 
 _Committed, so it follows your branch: `git checkout` swaps this cursor to that branch's thread._
 
-Last touched: 2026-07-12 (phase 2 SHIPPED: tauri shell + read-only window; 93 tests, cargo builds, real window launched clean, fleet/detail/evidence verified in-browser on a frozen real scan; reviewer PASS-WITH-NOTES, 5 fix-nows applied. momentum run continues)
+Last touched: 2026-07-12 (phase 3 SHIPPED: watcher + memory. reviewer FAILED round one, correctly: the save-on-every-scan baseline let polls absorb unseen drift. rebuilt on the focus-loss-only model + focus-gain recompute, re-review PASS-WITH-NOTES. NOTE FOR USER: design section 12 carries a [BUILD-SESSION AMENDMENT pending your ratification] on the snapshot pin)
 
 ## Active thread (only one)
 
-**v1 build, gantry-gated, momentum-authorized ("commit and go until its done").** Contract: `design/object_permanence_v1_reviewed.md` (LOCKED). Plan: `design/object_permanence_v1_reviewed-plan.md`. Phases 1 (core read layer) and 2 (tauri shell + read-only window) are committed; each passed its phase-reviewer gate with fix-nows applied in-commit.
+**v1 build, gantry-gated, momentum-authorized ("commit and go until its done").** Contract: `design/object_permanence_v1_reviewed.md` (LOCKED, one pending-ratification amendment in section 12). Plan: `design/object_permanence_v1_reviewed-plan.md`. Phases 1 (core), 2 (window), 3 (watcher + memory) committed, each through its phase-reviewer gate.
 
 Next physical action:
 
-- [ ] phase 3: fs-watch + git poll + focus revalidation + tray residency + snapshot/history persistence + since-last-open diff, then its review gate
+- [ ] phase 4: flag transition history (history.jsonl appends with evidence, fire-rate view), then its review gate
 
 Rule: when you finish a step, check it off and write the next single tiny step. Do not start another thread until this one ships or you consciously move it to the Queue.
 

@@ -1,7 +1,7 @@
 // Tauri adapter: fills the core's ports over the Rust courier's commands.
 
 import { invoke } from "@tauri-apps/api/core";
-import type { Clock, DirEntry, FileSystem, GitRunner } from "../core/ports.js";
+import type { AppStore, Clock, DirEntry, FileSystem, GitRunner } from "../core/ports.js";
 
 export const tauriFs: FileSystem = {
   async readText(path: string): Promise<string | null> {
@@ -27,6 +27,22 @@ export const tauriGit: GitRunner = {
 export const tauriClock: Clock = {
   nowMs: () => Date.now(),
 };
+
+export const tauriStore: AppStore = {
+  async read(name: string): Promise<string | null> {
+    return await invoke<string | null>("store_read", { name });
+  },
+  async write(name: string, text: string): Promise<boolean> {
+    return await invoke<boolean>("store_write", { name, text });
+  },
+  async append(name: string, line: string): Promise<boolean> {
+    return await invoke<boolean>("store_append", { name, line });
+  },
+};
+
+export async function startWatch(paths: string[]): Promise<boolean> {
+  return await invoke<boolean>("watch_start", { paths });
+}
 
 export function isTauri(): boolean {
   return "__TAURI_INTERNALS__" in window;

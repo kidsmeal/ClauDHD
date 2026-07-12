@@ -71,6 +71,7 @@ export function paint(): void {
     if (view === "fleet") {
       root.innerHTML = `
         <div id="chrome"></div>
+        <div id="since"></div>
         <div id="banner"></div>
         <div id="cards"></div>
         <div id="quiet"></div>
@@ -104,6 +105,7 @@ function byId(id: string): HTMLElement {
 function paintFleet(state: UiState): void {
   const chrome = fleetChromeHtml(state, nowMs());
   byId("chrome").innerHTML = chrome.header;
+  byId("since").innerHTML = chrome.since;
   byId("banner").innerHTML = chrome.banner;
   byId("quiet").innerHTML = chrome.quiet;
   byId("shelf").innerHTML = chrome.shelf;
