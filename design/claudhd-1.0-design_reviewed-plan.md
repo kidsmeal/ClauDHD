@@ -67,7 +67,7 @@ Section 7 locks 15 commands and names what is deleted. It does not account for: 
 
 ## Phase 2: state.json schemaVersion 2, with the sentinel folded in
 
-**Status:** pending
+**Status:** committed (reviewed PASS by codex 2026-07-26 on round three; round one caught a live sentinel parser bug, round two caught ambient repo files since declared in the plan header)
 **Goal:** `.now/state.json` becomes the single machine-readable truth, carrying mode, active roadmap id, plan ref, phase and file list alongside today's cursor/ideas/shipped/roadmap/git facts, readable by both v1 and v2 consumers and written without clobbering.
 **Files:**
 - modify `plugins/claudhd/scripts/state.js` (`SCHEMA_VERSION = 2`; add `mode`, `from` (the roadmap-id parent link), `build` (plan ref, phase, files, allow, started, session) and `design` (doc path, resolved/open decision lists) sections; add `readState(nowDir)` that accepts v1 and v2 and returns absent build/design sections as `null`; convert `writeStateAtomic` into a merge-preserving write that reads the existing object, applies only the fields the caller owns, and keeps everything else, all inside `withLock` from `lock.js`)

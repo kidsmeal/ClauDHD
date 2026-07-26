@@ -2,19 +2,41 @@
 /*
  * ClauDHD machine-readable state - the .now/state.json contract.
  *
- * checkpoint.js (the Stop hook) writes this alongside last-session.md so an
- * external watcher (a dashboard, another tool) gets a clean parse of the cursor
- * without reading freeform NOW.md prose. FACTS ONLY: counts, names, dates. No
- * thresholds and no judgments - consumers derive their own flags from these
- * numbers. Missing source files become null sections, never errors.
+ * checkpoint.js (the Stop hook) writes the cursor/ideas/shipped/roadmap/git
+ * facts here so an external watcher (a dashboard, another tool) gets a clean
+ * parse without reading freeform NOW.md prose. FACTS ONLY: counts, names,
+ * dates. No thresholds and no judgments - consumers derive their own flags
+ * from these numbers. Missing source files become null sections, never errors.
+ *
+ * schemaVersion 2 adds four fields alongside those facts, each owned by a
+ * different writer: `mode` and `from` (the roadmap-id parent link) get real
+ * writers in phases 5 and 3 respectively; `design` (doc path, resolved/open
+ * decision lists) lands in a later phase too; `build` (plan ref, phase, files,
+ * allow, started, session - Gantry's sentinel, folded in) gets its writer in
+ * THIS phase (sentinel.js) and its readers in this phase too (both guards, via
+ * sentinel-core.js's readSentinel). All four are first-class in the schema as
+ * of this phase even though only `build` has a real writer yet: a v1 file (no
+ * mode/from/build/design keys) and a v2 file both read cleanly through
+ * readState(), which normalizes each absent field to null rather than
+ * undefined, so phase 3/5 write into a schema that is already complete rather
+ * than one they have to finish designing.
  *
  * buildState is a pure function (strings + git facts in, object out) so the whole
- * contract is testable without spawning the hook. writeStateAtomic does the temp
- * file + rename so a watcher reading mid-write never sees a half-written file.
+ * contract is testable without spawning the hook. It only ever produces the
+ * facts sections above (schemaVersion/generatedAt/branch/cursor/ideas/shipped/
+ * roadmap/git) - never build/design - so a caller that writes its output
+ * through writeStateAtomic can never clobber another writer's section.
+ *
+ * writeStateAtomic is merge-preserving: every write reads the file that is
+ * there, replaces only the keys the caller names as its own, and leaves every
+ * other top-level key untouched, all inside withLock so two writers (the Stop
+ * hook, sentinel.js, and later the reconcile and the write vocabulary) can
+ * never race each other into a half-written or clobbered file. The atomic
+ * temp-file + rename (and its Windows EPERM retry) happens inside the lock.
  */
 const fs = require("fs");
 const path = require("path");
-const { sleep } = require("./lock.js");
+const { withLock, sleep } = require("./lock.js");
 const { capText, STATE_TEXT_CAP } = require("./constants.js");
 const {
   activeThread,
@@ -27,7 +49,7 @@ const {
 
 // Bump only on a BREAKING change to an existing field (rename, removed field,
 // changed meaning). Additive fields do not bump: consumers ignore unknown keys.
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 function capOrNull(s) {
   if (s == null || s === "") return null;
@@ -143,34 +165,91 @@ function buildState({ generatedAt, branch, now, ideas, shipped, roadmap, git }) 
   };
 }
 
-// Write obj to <nowDir>/state.json atomically: a full temp file then a rename, so
-// a file watcher never observes a partial write. Windows can throw EPERM/EACCES
-// transiently if the watcher holds the destination open at the instant of rename;
-// retry briefly, then give up (the next Stop rewrites it) and remove the temp so
-// it can't accumulate. Throws on a hard failure - the Stop hook swallows it.
-function writeStateAtomic(nowDir, obj) {
-  fs.mkdirSync(nowDir, { recursive: true });
-  const dest = path.join(nowDir, "state.json");
-  const tmp = path.join(nowDir, "state.json." + process.pid + ".tmp");
-  fs.writeFileSync(tmp, JSON.stringify(obj, null, 2) + "\n");
-  const deadline = Date.now() + 2000;
-  for (;;) {
-    try { fs.renameSync(tmp, dest); return; }
-    catch (e) {
-      if ((e.code === "EPERM" || e.code === "EACCES" || e.code === "EEXIST") && Date.now() < deadline) {
-        sleep(50);
-        continue;
-      }
-      try { fs.unlinkSync(tmp); } catch { /* ignore */ }
-      throw e;
-    }
+// The lock every state.json writer (checkpoint's Stop hook, sentinel.js, and
+// later the reconcile and the write vocabulary) must go through - one lock
+// dir per project, sharing lock.js's mkdir-is-atomic mutex. Exported so a test
+// can hold the exact same lock (e.g. via tools/hold-lock.js) to prove two
+// writers serialize rather than race.
+function stateLockPath(nowDir) {
+  return path.join(nowDir, "state.lock");
+}
+
+// Read <nowDir>/state.json and normalize it for a consumer that must accept
+// both schema v1 and v2: an absent or unreadable file returns null (there is
+// no state yet - not an error); a parsed v1 file (no mode/from/build/design
+// keys) comes back with all four added as null rather than undefined, so a v1
+// and a v2 file are indistinguishable to a reader that only cares about
+// presence. Never throws.
+function readState(nowDir) {
+  try {
+    const raw = fs.readFileSync(path.join(nowDir, "state.json"), "utf8");
+    const obj = JSON.parse(raw);
+    if (!obj || typeof obj !== "object") return null;
+    return {
+      ...obj,
+      mode: obj.mode != null ? obj.mode : null,
+      from: obj.from != null ? obj.from : null,
+      build: obj.build != null ? obj.build : null,
+      design: obj.design != null ? obj.design : null,
+    };
+  } catch {
+    return null;
   }
+}
+
+// Merge-preserving write to <nowDir>/state.json, serialized by stateLockPath's
+// lock so two writers can never observe or clobber each other's half of the
+// file. `ownedKeys` names exactly the top-level keys this call is allowed to
+// set (defaulting to patch's own keys when omitted); every other existing
+// top-level key - including sections this caller has never heard of - passes
+// through unchanged. schemaVersion is always stamped to the current
+// SCHEMA_VERSION regardless of what the caller passed.
+//
+// The write itself is the same atomic temp-file + rename as before: a full
+// temp file then a rename, so a reader never observes a partial write.
+// Windows can throw EPERM/EACCES transiently if a watcher holds the
+// destination open at the instant of rename; retry briefly, then give up and
+// remove the temp so it can't accumulate. Throws on a hard failure - callers
+// that must never fail a caller-visible action (the Stop hook) swallow it.
+function writeStateAtomic(nowDir, patch, ownedKeys) {
+  return withLock(stateLockPath(nowDir), () => {
+    fs.mkdirSync(nowDir, { recursive: true });
+    const dest = path.join(nowDir, "state.json");
+
+    let existing = {};
+    try {
+      const parsed = JSON.parse(fs.readFileSync(dest, "utf8"));
+      if (parsed && typeof parsed === "object") existing = parsed;
+    } catch { /* absent or malformed - start from an empty object */ }
+
+    const keys = Array.isArray(ownedKeys) ? ownedKeys : Object.keys(patch || {});
+    const merged = { ...existing };
+    for (const k of keys) merged[k] = patch ? patch[k] : undefined;
+    merged.schemaVersion = SCHEMA_VERSION;
+
+    const tmp = path.join(nowDir, "state.json." + process.pid + ".tmp");
+    fs.writeFileSync(tmp, JSON.stringify(merged, null, 2) + "\n");
+    const deadline = Date.now() + 2000;
+    for (;;) {
+      try { fs.renameSync(tmp, dest); return merged; }
+      catch (e) {
+        if ((e.code === "EPERM" || e.code === "EACCES" || e.code === "EEXIST") && Date.now() < deadline) {
+          sleep(50);
+          continue;
+        }
+        try { fs.unlinkSync(tmp); } catch { /* ignore */ }
+        throw e;
+      }
+    }
+  });
 }
 
 module.exports = {
   SCHEMA_VERSION,
   buildState,
   writeStateAtomic,
+  readState,
+  stateLockPath,
   // exported for focused unit tests
   cursorFacts,
   ideasFacts,

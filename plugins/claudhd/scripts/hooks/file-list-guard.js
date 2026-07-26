@@ -26,7 +26,7 @@ function deny(phase) {
   const reason =
     "outside phase " + phase + "'s file list. report this as scope drift, or amend " +
     "the plan and re-run /claudhd:build to widen the phase. " +
-    "(to clear enforcement by hand: delete .gantry/active-phase.json)";
+    "(to clear enforcement by hand: run `node sentinel.js clear`)";
   process.stdout.write(
     JSON.stringify({
       hookSpecificOutput: {

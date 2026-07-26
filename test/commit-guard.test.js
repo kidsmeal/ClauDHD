@@ -16,6 +16,8 @@ function write(dir, rel, content) {
   fs.writeFileSync(p, content);
 }
 
+// A fixture sentinel in the `build` section of .now/state.json (schema v2;
+// Gantry's sentinel folded in).
 function writeSentinel(dir, overrides) {
   const base = {
     plan: "docs/plan.md",
@@ -26,7 +28,7 @@ function writeSentinel(dir, overrides) {
     session: "session-test-123",
   };
   const data = Object.assign({}, base, overrides);
-  write(dir, ".gantry/active-phase.json", JSON.stringify(data));
+  write(dir, ".now/state.json", JSON.stringify({ schemaVersion: 2, build: data }));
   return data;
 }
 

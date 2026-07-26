@@ -31,7 +31,7 @@ function deny(phase) {
   const reason =
     "ClauDHD holds the commit gate. phase " + phase + " is mid-build and not yet " +
     "reviewed. finish /claudhd:review and commit at the gate. " +
-    "(to clear: delete .gantry/active-phase.json)";
+    "(to clear: run `node sentinel.js clear`)";
   process.stdout.write(
     JSON.stringify({
       hookSpecificOutput: {

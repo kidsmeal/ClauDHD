@@ -18,6 +18,10 @@ function write(dir, rel, content) {
   fs.mkdirSync(path.dirname(p), { recursive: true });
   fs.writeFileSync(p, content);
 }
+// The sentinel now lives in the `build` section of .now/state.json (schema
+// v2; Gantry's sentinel folded in). Writing it here directly (rather than via
+// the legacy .gantry/active-phase.json path) exercises the current, primary
+// location; the one-shot legacy import gets its own dedicated test below.
 function makeSentinel(dir, overrides) {
   const now = new Date();
   const base = {
@@ -29,7 +33,7 @@ function makeSentinel(dir, overrides) {
     session: "session-abc",
   };
   const data = Object.assign({}, base, overrides);
-  write(dir, ".gantry/active-phase.json", JSON.stringify(data));
+  write(dir, ".now/state.json", JSON.stringify({ schemaVersion: 2, build: data }));
   return data;
 }
 
@@ -46,9 +50,59 @@ test("readSentinel returns null when sentinel file is absent", () => {
 test("readSentinel returns null for malformed JSON without throwing", () => {
   const dir = mk();
   try {
-    write(dir, ".gantry/active-phase.json", "{ not valid json !!!");
+    write(dir, ".now/state.json", "{ not valid json !!!");
     const result = core.readSentinel(dir);
     assert.equal(result, null);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// --- one-shot legacy import (Gantry's .gantry/active-phase.json) ---
+
+test("readSentinel imports a legacy .gantry/active-phase.json into state.json's build section on first read, then removes it", () => {
+  const dir = mk();
+  try {
+    const legacy = {
+      plan: "docs/plan.md",
+      phase: 4,
+      files: ["src/legacy.js"],
+      allow: ["docs/plan.md"],
+      started: new Date().toISOString(),
+      session: "legacy-session",
+    };
+    write(dir, ".gantry/active-phase.json", JSON.stringify(legacy));
+    assert.ok(!fs.existsSync(path.join(dir, ".now", "state.json")), "no state.json before the first read");
+
+    const result = core.readSentinel(dir);
+    assert.deepEqual(result, legacy, "first read returns the imported legacy sentinel");
+
+    assert.ok(!fs.existsSync(path.join(dir, ".gantry", "active-phase.json")),
+      "the legacy file must be removed after import");
+
+    const state = JSON.parse(fs.readFileSync(path.join(dir, ".now", "state.json"), "utf8"));
+    assert.deepEqual(state.build, legacy, "the legacy sentinel is persisted into state.json's build section");
+    assert.equal(state.schemaVersion, 2);
+
+    // Subsequent reads see state.json only - the legacy file is already gone,
+    // so this also proves no code path re-reads it once it has been imported.
+    const second = core.readSentinel(dir);
+    assert.deepEqual(second, legacy, "a second read still returns the sentinel, now from state.json alone");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("readSentinel does not import when state.json already carries a build section", () => {
+  const dir = mk();
+  try {
+    const current = makeSentinel(dir, { phase: 9 });
+    // A stale legacy file left behind must never override the current build
+    // section once state.json already owns one.
+    write(dir, ".gantry/active-phase.json", JSON.stringify({
+      plan: "docs/plan.md", phase: 1, files: [], allow: [],
+      started: new Date().toISOString(), session: "stale",
+    }));
+    const result = core.readSentinel(dir);
+    assert.equal(result.phase, 9, "the existing build section wins over a stray legacy file");
+    assert.ok(fs.existsSync(path.join(dir, ".gantry", "active-phase.json")),
+      "a legacy file is only ever consumed when state.json has no build section");
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 

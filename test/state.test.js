@@ -198,6 +198,28 @@ test("buildState caps free-text fields so a huge source can't bloat the snapshot
   assert.ok(state.git.lastCommitMsg.length <= STATE_TEXT_CAP, "commit subject capped");
 });
 
+test("writeStateAtomic only replaces the keys named in ownedKeys, leaving every other top-level key untouched", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "claudhd-state-own-"));
+  try {
+    const nowDir = path.join(dir, ".now");
+    // First writer: the facts a Stop hook owns.
+    writeStateAtomic(
+      nowDir,
+      { schemaVersion: 1, cursor: { activeThread: "a" }, ideas: { total: 1 } },
+      ["schemaVersion", "cursor", "ideas"]
+    );
+    // Second writer: names only "build" as its own key.
+    writeStateAtomic(nowDir, { build: { phase: 2 } }, ["build"]);
+
+    const dest = path.join(nowDir, "state.json");
+    const parsed = JSON.parse(fs.readFileSync(dest, "utf8"));
+    assert.deepEqual(parsed.cursor, { activeThread: "a" }, "the first writer's cursor section survives the second write untouched");
+    assert.deepEqual(parsed.ideas, { total: 1 }, "the first writer's ideas section survives the second write untouched");
+    assert.deepEqual(parsed.build, { phase: 2 }, "the second writer's own key is applied");
+    assert.equal(parsed.schemaVersion, SCHEMA_VERSION, "schemaVersion is always stamped to the current version");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("writeStateAtomic writes valid JSON and leaves no temp file behind", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "claudhd-state-"));
   try {

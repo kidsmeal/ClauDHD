@@ -69,7 +69,7 @@ test("state.json is written alongside the breadcrumb with valid facts", () => {
     const statePath = path.join(dir, ".now", "state.json");
     assert.ok(exists(dir, path.join(".now", "state.json")), "state.json should exist");
     const state = JSON.parse(fs.readFileSync(statePath, "utf8"));
-    assert.equal(state.schemaVersion, 1);
+    assert.equal(state.schemaVersion, 2);
     assert.match(state.generatedAt, /^\d{4}-\d{2}-\d{2}T.*Z$/, "generatedAt is an ISO 8601 timestamp");
     assert.equal(state.branch, "main");
     assert.equal(state.cursor.activeThread, "the active thread");
@@ -111,6 +111,31 @@ test("state.json reflects IDEAS/SHIPPED/ROADMAP when present", () => {
     assert.equal(state.shipped.lastEntryDate, "2026-07-08");
     assert.equal(state.roadmap.count, 1);
     assert.equal(state.roadmap.topItem, "a committed intent - done: y");
+  } finally { cleanup(dir); }
+});
+
+test("a Stop hook run never erases an existing build section (merge, not replace)", () => {
+  const { dir, git } = makeRepo();
+  try {
+    optIn(dir, git, "thread");
+    run(dir, "checkpoint.js"); // first Stop: creates state.json, no build section yet
+    const statePath = path.join(dir, ".now", "state.json");
+    const before = JSON.parse(fs.readFileSync(statePath, "utf8"));
+
+    // Simulate a phase sentinel written between two Stops (what sentinel.js
+    // write does via the merge-preserving writer, reproduced here directly so
+    // this test does not depend on sentinel.js's plan-parsing machinery).
+    const build = {
+      plan: "docs/plan.md", phase: 2, files: ["a.js"], allow: [],
+      started: new Date().toISOString(), session: "s",
+    };
+    fs.writeFileSync(statePath, JSON.stringify({ ...before, build }, null, 2) + "\n");
+
+    const r = run(dir, "checkpoint.js"); // second Stop, mid-phase
+    assert.equal(r.status, 0, r.stderr);
+    const after = JSON.parse(fs.readFileSync(statePath, "utf8"));
+    assert.deepEqual(after.build, build, "the Stop hook must not erase the build section written between two Stops");
+    assert.equal(after.cursor.activeThread, "thread", "cursor facts are still refreshed normally");
   } finally { cleanup(dir); }
 });
 

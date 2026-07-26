@@ -16,7 +16,8 @@ function write(dir, rel, content) {
   fs.writeFileSync(p, content);
 }
 
-// Write a fixture sentinel under dir/.gantry/active-phase.json.
+// Write a fixture sentinel into the `build` section of .now/state.json
+// (schema v2; Gantry's sentinel folded in).
 function writeSentinel(dir, overrides) {
   const base = {
     plan: "docs/plan.md",
@@ -28,7 +29,7 @@ function writeSentinel(dir, overrides) {
     session: "session-test-123",
   };
   const data = Object.assign({}, base, overrides);
-  write(dir, ".gantry/active-phase.json", JSON.stringify(data));
+  write(dir, ".now/state.json", JSON.stringify({ schemaVersion: 2, build: data }));
   return data;
 }
 
@@ -202,8 +203,8 @@ test("file-list-guard: fail-open (exit 0) for malformed sentinel JSON", () => {
   const dir = mk();
   try {
     writeEnabled(dir);
-    // Write a malformed sentinel
-    write(dir, ".gantry/active-phase.json", "{ broken json");
+    // Write a malformed state.json (the sentinel's home since schema v2).
+    write(dir, ".now/state.json", "{ broken json");
     const absPath = path.join(dir, "src", "other.js");
     const r = runGuard(dir, editPayload(dir, absPath));
     assert.equal(r.status, 0, "exit code must be 0 for malformed sentinel\nstderr: " + r.stderr);

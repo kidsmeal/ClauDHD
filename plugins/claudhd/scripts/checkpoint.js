@@ -48,6 +48,15 @@ function safeBranch(b) {
 const { activeThread } = require("./nowfile.js");
 const { buildState, writeStateAtomic } = require("./state.js");
 
+// The Stop hook owns exactly the facts buildState() computes - never the
+// build/design sections other writers (sentinel.js, and later the reconcile)
+// own. Naming the keys explicitly, rather than relying on buildState()'s
+// current shape, means a future field added to buildState() can't silently
+// start clobbering someone else's section through this call site.
+const STOP_HOOK_OWNED_KEYS = [
+  "schemaVersion", "generatedAt", "branch", "cursor", "ideas", "shipped", "roadmap", "git",
+];
+
 function readOrNull(p) {
   try { return fs.existsSync(p) ? fs.readFileSync(p, "utf8") : null; } catch { return null; }
 }
@@ -138,7 +147,7 @@ ${recent}
         lastCommitMsg: git(["log", "-1", "--format=%s"]) || null,
       },
     });
-    writeStateAtomic(NOW_DIR, snapshot);
+    writeStateAtomic(NOW_DIR, snapshot, STOP_HOOK_OWNED_KEYS);
   } catch { /* state.json is best-effort; the breadcrumb already landed */ }
 } catch {
   // never fail the hook

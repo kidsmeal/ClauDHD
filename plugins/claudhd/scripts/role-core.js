@@ -435,8 +435,10 @@ function buildInvocation(descriptor, opts) {
 // --settings. This makes a headless `claude -p` implementer enforce the
 // file-list and commit guards explicitly, without depending on plugin hook
 // auto-load in a nested session. The guards themselves fail open unless
-// .gantry/enabled and a fresh sentinel are present, so injecting them is inert
-// when enforcement is not opted in.
+// .gantry/enabled is set and a fresh sentinel is present in the `build`
+// section of .now/state.json (schema v2; a legacy .gantry/active-phase.json
+// is imported into it once, on first read - see sentinel-core.js), so
+// injecting them is inert when enforcement is not opted in.
 function buildGuardSettings(fileListGuardPath, commitGuardPath) {
   return {
     hooks: {

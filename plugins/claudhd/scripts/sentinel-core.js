@@ -33,16 +33,52 @@ const FAIL_OPEN = Symbol("FAIL_OPEN");
 // Staleness threshold: 6 hours in milliseconds.
 const STALE_MS = 6 * 60 * 60 * 1000;
 
-// Read and parse .gantry/active-phase.json from the given root directory.
-// Returns null when the file is absent or contains malformed JSON. Never throws.
+// Read the active sentinel: the `build` section of .now/state.json (schema v2;
+// Gantry's sentinel folded in). Returns null when state.json is absent, its
+// build section is absent/null, or the file is malformed. Never throws.
+//
+// One-shot legacy migration: if the build section is absent AND a legacy
+// .gantry/active-phase.json exists (a project that never re-ran /claudhd:build
+// since upgrading), import it into state.json's build section, delete the
+// legacy file, and return the imported value - so the very read that would
+// otherwise see "no sentinel" still enforces against the phase that was
+// actually in flight. Every read after the first sees state.json only; no
+// code path reads the legacy file again once it is gone.
 function readSentinel(root) {
+  const nowDir = path.join(root, ".now");
+
+  let build = null;
   try {
-    const p = path.join(root, ".gantry", "active-phase.json");
-    const raw = fs.readFileSync(p, "utf8");
-    return JSON.parse(raw);
+    const raw = fs.readFileSync(path.join(nowDir, "state.json"), "utf8");
+    const state = JSON.parse(raw);
+    if (state && typeof state === "object" && state.build != null) build = state.build;
   } catch {
-    return null;
+    // state.json absent or malformed - fall through to the legacy check below.
   }
+  if (build != null) return build;
+
+  const legacyPath = path.join(root, ".gantry", "active-phase.json");
+  let legacy = null;
+  try {
+    legacy = JSON.parse(fs.readFileSync(legacyPath, "utf8"));
+  } catch {
+    return null; // no legacy file, or it is malformed - nothing to import.
+  }
+  if (legacy == null || typeof legacy !== "object") return null;
+
+  try {
+    // Lazy require: state.js requires nowfile.js/lock.js/constants.js only, so
+    // this has no cycle back into sentinel-core.js; kept lazy anyway so a
+    // future refactor can't quietly introduce one without this file noticing.
+    const { writeStateAtomic } = require("./state.js");
+    writeStateAtomic(nowDir, { build: legacy }, ["build"]);
+  } catch {
+    // Import is best-effort: even if the write fails, still enforce against
+    // the legacy value for this read rather than fail open.
+  }
+  try { fs.unlinkSync(legacyPath); } catch { /* ignore */ }
+
+  return legacy;
 }
 
 // Decide whether a sentinel is stale. The rule is AND: both the session must

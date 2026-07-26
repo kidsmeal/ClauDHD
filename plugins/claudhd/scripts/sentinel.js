@@ -1,16 +1,19 @@
 #!/usr/bin/env node
 /*
- * sentinel.js - write, clear, and append to .gantry/active-phase.json.
+ * sentinel.js - write, clear, and append to the `build` section of
+ * .now/state.json (schema v2; Gantry's sentinel folded in).
  *
  * Subcommands:
  *   write <plan-path> <phase-number> [session-id]
  *       Read the named phase's Files list from the plan file, compute the
  *       allow-list (plan path + two scaffolded audit docs at docs/ or root +
  *       ROADMAP.md if present), stamp started (ISO) and session, and write the
- *       sentinel via fs. Overwrites any prior sentinel.
+ *       sentinel into state.json's build section. Overwrites any prior
+ *       sentinel.
  *
  *   clear
- *       Remove .gantry/active-phase.json. No-op (no throw) when absent.
+ *       Set the build section back to null. No-op (no throw) when already
+ *       absent.
  *
  *   add-files <path> [<path>...]
  *       Append one or more paths to the active sentinel's files list,
@@ -22,6 +25,10 @@
  * Edit|Write|MultiEdit (not Bash), and the commit-guard only denies git
  * commit/push, so a `node sentinel.js` Bash call passes both guards untouched.
  *
+ * Every write goes through state.js's merge-preserving, locked writeStateAtomic,
+ * naming `build` as the only key this script owns, so a Stop hook checkpoint
+ * racing a sentinel write can never clobber the other's section.
+ *
  * Path normalization reuses sentinel-core.js so the write side and read side
  * (the guards) cannot drift on path interpretation.
  */
@@ -29,14 +36,40 @@
 const fs = require("fs");
 const path = require("path");
 
-const { resolveRoot, normalize } = require("./sentinel-core.js");
+const { resolveRoot, normalize, readSentinel } = require("./sentinel-core.js");
+const { writeStateAtomic } = require("./state.js");
 
 const ROOT = resolveRoot(process.env);
-const SENTINEL_PATH = path.join(ROOT, ".gantry", "active-phase.json");
+const NOW_DIR = path.join(ROOT, ".now");
 
 // ---------------------------------------------------------------------------
 // Plan parsing
 // ---------------------------------------------------------------------------
+
+// Extract the LEADING run of backtick-quoted paths from a bullet line: the
+// first backtick-quoted token, plus every subsequent one that is separated
+// from its predecessor by nothing but a comma and whitespace (", "). The run
+// stops at the first gap that is not exactly ", " - which is exactly what
+// separates a bullet's file list ("- modify `a.js`, `b.js`, `c.js`") from a
+// trailing parenthetical description that happens to contain its own
+// backtick-quoted identifiers ("- modify `x.js` (`SOME_CONST`; add `helper`)"
+// must yield only `x.js`, not SOME_CONST or helper).
+function extractLeadingBacktickRun(line) {
+  const tokens = [];
+  const re = /`([^`]+)`/g;
+  let m;
+  while ((m = re.exec(line)) !== null) {
+    tokens.push({ text: m[1], start: m.index, end: m.index + m[0].length });
+  }
+  if (tokens.length === 0) return [];
+  const run = [tokens[0].text];
+  for (let i = 1; i < tokens.length; i++) {
+    const between = line.slice(tokens[i - 1].end, tokens[i].start);
+    if (!/^,\s*$/.test(between)) break;
+    run.push(tokens[i].text);
+  }
+  return run;
+}
 
 // Parse the Files: list for a given phase number from plan text.
 // Returns an array of repo-relative POSIX paths, in order.
@@ -50,11 +83,15 @@ const SENTINEL_PATH = path.join(ROOT, ".gantry", "active-phase.json");
 //     **Files:**
 //     - create `path/to/file.js` (optional description)
 //     - modify `path/to/other.js`: optional description
+//     - modify `path/one.js`, `path/two.js` (both changed together)
 //
-// In both cases the first backtick-quoted token on each relevant line is a
-// file path. The inline form is extracted from the **Files:** line itself;
-// the bullet form is extracted from subsequent `- ` lines until the next
-// bold heading (**...) or ## heading.
+// The inline form is extracted from the **Files:** line itself (every
+// backtick-quoted token on that line is a path). The bullet form is extracted
+// from subsequent `- ` lines until the next bold heading (**...) or ## heading:
+// each bullet contributes its LEADING run of comma-separated backtick-quoted
+// paths (see extractLeadingBacktickRun), so a multi-file bullet contributes
+// every file it names, while backtick-quoted identifiers in a trailing
+// description (constants, function names, section names) are not swept in.
 //
 // Returns an empty array if the phase or Files section is not found.
 // Callers MUST treat an empty return as a fatal error (fail-open; do not
@@ -94,12 +131,13 @@ function parsePhaseFiles(planText, phaseNumber) {
   }
 
   // 3b. BULLET format: collect `- ` lines that follow until the next bold
-  //     heading or ## heading, extracting the FIRST backtick-quoted token.
+  //     heading or ## heading, extracting each bullet's leading run of
+  //     comma-separated backtick-quoted paths (every file the bullet names).
   for (let i = filesIdx + 1; i < lines.length; i++) {
     const line = lines[i];
     if (nextSectionRe.test(line)) break;
-    const bm = line.match(/^-\s.*?`([^`]+)`/);
-    if (bm) files.push(bm[1]);
+    if (!/^-\s/.test(line)) continue;
+    for (const f of extractLeadingBacktickRun(line)) files.push(f);
   }
 
   return files;
@@ -224,8 +262,7 @@ function cmdWrite(args) {
   };
 
   try {
-    fs.mkdirSync(path.join(ROOT, ".gantry"), { recursive: true });
-    fs.writeFileSync(SENTINEL_PATH, JSON.stringify(sentinel, null, 2) + "\n", "utf8");
+    writeStateAtomic(NOW_DIR, { build: sentinel }, ["build"]);
   } catch (e) {
     console.error("sentinel.js write: cannot write sentinel: " + e.message);
     process.exit(1);
@@ -235,16 +272,20 @@ function cmdWrite(args) {
 }
 
 function cmdClear() {
+  // readSentinel also performs the one-shot legacy import (see sentinel-core.js),
+  // so a clear on a project that never re-ran /claudhd:build since upgrading
+  // still imports-then-clears the legacy sentinel rather than leaving it
+  // stranded on disk.
+  let current;
+  try { current = readSentinel(ROOT); } catch { current = null; }
+  if (current == null) return; // no-op for an already-absent sentinel - exit 0 silently.
+
   try {
-    fs.unlinkSync(SENTINEL_PATH);
-    console.log("sentinel.js: cleared active-phase.json");
+    writeStateAtomic(NOW_DIR, { build: null }, ["build"]);
+    console.log("sentinel.js: cleared the active phase");
   } catch (e) {
-    // ENOENT means the file was already absent - that is the desired state.
-    if (e.code !== "ENOENT") {
-      console.error("sentinel.js clear: unexpected error: " + e.message);
-      process.exit(1);
-    }
-    // No-op for absent sentinel - exit 0 silently.
+    console.error("sentinel.js clear: unexpected error: " + e.message);
+    process.exit(1);
   }
 }
 
@@ -257,8 +298,8 @@ function cmdAddFiles(args) {
   // Read the active sentinel; no-op if absent.
   let sentinel;
   try {
-    const raw = fs.readFileSync(SENTINEL_PATH, "utf8");
-    sentinel = JSON.parse(raw);
+    sentinel = readSentinel(ROOT);
+    if (sentinel == null) return;
   } catch {
     // Absent or malformed - no-op.
     return;
@@ -276,7 +317,7 @@ function cmdAddFiles(args) {
 
   if (added > 0) {
     try {
-      fs.writeFileSync(SENTINEL_PATH, JSON.stringify(sentinel, null, 2) + "\n", "utf8");
+      writeStateAtomic(NOW_DIR, { build: sentinel }, ["build"]);
       console.log("sentinel.js: added " + added + " path(s) to sentinel files");
     } catch (e) {
       console.error("sentinel.js add-files: cannot write sentinel: " + e.message);
