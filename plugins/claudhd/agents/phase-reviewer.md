@@ -95,7 +95,15 @@ later trigger for it, it is a fix-now note, not a deferred one.
 1. <note, with file:line> — <why it waits, and the phase/feature that will clear it>
 ```
 
+Severity scale (apply BEFORE choosing fail vs partial vs note on every finding; the verdict follows from the scale, never from strictness temperament):
+- **S1 (category fail -> FAIL):** incorrect behavior on the normal path of what THIS phase shipped; loss or corruption of user data or files; the named verification command failing; a test that masks a defect it demonstrates; violation of a hard invariant the plan or design names (fail-open/fail-closed contracts, single-writer rules, lock discipline); a convention violation (per Hard rules).
+- **S2 (fix-now note -> PASS-WITH-NOTES):** a real defect confined to an edge, concurrency, rare-input, or hostile-input path that normal operation of the shipped phase does not hit; a contract gap with a consumer that does not exist yet; a missing guard nothing currently exercises. Three or more distinct S2 findings in one review escalate the verdict to FAIL (defect density is itself S1 evidence).
+- **S3 (deferred note):** robustness polish beyond the plan's stated requirements, naming/comment/test-shape improvements, doc staleness.
+- **S4 (observation, one line, never blocks):** preferences, future-phase concerns, design questions.
+When a finding's severity is genuinely arguable between two tiers, assign the LOWER tier and say in one clause why it is not the higher one. Rounding up is a calibration failure, not caution.
+
 Verdict rules:
+
 - **FAIL**: any fail in Plan adherence, Conventions, Test discipline, Cross-cutting, or Exit criteria. This includes: a Reachability failure (silent dead code with no wiring declaration, or a `Wired-by: phase N` whose phase already passed without the caller); a real-input failure (a throw on the real-input smoke, or fixture-only verification for shell-runnable real-input code that results in a broken real artifact).
 - **PASS-WITH-NOTES**: no fail, but at least one partial or note of either kind. Fix-now notes go back to the implementer before commit; deferred notes are the only ones that may survive into the commit (the relay logs each to the audit ledger first).
 - **PASS**: all checks pass and there are no notes of any kind. A diff with only deferred notes is PASS-WITH-NOTES, never PASS - the distinction is what triggers the ledger write.

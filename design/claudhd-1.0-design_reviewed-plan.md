@@ -208,6 +208,10 @@ Section 7 locks 15 commands and names what is deleted. It does not account for: 
 
 **No generated code, no database, no build step.** The plugin has zero dependencies and ships as source; nothing needs regeneration after a change.
 
+## Review policy (set by the user 2026-07-26, after phase 3 ran eight rounds)
+
+The phase-reviewer prompt now carries a severity scale (S1 category-fail -> FAIL; S2 real-but-edge defect -> fix-now note on PASS-WITH-NOTES, three distinct S2s escalate to FAIL; S3 polish -> deferred note; S4 observation). Ambiguous severity resolves DOWN with a one-clause justification. Review rounds are not capped while S1 findings exist, but after 5 FAIL rounds on one phase the loop stops and the remaining findings go to the user with the round history: fix, defer, or overrule is his call. The re-review context mechanism (prior rounds injected so applied fixes are settled) is being built in the gantry repo and ports here when it lands, as does the severity scale (currently live in this repo's agents/phase-reviewer.md and the installed plugin cache; the gantry-repo mirror waits for the in-flight review-context task to finish to avoid racing that tree).
+
 ## Deferred: Object Permanence v2
 
 Design section 10 is sequenced after core and lives in a different repo (`C:\Users\atk67\Documents\object-permanence`, a Tauri + Vite/TS app with its own test setup). It is deferred out of this plan rather than tacked on as a final phase, for three reasons: it is a different codebase with different conventions, its scope (next-up panel, fs-watcher live boards, dispatch launcher, in-app triage taps, drag-reorder and park) is large enough to want its own design-to-plan cycle, and it consumes contracts this plan has to freeze first.
