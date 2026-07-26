@@ -19,3 +19,6 @@ Thumbs.db
 *.swp
 .idea/
 .vscode/
+.gantry/active-phase.json
+.gantry/models.json
+.gantry/headless-implementer-settings.json

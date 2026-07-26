@@ -1,6 +1,6 @@
 # ClauDHD 1.0: the reconciliation
 
-Status: DRAFT, decisions resolved with the user 2026-07-25 (single session). Not yet through the design gate. Open items are marked [OPEN] inline and collected in section 12.
+Status: decisions resolved with the user 2026-07-25 (single session). All four open items ruled; item 4 deferred by his call. Submitted to the design gate 2026-07-25.
 
 ## 1. Intent (the why)
 
@@ -90,7 +90,7 @@ One idea per card in chat: text, age, capture context, buttons (roadmap / quick 
 
 Promotion is VERBATIM: no model rewrites the words on a tap. The script moves the line, stamps a generated id, and carries the capture date and while-context along. Vague wording is legal on the roadmap (the gate moved to /claudhd:start) and gets trued up at activation, when the design session restates the item and the reconcile writes the cleaned wording back to the roadmap line. Lost-context fragments (no verb, trivially short) are the case verbatim promotion cannot save; both surfaces flip button emphasis toward "discuss" on such cards (a presentation nudge, never a block), which dispatches to a session for rewording before promotion.
 
-[OPEN, revised recommendation 2026-07-25: triage decisions are mechanical line moves (promote, drop, quick-fix, park) needing no model. The plugin owns them as scripts (idea.js-class atomic writes); /claudhd:triage calls them in chat, and the app calls the SAME scripts, so there is one write path and no duplicated logic. Recommendation now: in-app triage taps, yes. Thinking work still dispatches: a card's "discuss" button opens a primed session; design stays in session entirely. Terminal injection into a live session was investigated and rejected (no such channel exists; headless-per-tap crosses the no-tokens-from-buttons line). OP's rule updates from "zero writes to project files" to "writes only through the plugin's own scripts". User to ratify.]
+RATIFIED 2026-07-25: triage decisions are mechanical line moves (promote, drop, quick-fix, park) needing no model. The plugin owns them as scripts (idea.js-class atomic writes); /claudhd:triage calls them in chat, and the app calls the SAME scripts, so there is one write path and no duplicated logic. In-app triage taps: yes. Thinking work still dispatches: a card's "discuss" button opens a primed session; design stays in session entirely. Terminal injection into a live session was investigated and rejected (no such channel exists; headless-per-tap crosses the no-tokens-from-buttons line). OP's rule updates from "zero writes to project files" to "writes only through the plugin's own scripts".
 
 ## 10. Object Permanence v2 (the visual half, sequenced second)
 
@@ -101,7 +101,7 @@ Rescoped from "out of scope, knowingly broken" to the ambient layer of 1.0, upda
 - A "next up" panel above the fleet: per project, the next actionable thing (design r-X no doc yet, triage N untriaged oldest Nd, build phase N of M) with a dispatch button each.
 - The fs watcher makes boards live: the commit-boundary hooks write state.json, the app updates itself, no model involved.
 - The cross-project gantry pipeline view (the feature request that started this session) lands here.
-- [OPEN] Safe structural edits in-app (drag-reorder roadmap, park an idea): allowed class is reorder and park only, never create or triage. User has not ruled.
+- RATIFIED 2026-07-25: structural edits in-app (drag-reorder roadmap, park), plus triage taps, under the vocabulary rule: the app may only invoke the plugin's script vocabulary (append-capture, move, mark, reorder, park), and that vocabulary contains no free-text operation. Free-text always dispatches to a session.
 - Hard lines: no chat client in the app, no headless agent runs from buttons. Clicking must never spend tokens without a session open in front of the user.
 - Consequence accepted: OP v1's kill trial is superseded; v1's file contract breaks when 1.0 lands and is repaired by the v2 update.
 
@@ -113,10 +113,10 @@ Rescoped from "out of scope, knowingly broken" to the ambient layer of 1.0, upda
 
 ## 12. Open items
 
-1. ~~Command table nod~~ RESOLVED 2026-07-25: table locked as written.
-2. Triage in-app vs chat widget (section 9). Recommended yes: taps invoke the plugin's own scripts, one write path, git-revertable; the "discuss" button dispatches when thinking is needed.
-3. OP v2 structural edits (section 10). Recommended yes with the vocabulary rule: the app may only invoke the plugin's script vocabulary (append-capture, move, mark, reorder, park), and that vocabulary contains no free-text operation. Free-text always dispatches to a session.
-4. Migration path for the six other initialized projects: DEFERRED until 1.0 is proven on bakingapp. Bakingapp's reconciliation (appendix A) is the template.
+1. RESOLVED 2026-07-25: command table locked as written.
+2. RESOLVED 2026-07-25: in-app triage approved (section 9).
+3. RESOLVED 2026-07-25: structural edits approved under the vocabulary rule (section 10).
+4. DEFERRED (his call): migration of the six other projects waits until 1.0 is proven on bakingapp. Bakingapp's reconciliation (appendix A) is the template.
 
 ## Appendix A: bakingapp reconciliation prompt
 
