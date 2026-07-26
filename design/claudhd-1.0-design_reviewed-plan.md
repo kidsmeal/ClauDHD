@@ -1,0 +1,206 @@
+# ClauDHD 1.0 (the reconciliation) - Implementation Plan
+
+Source design: `design/claudhd-1.0-design_reviewed.md`
+Conventions read: `CLAUDE.md` (repo root, git workflow only: solo repo, commit straight to `main`, no branches, no PRs). No `AGENTS.md`, `CONVENTIONS.md`, `STYLE.md`, `docs/` conventions files exist in this repo. Everything else below was inferred from a read of the actual sources: `plugins/claudhd/scripts/*.js`, `plugins/claudhd/hooks/hooks.json`, `test/*.test.js`, `tools/helpers.js`, and the Gantry plugin at `C:\Users\atk67\Documents\Github\gantry\plugins\gantry\`.
+Verification command(s): `npm test` (= `node --test`, Node's built-in runner, zero dependencies; verified green at 97 pass / 0 fail on 2026-07-25 before any change). Release-manifest gate: `node --test test/manifest.test.js`. CI runs `npm test` on ubuntu/macos/windows x node 20/22/24 (`.github/workflows/test.yml`), so every test added below must be path-separator safe and must not depend on autocrlf.
+
+## Summary
+
+Seven phases merge the Gantry plugin (a different repo: `C:\Users\atk67\Documents\Github\gantry\plugins\gantry\`) into this repo's `plugins/claudhd/`, then rebuild the state layer underneath it: `state.json` schemaVersion 2 with Gantry's sentinel folded in, a generated NOW.md, a reconcile that rides the pre-commit interception point, mode-aware deny-by-default guards, a mechanical write vocabulary, and the locked 15-command surface at version 1.0.0. Object Permanence v2 (design section 10) is deferred out of this plan with a note at the end; this plan's job toward it is to freeze the two contracts it consumes.
+
+Phase order is dependency order: import (1) -> state contract (2) -> generated documents (3) -> commit boundary (4) -> guards and modes (5) -> write vocabulary (6) -> command surface and release (7).
+
+## Blockers / Open Questions
+
+These need a human decision. Phase 1 and phase 2 can start today; phases 3, 5, 6 and 7 each carry one.
+
+**B1. What activates the guards in a project that has not adopted 1.0?** (blocks phase 5)
+Section 6 makes idle mode deny source-shaped paths, and section 11 says nothing may assume the other six projects migrate during this plan. Today both guards gate on a `.gantry/enabled` opt-in marker (`file-list-guard.js` step 4, `commit-guard.js` step 4) and are inert without it. The design never mentions that marker. If the marker is dropped and absent state means idle, installing 1.0 denies every Edit in every repo that has the plugin but no `.now/state.json`. Reading section 11 forward, the marker (or an equivalent explicit opt-in) has to survive as the guard's activation gate, with the mode allowlist applying only inside an adopted project. That reading is not written down anywhere in the design, and it decides whether phase 5 ships a fleet-wide denial. Confirm the activation gate and its filename before phase 5.
+
+**B2. Does the quick-fixes batch survive, and what feeds and clears it?** (blocks phases 3 and 6)
+Section 7 reassigns `/claudhd:quick` to "small change, scoped sentinel" (Gantry's lite lane, plus a sentinel). Section 9 still lists "quick fix" as one of the five triage card buttons, so the batch is still a promotion destination. But nothing in the locked table captures into it or clears it any more, and the batch is real machinery today: `quick.js` add/list modes, the `## Quick fixes` section in `templates/NOW.md`, `QUICK_CAP`, `cursor.quickFixCount` in `state.json`, and the `q:<n>` statusline suffix. Three coherent answers exist (fold the batch into IDEAS.md and retire the triage button; keep the batch and give it a different verb; keep the batch and let the triage script write it with no chat command). Pick one. Phase 3 cannot render NOW.md without knowing whether the section exists, and phase 6 cannot implement the triage buttons without knowing where "quick fix" writes.
+
+**B3. Where do NOW.md's human intent lines live?** (blocks phase 3)
+Section 4 says NOW.md is generated from state, and that intent lines ("what this thread is, in the user's words") are human, one line each, prompted at boundaries. It does not say where those lines persist between regenerations. Two options: store them as fields in `state.json` (consistent with "state.json is the single machine-readable truth", but it puts human prose in the machine file), or have the renderer parse them back out of the previous NOW.md before overwriting (keeps prose in the document, but makes the document partly its own source and reintroduces a parse the design was trying to kill). This is exactly the kind of decision the design says the generator exists to remove; it needs an answer before the renderer is written.
+
+**B4. Four surfaces are in neither the locked table nor the deleted list.** (blocks phase 7)
+Section 7 locks 15 commands and names what is deleted. It does not account for: `/claudhd:version` (ships today, in the README table, covered by tests), `/gantry:verify` (maintains `RUNTIME_VERIFICATION_QUEUE.md`, which `/claudhd:init` still scaffolds and the phase-reviewer pipeline still feeds), `skills/gantry/SKILL.md` (the pipeline orchestrator; section 7's deleted list says "gantry's draft/run/gantry ... folded into start, design, plan", which may or may not mean this skill), and `skills/design-plan-creator/SKILL.md` (never mentioned anywhere in the design). Decide each: ship, fold, or delete. If any command survives, the "15-command surface" line in section 7 needs the user's blessing to become 16 or 17.
+
+**Resolved by reading, recorded so nobody re-opens it:** section 6's mode table says design mode is entered "(design marker)", but the same section's prose resolves that mode lives ONLY in `.now/state.json` with no sibling marker file. The prose wins. Do not create a design-marker file.
+
+## Phase 1: Import the Gantry runtime into plugins/claudhd
+
+**Status:** pending
+**Goal:** Every Gantry script, agent, template and test lives in this repo under `plugins/claudhd/`, wired through one hooks file and one project-root resolver, with behavior byte-identical to Gantry today.
+**Files:**
+- create `plugins/claudhd/scripts/root.js` (single project-root resolver; order `CLAUDHD_PROJECT_DIR` > `GANTRY_PROJECT_DIR` > `CLAUDE_PROJECT_DIR` > `cwd`, so both plugins' existing env contracts keep working)
+- create `plugins/claudhd/scripts/sentinel-core.js` (from gantry, `resolveRoot` replaced by `root.js`)
+- create `plugins/claudhd/scripts/sentinel.js` (from gantry, same substitution)
+- create `plugins/claudhd/scripts/role-core.js` (from gantry, unchanged; it is a pure module)
+- create `plugins/claudhd/scripts/role.js` (from gantry, script paths repointed at `plugins/claudhd/scripts/`)
+- create `plugins/claudhd/scripts/hooks/file-list-guard.js` (from gantry, unchanged logic including the fail-open branch; the inversion is phase 5)
+- create `plugins/claudhd/scripts/hooks/commit-guard.js` (from gantry, unchanged logic; the reconcile is phase 4)
+- create `plugins/claudhd/agents/design-reviewer.md`, `implementer.md`, `phase-planner.md`, `phase-reviewer.md` (from gantry; rewrite `/gantry:` command references to `/claudhd:` and `${CLAUDE_PLUGIN_ROOT}/scripts/` paths to the new locations)
+- create `plugins/claudhd/templates/CURRENTNESS_AUDIT.md`, `RUNTIME_VERIFICATION_QUEUE.md`, `DESIGN.md`, `PLAN.md` (from gantry)
+- modify `plugins/claudhd/hooks/hooks.json` (add the two `PreToolUse` blocks: `Edit|Write|MultiEdit` -> file-list-guard, `Bash` -> commit-guard, alongside the existing SessionStart and Stop entries)
+- modify `plugins/claudhd/scripts/brief.js`, `checkpoint.js`, `idea.js`, `init.js`, `quick.js`, `harvest.js`, `shipped.js`, `statusline.js` (each replaces its inline `const ROOT = process.env.CLAUDHD_PROJECT_DIR || ...` line with `require("./root.js")`)
+- modify `plugins/claudhd/scripts/init.js` (fold in gantry `init.js`: scaffold `CURRENTNESS_AUDIT.md` / `RUNTIME_VERIFICATION_QUEUE.md` into `docs/` or root, scaffold `.gantry/models.json` via `roleCore.scaffoldConfig(codexAvailable)`, add the three `.gantry/*` gitignore entries next to `.now/`, keep the existing NOW/IDEAS/SHIPPED/ROADMAP scaffold, opt-in marker and repo-signal report, keep the `--enable-hooks` path)
+- create `test/root.test.js` (env precedence across all four sources, and that the guards and the state writers resolve the same root from the same env)
+- create `test/sentinel.test.js`, `test/sentinel-core.test.js`, `test/role-core.test.js`, `test/role.test.js`, `test/file-list-guard.test.js`, `test/commit-guard.test.js` (ported from `C:\Users\atk67\Documents\Github\gantry\test\`, script paths repointed; they are self-contained and do not use `tools/helpers.js`, so port them as-is rather than rewriting them onto the helper)
+- modify `test/init.test.js` (extend the existing claudhd init tests with gantry's init assertions: audit docs scaffolded, models.json scaffolded and never overwritten, gitignore entries appended idempotently)
+- modify `test/manifest.test.js` (the hooks assertion now also requires both `PreToolUse` matchers; keep the existing "must not re-declare hooks/hooks.json" invariant)
+
+**Verification:** `npm test`. Expected: the 97 existing tests plus the ported Gantry suites (gantry's own suite is 6 ported files; role-core alone is 724 lines of assertions), all passing on the first run without weakening any imported assertion. Manually confirm the merged hooks file loads by starting one Claude Code session in this repo and checking no "Duplicate hooks file detected" error appears.
+**Exit criteria:** `npm test` passes; no script in `plugins/claudhd/scripts/` resolves the project root by any path other than `root.js`; `plugins/claudhd/hooks/hooks.json` declares exactly four hook entries; no file under `plugins/claudhd/` references `/gantry:` any more; the Gantry repo is untouched.
+**Blockers:** None.
+**Wired-by:** phase 7 (the four agents and the two pipeline templates have no caller until the command surface lands; the two guards ARE wired here, through `hooks/hooks.json`).
+
+## Phase 2: state.json schemaVersion 2, with the sentinel folded in
+
+**Status:** pending
+**Goal:** `.now/state.json` becomes the single machine-readable truth, carrying mode, active roadmap id, plan ref, phase and file list alongside today's cursor/ideas/shipped/roadmap/git facts, readable by both v1 and v2 consumers and written without clobbering.
+**Files:**
+- modify `plugins/claudhd/scripts/state.js` (`SCHEMA_VERSION = 2`; add `mode`, `from` (the roadmap-id parent link), `build` (plan ref, phase, files, allow, started, session) and `design` (doc path, resolved/open decision lists) sections; add `readState(nowDir)` that accepts v1 and v2 and returns absent build/design sections as `null`; convert `writeStateAtomic` into a merge-preserving write that reads the existing object, applies only the fields the caller owns, and keeps everything else, all inside `withLock` from `lock.js`)
+- modify `plugins/claudhd/scripts/sentinel-core.js` (`readSentinel(root)` now reads the `build` section of `.now/state.json`; on first run it imports a legacy `.gantry/active-phase.json` into that section and then removes the legacy file; `isStale`, `normalize`, `isInList`, `FAIL_OPEN` keep their exact current semantics)
+- modify `plugins/claudhd/scripts/sentinel.js` (`write` / `clear` / `add-files` operate on the `build` section through the merge-preserving writer; the "zero files parsed means do not write a sentinel" fail-open rule at lines 196-202 stays exactly as it is)
+- modify `plugins/claudhd/scripts/checkpoint.js` (the Stop hook's `buildState` + write path must merge, never replace, so a Stop between two phase edits cannot erase the build section)
+- modify `plugins/claudhd/scripts/hooks/file-list-guard.js`, `plugins/claudhd/scripts/hooks/commit-guard.js` (deny reasons stop telling the user to delete `.gantry/active-phase.json` and name the real clear path instead; no behavior change)
+- modify `plugins/claudhd/scripts/role-core.js` (`buildGuardSettings` comment and the headless-implementer settings path text reference the new sentinel location)
+- create `test/state-v2.test.js` (v1 file reads without error and yields null build/design; first v2 write preserves every pre-existing cursor fact; a v2 file round-trips; unknown keys survive a write)
+- create `test/state-concurrency.test.js` (a `sentinel.js write` racing a `checkpoint.js` Stop leaves both the build section and the cursor facts intact; reuse the pattern in the existing `test/lock.test.js` and `tools/hold-lock.js`)
+- modify `test/state.test.js`, `test/checkpoint.test.js`, `test/sentinel.test.js`, `test/sentinel-core.test.js`, `test/file-list-guard.test.js`, `test/commit-guard.test.js` (retarget to the new sentinel location; the legacy-import case gets its own named test)
+
+**Verification:** `npm test`. Three assertions carry the phase: a v1 `state.json` read produces no throw and null build/design; a write of the build section leaves `cursor`, `ideas`, `shipped`, `roadmap` and `git` byte-identical; a legacy `.gantry/active-phase.json` present at first read is imported and then gone.
+**Exit criteria:** `npm test` passes; no script writes `state.json` outside the merge-preserving locked writer; no code path anywhere reads `.gantry/active-phase.json` except the one-shot legacy import.
+**Blockers:** None.
+**Wires:** `checkpoint.js`, `sentinel.js` and both guards all read and write the v2 fields in this phase; nothing new is left without a caller.
+
+## Phase 3: Generated NOW.md and generated roadmap ids
+
+**Status:** pending
+**Goal:** NOW.md renders from state (facts machine-generated, intent lines human), and every ROADMAP.md item carries a stable, collision-safe generated id rendered beside its text.
+**Files:**
+- create `plugins/claudhd/scripts/nowrender.js` (pure function: state object in, NOW.md text out; mode-aware, renders mode, plan, phase, position, the `from: <roadmap-id>` link and the counts; keeps the `<!-- claudhd` opt-in marker in the output)
+- create `plugins/claudhd/scripts/roadmapids.js` (id generation `r-MMDD-N`: scan existing ids for today's date prefix, take the next unused counter, never reuse; backfill ids onto existing id-less lines without touching their wording; render the id beside the item text)
+- modify `plugins/claudhd/scripts/nowfile.js` (parse the generated shape; keep the existing extractors working against a hand-written NOW.md so a pre-1.0 project still reports facts)
+- modify `plugins/claudhd/scripts/state.js` (persist `activeRoadmapId` and `from`; persist intent lines if B3 resolves that way)
+- modify `plugins/claudhd/templates/NOW.md` (becomes the generated shape, not a hand-editing prompt)
+- modify `plugins/claudhd/templates/ROADMAP.md` (items carry ids)
+- modify `plugins/claudhd/scripts/init.js` (backfill roadmap ids at init, per section 4)
+- create `test/nowrender.test.js` (facts render from state; a thread with no parent renders as unplanned work; intent lines survive a regeneration; the opt-in marker survives)
+- create `test/roadmapids.test.js` (next-unused counter, no reuse after a delete, same-day collision, backfill preserves wording byte-for-byte, non-date-prefixed legacy ids ignored safely)
+- modify `test/init.test.js`, `test/state.test.js`
+
+**Verification:** `npm test`. The load-bearing tests: regenerate NOW.md twice from the same state and get identical output; regenerate after an intent-line edit and the intent line survives; backfill ids into a ROADMAP.md with mixed id-carrying and id-less lines and assert every original line's wording is unchanged.
+**Exit criteria:** `npm test` passes; NOW.md's fact lines are produced by `nowrender.js` alone (no other module writes them); id generation never returns an id already present in the file.
+**Blockers:** B2 (does the `## Quick fixes` section exist in the rendered NOW.md), B3 (where intent lines persist). Both must be answered before this phase starts.
+**Wired-by:** phase 4 (the reconcile calls the renderer at the commit boundary) and phase 7 (`/claudhd:now`, `/claudhd:roadmap`, `/claudhd:start` call it on demand).
+
+## Phase 4: The commit boundary reconcile
+
+**Status:** pending
+**Goal:** Every `git commit` made inside a session regenerates state.json, NOW.md, the plan's per-phase Status line, the SHIPPED.md entry and the roadmap item's state, stages them, and rides the same commit.
+**Files:**
+- create `plugins/claudhd/scripts/reconcile.js` (takes the commit message and the project root; regenerates state, renders NOW.md, updates the active plan's `**Status:**` line for the active phase, appends the SHIPPED.md entry with message and date and no hash, updates the roadmap item's state, then stages exactly the files it wrote)
+- modify `plugins/claudhd/scripts/hooks/commit-guard.js` (run the reconcile at the existing interception point BEFORE the gate decision and before the early returns at today's steps 4-6, so a commit outside a build phase is reconciled too; keep every fail-open path, keep "always exit 0", keep the deny-via-stdout-JSON contract; a reconcile failure must never block or fail the commit)
+- modify `plugins/claudhd/scripts/shipped.js` (the entry writer becomes the shared path the reconcile calls; keep the message+date format SHIPPED.md has always used)
+- create `test/reconcile.test.js` (a throwaway repo, a plan file with phases, a commit driven through the guard's stdin contract: assert NOW.md, SHIPPED.md, ROADMAP.md and the plan Status line all updated and staged; assert `.now/state.json` is regenerated but NOT staged, because `.now/` is gitignored; assert a commit with no active plan still writes the SHIPPED entry; assert a reconcile throw leaves the commit permitted)
+- modify `test/commit-guard.test.js` (the existing deny/allow matrix must still hold with the reconcile in front of it, including every fail-open case)
+- modify `test/shipped.test.js`
+
+**Verification:** `npm test`, plus one manual run: in a throwaway repo, commit through a real session and confirm `git show --stat HEAD` lists NOW.md and SHIPPED.md in the same commit as the code.
+**Exit criteria:** `npm test` passes; the guard still exits 0 on every path; a commit made outside a session (the design's stated known limit) leaves the docs untouched and is asserted as such by a named test, so the limit is visible rather than assumed.
+**Blockers:** None once phase 3 lands.
+**Wires:** `reconcile.js` is wired here, at `commit-guard.js`'s interception point; it has no other caller.
+
+## Phase 5: Modes, the guard inversion, and the override
+
+**Status:** pending
+**Goal:** The guards read mode from state.json and enforce a deny-by-default per-mode path allowlist; sentinel-absent denies while crash paths still fail open; `/claudhd:override` exists as a loud, recorded escape hatch.
+**Files:**
+- create `plugins/claudhd/scripts/modes.js` (pure: mode + path in, allow/deny out. design and idle allow `*.md` plus `.now/`, `.gantry/`, `.claude/`; build allows the build section's file list plus those same state dirs; everything else denies)
+- modify `plugins/claudhd/scripts/hooks/file-list-guard.js` (invert exactly the sentinel-absent branch at today's step 5: absent build section is a real state that resolves to the current mode and denies per the allowlist. Every OTHER fail-open path stays: malformed stdin, missing `tool_input`, missing `file_path`, unresolvable root, stale sentinel, and the top-level catch. The reviewer gates on that distinction, so each surviving fail-open path needs its own named test)
+- modify `plugins/claudhd/scripts/hooks/commit-guard.js` (mode-aware gate messages)
+- create `plugins/claudhd/scripts/override.js` (records "unguarded session, N files outside any phase" into the cursor facts in state.json; per-session, never silent)
+- create `test/modes.test.js` (the full matrix: three modes x source path / markdown path / state-dir path / build-list path)
+- create `test/override.test.js` (the override records itself and the count is visible in state and in the rendered NOW.md)
+- modify `test/file-list-guard.test.js` (the inversion case, plus one named test per surviving fail-open path)
+
+**Verification:** `npm test`. The phase is proven by two things: a table-driven mode matrix that passes, and a named test for each of the six crash/fail-open branches showing they still exit 0 with no output.
+**Exit criteria:** `npm test` passes; the only branch that changed from allow to deny is sentinel-absent-with-a-known-mode; the guard still always exits 0; a project without the activation gate from B1 is still entirely unaffected, asserted by a test.
+**Blockers:** B1 (the activation gate). Do not start this phase before it is answered; it decides whether the six unmigrated projects get denied.
+**Wired-by:** phase 7 for `override.js` (`/claudhd:override` is its only caller). `modes.js` is wired here, by both guards.
+
+## Phase 6: The mechanical write vocabulary
+
+**Status:** pending
+**Goal:** Triage and roadmap decisions are scripts, not model work: one write path that chat and (later) Object Permanence both call, containing no free-text operation.
+**Files:**
+- create `plugins/claudhd/scripts/vocab.js` (the five verbs from section 10: `append-capture`, `move`, `mark`, `reorder`, `park`. Promotion is verbatim: the script moves the line, stamps a generated id via `roadmapids.js`, and carries the capture date and while-context along. Atomic + locked, in the shape `idea.js` already uses)
+- modify `plugins/claudhd/scripts/idea.js` (capture routes through `vocab.js` so there is one write path)
+- create `docs/STATE-SCHEMA.md` (the frozen v2 `state.json` contract: every field, its type, and its null semantics)
+- create `docs/SCRIPT-VOCABULARY.md` (the frozen verb list plus each verb's argv contract, and the explicit statement that free text always dispatches to a session)
+- create `test/vocab.test.js` (verbatim promotion asserted byte-for-byte on the item text; id stamped; capture date and while-context carried; reorder is stable; park is reversible; two concurrent verbs do not clobber; no verb accepts free text)
+- modify `test/idea.test.js`
+
+**Verification:** `npm test`. The load-bearing assertion is verbatim promotion: take an idea line with awkward wording, promote it, and assert the roadmap line contains that exact substring unchanged.
+**Exit criteria:** `npm test` passes; every file mutation triage can perform goes through `vocab.js`; the two docs describe what the code actually does (an implementer reading only those two files could write a consumer).
+**Blockers:** B2 (where the triage card's "quick fix" button writes).
+**Wired-by:** phase 7 for the chat side (`/claudhd:triage`, `/claudhd:idea`, `/claudhd:roadmap`), and deferred for the app side (Object Permanence v2, see the note at the end; `docs/SCRIPT-VOCABULARY.md` is the handoff artifact).
+
+## Phase 7: The 15-command surface, docs, and the 1.0.0 release
+
+**Status:** pending
+**Goal:** One plugin, one namespace, the locked command table, and a release the manifests agree on.
+**Files:**
+- create `plugins/claudhd/commands/start.md`, `design.md`, `plan.md`, `build.md`, `review.md`, `override.md`, `audit.md`, `models.md` (start absorbs the readiness gate; design absorbs grill-me and drives the design board; build/review/plan/models/audit adapted from gantry's equivalents with `/claudhd:` names and the new script paths)
+- modify `plugins/claudhd/commands/now.md` (mode-aware board: phases in build, decisions in design; "render as widget when available, else text", with text as the acceptance baseline)
+- modify `plugins/claudhd/commands/quick.md` (Gantry's lite lane, and it writes a sentinel)
+- modify `plugins/claudhd/commands/idea.md`, `harvest.md`, `triage.md` (triage becomes tap-card driven over `vocab.js`), `roadmap.md`, `init.md`
+- delete `plugins/claudhd/commands/wrap.md`, `shipped.md`, `regroup.md`, `statusline.md`
+- delete `plugins/claudhd/scripts/statusline.js` and `test/statusline.test.js` (statusline folds into init per section 7; if init still scaffolds a CLI statusline as the section-3 freebie, keep the script and move its tests instead. Decide from B4's outcome, not here)
+- modify `plugins/claudhd/.claude-plugin/plugin.json` (version 1.0.0, new description covering the merged pipeline)
+- modify `.claude-plugin/marketplace.json` (version 1.0.0 in lockstep, new description)
+- modify `README.md` (rewrite around the 15-command table and the three layers)
+- create `test/consistency.test.js` (ported from gantry: every command in the README table exists in `commands/` and vice versa; versions agree across `plugin.json`, `marketplace.json` and any surviving skill frontmatter; the phase-reviewer/phase-planner content invariants gantry's suite already enforces)
+- modify `test/manifest.test.js` (unchanged invariants, new hook shape already handled in phase 1)
+- skills: ship, fold or delete `plugins/claudhd/skills/gantry/SKILL.md` and `plugins/claudhd/skills/design-plan-creator/SKILL.md` per B4
+
+**Verification:** `npm test` and `node --test test/manifest.test.js`. Then a real install check: install the plugin from this repo into a throwaway project, run `/claudhd:init`, and confirm all shipped commands appear in the command list and none of the deleted ones do.
+**Exit criteria:** `npm test` passes; `plugins/claudhd/commands/` contains exactly the agreed command set and the README table matches it (enforced by the ported consistency test); `plugin.json` and `marketplace.json` both read 1.0.0; nothing in the repo references `/gantry:` outside the design and plan documents.
+**Blockers:** B4 (version, verify, and the two skills).
+**Wires:** this phase wires everything phases 1, 3, 5 and 6 left without a caller: the four agents, `nowrender.js`, `roadmapids.js`, `override.js` and `vocab.js` all get their live callers here. A capability still unreachable at the end of this phase is a defect, not a follow-up.
+
+## Cross-cutting concerns
+
+**1. `state.json` format migration, v1 to v2.** Changes in phase 2. Affects `checkpoint.js` (the Stop hook writer), both guards, `sentinel.js`, the phase-3 renderer, and every external consumer of `.now/state.json`, which today means Object Permanence v1. Readers must accept v1 and v2; absent build/design sections read as null; the first v2 write preserves the existing cursor facts. Rollback: the schema is additive, so reverting the code leaves a v2 file readable by v1 logic except for the version integer itself. OP v1's breakage is accepted by design section 10 and is repaired by the deferred v2 work, not by this plan.
+
+**2. The sentinel moves out of `.gantry/active-phase.json` into `state.json`'s build section.** Phase 2. Affects both guards, `sentinel.js`, `role-core.js`'s injected headless-implementer settings, every deny message that currently tells the user to delete the old file, the ported gantry tests, and the `.gitignore` entries. Migration: on first read, import a legacy sentinel into the build section then delete the legacy file, once, in `sentinel-core.js`. Rollback: the legacy path is import-only, so a revert re-reads nothing; a project mid-phase at revert time loses its sentinel and the guard fails open, which is the safe direction.
+
+**3. Two divergent project-root resolvers become one.** Phase 1. ClauDHD resolves `CLAUDHD_PROJECT_DIR` > `CLAUDE_PROJECT_DIR` > cwd; Gantry resolves `GANTRY_PROJECT_DIR` > `CLAUDE_PROJECT_DIR` > cwd. Once state.json is shared, a guard resolving a different root than the writer reads a different repo's state and enforces the wrong thing. `root.js` accepts all three vars in the order given in phase 1, so neither plugin's existing env contract breaks. This must land in phase 1, before anything shares state.
+
+**4. One hooks file now declares four hooks.** Phase 1. `hooks/hooks.json` gains two `PreToolUse` blocks alongside SessionStart and Stop. Claude Code auto-loads this file; `plugin.json` must never reference it (already enforced by `test/manifest.test.js`, the fresh-install blocker that bit this repo before). Any PreToolUse regression here silently disables enforcement across every adopted project, so the manifest test's hook assertion must be extended in the same phase.
+
+**5. Concurrent writers to `state.json`.** Established in phase 2, respected by 4, 5 and 6. Four writers exist: the Stop hook, the pre-commit reconcile, `sentinel.js`, and the vocabulary scripts. All of them must go through one merge-preserving writer wrapped in `withLock` (`scripts/lock.js`) with the existing atomic temp-file-plus-rename, including its Windows EPERM retry. Any later phase that adds a fifth writer must use the same path; a direct `fs.writeFileSync` on state.json is a defect.
+
+**6. `.now/` is gitignored, so the reconcile cannot stage `state.json`.** Phase 4. `init.js` adds `.now/` to `.gitignore` today and `state.json` lives there. The reconcile stages NOW.md, SHIPPED.md, ROADMAP.md and the plan file; `git add` on `.now/state.json` would fail without `-f` and must not be attempted. Assert this explicitly in `test/reconcile.test.js` so nobody "fixes" it later by force-adding local state into commits.
+
+**7. Public command-surface deletion and namespace change.** Phase 7. `/claudhd:wrap`, `/claudhd:shipped`, `/claudhd:regroup`, `/claudhd:statusline` and every `/gantry:*` command disappear. Anything referencing them breaks: this repo's README and `routines/*.md`, the ported agents and skills, and any project doc in an adopted repo. Ordering: last, after the mechanics exist, so no command points at a script that is not there yet. Rollback: command files are markdown; restoring one is a file restore. The fate of the Gantry plugin's own repo and marketplace listing is outside this plan and needs the user's call.
+
+**8. Release manifests move in lockstep.** Phase 7. `plugin.json` and the `marketplace.json` entry must both read 1.0.0 or `test/manifest.test.js` fails, which is the release gate `tools/release.js` also runs. The ported `test/consistency.test.js` adds a second lockstep: any surviving skill frontmatter version must match too.
+
+**9. `.gantry/models.json` keeps its path.** Section 7 says so explicitly for 1.0. Phase 1 keeps init scaffolding it there and keeps the three `.gantry/*` gitignore entries. Do not "tidy" it into `.now/`; that is a separate decision the design deliberately did not make.
+
+**10. Rollout is opt-in and stays opt-in.** Section 11: bakingapp is the first adopter and the other six projects do not migrate during this plan. Two consequences the implementer must hold: B1's activation gate has to keep unadopted projects inert, and no phase may write into a project that has not run `/claudhd:init` for 1.0. Adoption itself is a runtime step, not code: after phase 7, the user runs appendix A's reconciliation prompt in `C:\Users\atk67\Documents\bakingapp` and then inits. That is not a phase in this plan.
+
+**11. CI matrix.** `.github/workflows/test.yml` runs the suite on three OSes and three Node versions. The guards do Windows-vs-POSIX path normalization (`sentinel-core.normalize` picks path semantics from the input shape, deliberately, so Windows-shaped paths relativize the same way on Linux CI). Every new path test must preserve that property, and no new test may depend on line endings, since Windows CI disables autocrlf.
+
+**No generated code, no database, no build step.** The plugin has zero dependencies and ships as source; nothing needs regeneration after a change.
+
+## Deferred: Object Permanence v2
+
+Design section 10 is sequenced after core and lives in a different repo (`C:\Users\atk67\Documents\object-permanence`, a Tauri + Vite/TS app with its own test setup). It is deferred out of this plan rather than tacked on as a final phase, for three reasons: it is a different codebase with different conventions, its scope (next-up panel, fs-watcher live boards, dispatch launcher, in-app triage taps, drag-reorder and park) is large enough to want its own design-to-plan cycle, and it consumes contracts this plan has to freeze first.
+
+What this plan owes it, and where: `docs/STATE-SCHEMA.md` and `docs/SCRIPT-VOCABULARY.md`, both exit criteria of phase 6. Those two files are the entire interface. The app's rule from section 10 is "writes only through the plugin's own scripts", so if the vocabulary doc is honest, the OP v2 plan can be written against it without reading this repo's source.
+
+Known consequence, already accepted in section 10: OP v1's file contract breaks the moment phase 2 lands, and stays broken until the v2 work happens.
