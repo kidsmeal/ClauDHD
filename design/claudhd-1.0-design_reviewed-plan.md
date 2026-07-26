@@ -94,6 +94,7 @@ Section 7 locks 15 commands and names what is deleted. It does not account for: 
 - create `plugins/claudhd/scripts/roadmapids.js` (id generation `r-MMDD-N`: scan existing ids for today's date prefix, take the next unused counter, never reuse; backfill ids onto existing id-less lines without touching their wording; render the id beside the item text)
 - modify `plugins/claudhd/scripts/nowfile.js` (parse the generated shape; keep the existing extractors working against a hand-written NOW.md so a pre-1.0 project still reports facts)
 - modify `plugins/claudhd/scripts/state.js` (persist `from`, which IS the active-roadmap-id field - one field, resolved at review 2026-07-26, not two names for the same fact; persist intent lines per B3: state fields)
+- state schema addition (declared at review 2026-07-26): `roadmapIds`, a durable flat array of every issued r-MMDD-N id, owned by whichever script issues ids, written through the merge-preserving writer, never a Stop-hook owned key. It is what makes "never reuse an id" hold across process runs and deletions.
 - modify `plugins/claudhd/templates/NOW.md` (becomes the generated shape, not a hand-editing prompt)
 - modify `plugins/claudhd/templates/ROADMAP.md` (items carry ids)
 - modify `plugins/claudhd/scripts/init.js` (backfill roadmap ids at init, per section 4)
