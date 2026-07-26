@@ -86,7 +86,9 @@ Deleted because the machine does the job: wrap (commit boundary reconciles), shi
 
 ## 9. Triage
 
-One idea per card in chat: text, age, capture context, buttons (roadmap / quick fix / drop / skip). Each tap sends the decision as a prompt; the agent applies it to the files under the normal gates. Thinking stays in session; the chore cost collapses to taps.
+One idea per card in chat: text, age, capture context, buttons (roadmap / quick fix / drop / skip / discuss). Each tap sends the decision as a prompt; the agent applies it to the files under the normal gates. Thinking stays in session; the chore cost collapses to taps.
+
+Promotion is VERBATIM: no model rewrites the words on a tap. The script moves the line, stamps a generated id, and carries the capture date and while-context along. Vague wording is legal on the roadmap (the gate moved to /claudhd:start) and gets trued up at activation, when the design session restates the item and the reconcile writes the cleaned wording back to the roadmap line. Lost-context fragments (no verb, trivially short) are the case verbatim promotion cannot save; both surfaces flip button emphasis toward "discuss" on such cards (a presentation nudge, never a block), which dispatches to a session for rewording before promotion.
 
 [OPEN, revised recommendation 2026-07-25: triage decisions are mechanical line moves (promote, drop, quick-fix, park) needing no model. The plugin owns them as scripts (idea.js-class atomic writes); /claudhd:triage calls them in chat, and the app calls the SAME scripts, so there is one write path and no duplicated logic. Recommendation now: in-app triage taps, yes. Thinking work still dispatches: a card's "discuss" button opens a primed session; design stays in session entirely. Terminal injection into a live session was investigated and rejected (no such channel exists; headless-per-tap crosses the no-tokens-from-buttons line). OP's rule updates from "zero writes to project files" to "writes only through the plugin's own scripts". User to ratify.]
 
