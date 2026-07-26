@@ -13,8 +13,8 @@ const path = require("path");
 const { withLock } = require("./lock.js");
 const { activeThread } = require("./nowfile.js");
 
-// Provider-neutral first, then Claude Code's var, then cwd.
-const ROOT = process.env.CLAUDHD_PROJECT_DIR || process.env.CLAUDE_PROJECT_DIR || process.cwd();
+// Single resolver for every ClauDHD script (see root.js).
+const ROOT = require("./root.js")(process.env);
 const IDEAS = path.join(ROOT, "IDEAS.md");
 const NOW_MD = path.join(ROOT, "NOW.md");
 const LOCK = path.join(ROOT, ".now", "ideas.lock");

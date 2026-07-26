@@ -2,10 +2,17 @@
 /*
  * ClauDHD init - the /claudhd:init command.
  *
- * Scaffolds NOW.md, IDEAS.md, and SHIPPED.md into the current project from the
- * bundled templates (never overwriting an existing file), ensures NOW.md carries
- * the opt-in marker the hooks gate on, and adds .now/ to the project's
- * .gitignore. This is how a project opts in to ClauDHD.
+ * Scaffolds NOW.md, IDEAS.md, SHIPPED.md, and ROADMAP.md into the current
+ * project from the bundled templates (never overwriting an existing file),
+ * ensures NOW.md carries the opt-in marker the hooks gate on, and adds .now/
+ * to the project's .gitignore. This is how a project opts in to ClauDHD.
+ *
+ * Also scaffolds the two living audit docs (CURRENTNESS_AUDIT.md and
+ * RUNTIME_VERIFICATION_QUEUE.md, folded in from Gantry) into docs/ or the
+ * project root, and the model-backend config (.gantry/models.json), gitignoring
+ * the three local/transient .gantry/* files next to .now/. .gantry/models.json
+ * deliberately keeps its path (it is not tidied into .now/ - see the design's
+ * cross-cutting concern 9).
  *
  * Unlike the silent Stop/SessionStart hooks, init is an explicit command: if it
  * cannot write a file it says so clearly and exits non-zero, rather than
@@ -14,14 +21,19 @@
  * After scaffolding it prints a few read-only repo signals (branch, recent
  * commits, uncommitted files) so the /claudhd:init command can propose a first
  * active thread for you to confirm, instead of asking you to name it cold.
+ *
+ * Plugin-native hook opt-in (folded in from Gantry): PreToolUse enforcement is
+ * available but inert until --enable-hooks writes .gantry/enabled. Only
+ * relevant when init.js runs inside an installed plugin (CLAUDE_PLUGIN_ROOT is
+ * set by the plugin host).
  */
 "use strict";
-const { execFileSync } = require("child_process");
+const { execFileSync, spawnSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
+const roleCore = require("./role-core.js");
 
-// Provider-neutral first, then Claude Code's var, then cwd.
-const ROOT = process.env.CLAUDHD_PROJECT_DIR || process.env.CLAUDE_PROJECT_DIR || process.cwd();
+const ROOT = require("./root.js")(process.env);
 const TEMPLATES = path.join(__dirname, "..", "templates");
 const MARKER = "<!-- claudhd: opt-in marker (do not remove) -->";
 
@@ -35,6 +47,9 @@ function git(args) {
   } catch {
     return "";
   }
+}
+function exists(rel) {
+  try { return fs.existsSync(path.join(ROOT, rel)); } catch { return false; }
 }
 
 const created = [];
@@ -68,16 +83,169 @@ try {
   failed.push("NOW.md marker (" + e.message + ")");
 }
 
+// The two living audit docs (folded in from Gantry). Docs land in docs/ if the
+// project keeps one, else at the repo root - the same rule sentinel.js's
+// allow-list computation uses, so the sentinel and the scaffold never disagree
+// about where these live.
+const docDir = exists("docs") ? "docs" : ".";
+const auditCreated = [];
+const auditKept = [];
+for (const name of ["CURRENTNESS_AUDIT.md", "RUNTIME_VERIFICATION_QUEUE.md"]) {
+  const relDest = path.join(docDir, name);
+  const dest = path.join(ROOT, relDest);
+  if (fs.existsSync(dest)) { auditKept.push(relDest); continue; }
+  try {
+    fs.copyFileSync(path.join(TEMPLATES, name), dest);
+    auditCreated.push(relDest);
+  } catch (e) {
+    failed.push(relDest + " (" + e.message + ")");
+  }
+}
+
+// Which external agent CLIs are available, so the model-backend scaffold below
+// knows whether the codex reviewers it wants to write can actually run.
+// Best-effort; an absent CLI just means the scaffold stays all-native.
+function onPath(cmd) {
+  try {
+    const r = spawnSync(cmd + " --version", { stdio: "ignore", shell: true, timeout: 8000 });
+    return !r.error && r.status === 0;
+  } catch { return false; }
+}
+
+// For codex, `--version` alone is not proof it can run: a stale shim on PATH
+// prints its version fine yet dies at startup when the shared
+// ~/.codex/config.toml uses a newer schema than the shim understands (the
+// app keeps its real, current binary in a versioned subdirectory of the same
+// bin dir). `codex login status` forces a config load, so exit 0 means this
+// binary can actually start. Called with no argument it probes the PATH
+// `codex` (via shell, like onPath); with a full path it probes that binary.
+function codexConfigLoads(bin) {
+  try {
+    const r = bin
+      ? spawnSync(bin, ["login", "status"], { stdio: "ignore", timeout: 8000 })
+      : spawnSync("codex login status", { stdio: "ignore", shell: true, timeout: 8000 });
+    return !r.error && r.status === 0;
+  } catch { return false; }
+}
+
+// Resolve which file `codex` on PATH actually is, so the probe can look for
+// versioned sibling installs next to it.
+function whichCodex() {
+  try {
+    const r = process.platform === "win32"
+      ? spawnSync("where", ["codex"], { encoding: "utf8", timeout: 8000 })
+      : spawnSync("command -v codex", { encoding: "utf8", shell: true, timeout: 8000 });
+    if (r.error || r.status !== 0) return null;
+    return (r.stdout || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean)[0] || null;
+  } catch { return null; }
+}
+
+// When the PATH codex cannot load the config, the install that CAN is usually
+// sitting right next to it: the codex app keeps versioned installs in
+// hash-named subdirectories of the same bin directory its PATH shim lives in.
+// Return the full path of the first sibling codex that passes the config-load
+// probe, or null.
+function findWorkingCodexSibling(pathBin) {
+  const binDir = path.dirname(pathBin);
+  const exe = process.platform === "win32" ? "codex.exe" : "codex";
+  let entries;
+  try { entries = fs.readdirSync(binDir, { withFileTypes: true }); } catch { return null; }
+  for (const ent of entries) {
+    if (!ent.isDirectory()) continue;
+    const candidate = path.join(binDir, ent.name, exe);
+    if (!fs.existsSync(candidate)) continue;
+    if (codexConfigLoads(candidate)) return candidate;
+  }
+  return null;
+}
+
+// The full codex probe. `codexBin` is null when the plain PATH `codex` works
+// (or nothing works); it carries the sibling's full path when only the sibling
+// works, and scaffoldConfig then writes that path into the backend cmd. A
+// sibling path containing whitespace cannot be represented in the cmd template
+// (it tokenizes on whitespace), so it counts as not found rather than being
+// scaffolded broken.
+function probeCodex() {
+  if (!onPath("codex")) {
+    return { available: false, codexBin: null, reason: "codex CLI not on PATH", status: "codex [missing]" };
+  }
+  if (codexConfigLoads()) {
+    return { available: true, codexBin: null, reason: null, status: "codex [found]" };
+  }
+  const pathBin = whichCodex();
+  const sibling = pathBin ? findWorkingCodexSibling(pathBin) : null;
+  if (sibling && !/\s/.test(sibling)) {
+    return {
+      available: true,
+      codexBin: sibling,
+      reason: null,
+      status: "codex [found - PATH binary cannot load ~/.codex/config.toml; using " + sibling + "]",
+    };
+  }
+  return {
+    available: false,
+    codexBin: null,
+    reason: "codex on PATH but it cannot load ~/.codex/config.toml and no working sibling install was found",
+    status: "codex [broken - cannot load ~/.codex/config.toml]",
+  };
+}
+const codex = probeCodex();
+
+// Scaffold the model-backend config (.gantry/models.json, folded in from
+// Gantry). Both reviewers route to codex when the codex CLI is on PATH - the
+// two gates are worth a second model's eyes - and fall back to native when it
+// is not, since a gate that cannot run is worse than no gate. Every other role
+// is native, so the pipeline behaves exactly as before until flipped via
+// /claudhd:models. This is per-machine config (its backends depend on which
+// CLIs and API keys exist locally), so it is gitignored below rather than
+// shared. Never overwrites an existing file.
+let modelsStatus;
+if (exists(path.join(".gantry", "models.json"))) {
+  modelsStatus = "kept existing .gantry/models.json";
+} else {
+  try {
+    fs.mkdirSync(path.join(ROOT, ".gantry"), { recursive: true });
+    fs.writeFileSync(
+      path.join(ROOT, ".gantry", "models.json"),
+      JSON.stringify(roleCore.scaffoldConfig(codex.available, codex.codexBin), null, 2) + "\n"
+    );
+    modelsStatus = codex.available
+      ? "created .gantry/models.json (both reviewers -> codex" +
+        (codex.codexBin ? " via " + codex.codexBin : "") + ", rest native)"
+      : "created .gantry/models.json (all roles native - " + codex.reason + ")";
+  } catch (e) {
+    modelsStatus = "could not write .gantry/models.json (" + e.message + ")";
+  }
+}
+
+// .gitignore: .now/ (ClauDHD's own local session state) plus the three
+// local/transient .gantry/* entries (folded in from Gantry: the sentinel, the
+// per-machine model config, and the transient headless-guard settings) -
+// additive and idempotent, one entry at a time. The .gantry/* entries are
+// unconditional because models.json is scaffolded on every init, so it must
+// stay ignored on every init too.
+const GITIGNORE_ENTRIES = [
+  ".now/",
+  ".gantry/active-phase.json",
+  ".gantry/models.json",
+  ".gantry/headless-implementer-settings.json",
+];
 const gi = path.join(ROOT, ".gitignore");
 let giTxt = "";
 try { giTxt = fs.existsSync(gi) ? fs.readFileSync(gi, "utf8") : ""; } catch { /* ignore */ }
+const giLines = giTxt.split(/\r?\n/).map((l) => l.trim());
+const giMissing = GITIGNORE_ENTRIES.filter((e) => !giLines.includes(e));
 let giNote;
-if (/(^|\n)\.now\/?\s*(\n|$)/.test(giTxt)) {
-  giNote = "already ignores .now/";
+if (giMissing.length === 0) {
+  giNote = "already ignores .now/ and .gantry/*";
 } else {
   try {
-    fs.writeFileSync(gi, giTxt.replace(/\s*$/, "") + "\n\n# ClauDHD local session state\n.now/\n");
-    giNote = "added .now/";
+    fs.writeFileSync(
+      gi,
+      giTxt.replace(/\s*$/, "") + (giTxt.trim() ? "\n\n" : "") +
+      "# ClauDHD local session state\n" + giMissing.join("\n") + "\n"
+    );
+    giNote = "added " + giMissing.join(", ");
   } catch (e) {
     giNote = "FAILED to update (" + e.message + ")";
   }
@@ -97,20 +265,71 @@ if (failed.length) {
   process.exit(1);
 }
 
+console.log(
+  "\n--- Runtime pipeline ---\n" +
+  "  Audit docs (" + (docDir === "." ? "project root" : docDir + "/") + "): created " +
+  (auditCreated.length ? auditCreated.join(", ") : "none (all already present)") +
+  (auditKept.length ? "; kept existing " + auditKept.join(", ") : "") + "\n" +
+  "  Model backends: " + modelsStatus
+);
+
+// Plugin-native hook opt-in: only relevant when init.js is executed inside an
+// installed plugin (CLAUDE_PLUGIN_ROOT is set by the plugin host).
+//
+// Default run (no --enable-hooks flag): report that enforcement is available
+// but NOT enabled, and print how to enable it. Do NOT write .gantry/enabled.
+//
+// With --enable-hooks flag: write the .gantry/enabled marker so the PreToolUse
+// guards become active. (Gitignoring the transient/local .gantry files is done
+// unconditionally above, not here, since models.json is scaffolded every run.)
+if (process.env.CLAUDE_PLUGIN_ROOT) {
+  const enableHooks = process.argv.includes("--enable-hooks");
+
+  if (!enableHooks) {
+    // Detection-only report: inform that enforcement is available but inert.
+    console.log(
+      "\n--- Phase enforcement hooks ---\n" +
+      "  This is a plugin install. PreToolUse enforcement is available but NOT enabled.\n" +
+      "  The hooks are inert until you opt in. To enable them, re-run the opt-in step\n" +
+      "  in /claudhd:init (it will run: node \"" + __filename + "\" --enable-hooks)."
+    );
+  } else {
+    // Explicit opt-in: write the .gantry/enabled marker (empty file).
+    const gantryDir = path.join(ROOT, ".gantry");
+    const markerPath = path.join(gantryDir, "enabled");
+    try {
+      fs.mkdirSync(gantryDir, { recursive: true });
+      if (!fs.existsSync(markerPath)) {
+        fs.writeFileSync(markerPath, "");
+        console.log("  Created .gantry/enabled (hook opt-in marker).");
+      } else {
+        console.log("  .gantry/enabled already present.");
+      }
+    } catch (e) {
+      console.error("! ClauDHD: could not write .gantry/enabled: " + e.message);
+    }
+  }
+}
+
 // Read-only repo signals, so the command can PROPOSE a first active thread
 // instead of asking you to name it cold. Pure reads; nothing is modified.
 const branch = git(["rev-parse", "--abbrev-ref", "HEAD"]);
 const recent = git(["log", "-8", "--oneline"]);
 
 // Real uncommitted work only - filter out ClauDHD's own footprint (the
-// NOW.md/IDEAS.md/SHIPPED.md we just scaffolded, plus the .gitignore we just
-// touched, all already reported above), so init doesn't echo its own changes
-// back as drift. Use plain paths (diff --name-only + ls-files), not
-// `status --short` columns: git() trims its output, which would shift the first
-// line's status code and corrupt column parsing (same reason brief.js avoids it).
-// Match the exact root-relative path git reports, NOT the basename - else a real
-// file like docs/NOW.md would be wrongly swallowed as our own scaffolding.
-const own = new Set(["NOW.md", "IDEAS.md", "SHIPPED.md", "ROADMAP.md", ".gitignore"]);
+// NOW.md/IDEAS.md/SHIPPED.md/ROADMAP.md/audit docs we just scaffolded, plus the
+// .gitignore we just touched, all already reported above), so init doesn't echo
+// its own changes back as drift. Use plain paths (diff --name-only + ls-files),
+// not `status --short` columns: git() trims its output, which would shift the
+// first line's status code and corrupt column parsing (same reason brief.js
+// avoids it). Match the exact root-relative path git reports, NOT the basename -
+// else a real file like docs/NOW.md would be wrongly swallowed as our own
+// scaffolding. .gantry/models.json and friends never show up here anyway - they
+// are gitignored above before this scan runs.
+const own = new Set([
+  "NOW.md", "IDEAS.md", "SHIPPED.md", "ROADMAP.md", ".gitignore",
+  ...[...auditCreated, ...auditKept].map((p) => p.replace(/\\/g, "/")),
+]);
 const tracked = git(["diff", "--name-only", "HEAD"]);
 const untracked = git(["ls-files", "--others", "--exclude-standard"]);
 const dirty = [...new Set(

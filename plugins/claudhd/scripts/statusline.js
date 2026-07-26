@@ -30,9 +30,9 @@ function section(text, heading) {
   return m ? m[0].trim() : "";
 }
 
-// Resolve the project root from stdin JSON, with env-var fallback for tests and
-// manual invocations.
-let root = process.env.CLAUDHD_PROJECT_DIR || process.env.CLAUDE_PROJECT_DIR || process.cwd();
+// Resolve the project root from stdin JSON, with env-var fallback (via root.js,
+// see root.js) for tests and manual invocations.
+let root = require("./root.js")(process.env);
 try {
   const raw = fs.readFileSync(0, "utf8").trim();
   if (raw) {

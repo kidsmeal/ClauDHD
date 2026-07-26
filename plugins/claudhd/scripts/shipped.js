@@ -11,8 +11,8 @@ const { execFileSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 
-// Provider-neutral first, then Claude Code's var, then cwd.
-const ROOT = process.env.CLAUDHD_PROJECT_DIR || process.env.CLAUDE_PROJECT_DIR || process.cwd();
+// Single resolver for every ClauDHD script (see root.js).
+const ROOT = require("./root.js")(process.env);
 const SHIPPED = path.join(ROOT, "SHIPPED.md");
 const MARKER_PREFIX = "<!-- last-sha:";
 

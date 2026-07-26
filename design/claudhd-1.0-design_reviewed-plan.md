@@ -38,7 +38,7 @@ Section 7 locks 15 commands and names what is deleted. It does not account for: 
 
 ## Phase 1: Import the Gantry runtime into plugins/claudhd
 
-**Status:** pending
+**Status:** committed (reviewed PASS-WITH-NOTES by codex 2026-07-25 after two FAIL rounds; one deferred note in CURRENTNESS_AUDIT.md)
 **Goal:** Every Gantry script, agent, template and test lives in this repo under `plugins/claudhd/`, wired through one hooks file and one project-root resolver, with behavior byte-identical to Gantry today.
 **Files:**
 - create `plugins/claudhd/scripts/root.js` (single project-root resolver; order `CLAUDHD_PROJECT_DIR` > `GANTRY_PROJECT_DIR` > `CLAUDE_PROJECT_DIR` > `cwd`, so both plugins' existing env contracts keep working)

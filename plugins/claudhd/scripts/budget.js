@@ -14,7 +14,8 @@ const path = require("path");
 const { activeThreadLineCount } = require("./nowfile.js");
 const { ACTIVE_THREAD_LINE_BUDGET } = require("./constants.js");
 
-const ROOT = process.env.CLAUDHD_PROJECT_DIR || process.env.CLAUDE_PROJECT_DIR || process.cwd();
+// Single resolver for every ClauDHD script (see root.js).
+const ROOT = require("./root.js")(process.env);
 const NOW_MD = path.join(ROOT, "NOW.md");
 
 try {

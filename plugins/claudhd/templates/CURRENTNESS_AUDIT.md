@@ -4,7 +4,7 @@ Last updated: <DATE>
 
 Purpose: help a future session answer "what is actually current?" before touching an old
 plan. This is an audit snapshot, not a reorganization. Prefer correcting this file over
-rewriting or moving the older docs. Refresh it with `/gantry:audit`.
+rewriting or moving the older docs. Refresh it with `/claudhd:audit`.
 
 ## Trust First
 
@@ -35,7 +35,7 @@ Should not pull attention unless a bug points back here.
 
 ## Open doc flags
 
-Written by the review relay when a phase diff made a standing doc stale. Cleared by `/gantry:audit`.
+Written by the review relay when a phase diff made a standing doc stale. Cleared by `/claudhd:audit`.
 Format: `- [ ] <doc path>: <one line, what the diff invalidated> (phase N, <feature or plan name>)`.
 
 (empty)
@@ -45,10 +45,10 @@ Format: `- [ ] <doc path>: <one line, what the diff invalidated> (phase N, <feat
 Written by the review relay at the commit gate, one line per Deferred note the phase-reviewer
 chose not to fix this phase (pending external API, plan-blessed placeholder, later-phase consumer).
 A deferred note is not a dropped note - it lives here until someone clears it. Retire a line when
-the work lands or the reason expires; `/gantry:audit` prunes stale ones.
+the work lands or the reason expires; `/claudhd:audit` prunes stale ones.
 Format: `- [ ] <note, with file:line>: <why deferred> (phase N, <feature or plan name>)`.
 
-- [ ] duplicate-hooks session-load smoke (plugins/claudhd/hooks/hooks.json): only observable with the plugin installed from a release; the installed claudhd is still 0.9.0, so this lands in phase 7's release verification. Hook firing itself was proven by the user's 15-scenario harness (scratchpad/hooktest.sh), 2026-07-25. (phase 1, claudhd 1.0)
+(empty)
 
 ## Rule of thumb
 - Roadmap says what to do next.

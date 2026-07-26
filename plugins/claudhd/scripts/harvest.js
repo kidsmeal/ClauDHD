@@ -20,9 +20,9 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-// Provider-neutral first, then Claude Code's var, then cwd. (The transcript
+// Single resolver for every ClauDHD script (see root.js). (The transcript
 // location below stays Claude-specific - harvest reads Claude Code's own logs.)
-const ROOT = process.env.CLAUDHD_PROJECT_DIR || process.env.CLAUDE_PROJECT_DIR || process.cwd();
+const ROOT = require("./root.js")(process.env);
 const NOW_DIR = path.join(ROOT, ".now");
 const WATERMARK = path.join(NOW_DIR, "last-harvest");
 const ARGS = process.argv.slice(2).join(" ").split(/\s+/).filter(Boolean);

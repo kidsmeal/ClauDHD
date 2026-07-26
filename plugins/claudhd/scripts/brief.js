@@ -25,9 +25,10 @@ const {
   fenceData,
 } = require("./constants.js");
 
-// Provider-neutral first, then Claude Code's var, then cwd. Lets the same
-// scripts run under a different host (or in tests) by setting CLAUDHD_PROJECT_DIR.
-const ROOT = process.env.CLAUDHD_PROJECT_DIR || process.env.CLAUDE_PROJECT_DIR || process.cwd();
+// Single resolver for every ClauDHD script (see root.js): provider-neutral var
+// first, then Gantry's legacy var, then Claude Code's var, then cwd. Lets the
+// same scripts run under a different host (or in tests) by setting CLAUDHD_PROJECT_DIR.
+const ROOT = require("./root.js")(process.env);
 const NOW_MD = path.join(ROOT, "NOW.md");
 const NOW_DIR = path.join(ROOT, ".now");
 const PLAIN = process.argv.includes("--plain");
