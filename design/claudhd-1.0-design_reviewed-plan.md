@@ -109,7 +109,7 @@ Section 7 locks 15 commands and names what is deleted. It does not account for: 
 
 ## Phase 4: The commit boundary reconcile
 
-**Status:** pending
+**Status:** committed (five sol rounds, all findings real, valve tripped on round five: finding 1 deferred to phase 5 by user ruling, findings 2-3 fixed; end-to-end smoke passed: one hook-driven commit carrying code, NOW.md, ROADMAP.md, SHIPPED.md and the plan status flip)
 **Goal:** Every `git commit` made inside a session regenerates state.json, NOW.md, the plan's per-phase Status line, the SHIPPED.md entry and the roadmap item's state, stages them, and rides the same commit.
 **Files:**
 - create `plugins/claudhd/scripts/reconcile.js` (takes the commit message and the project root; regenerates state, renders NOW.md, updates the active plan's `**Status:**` line for the active phase, appends the SHIPPED.md entry with message and date and no hash, updates the roadmap item's state, then stages exactly the files it wrote)
