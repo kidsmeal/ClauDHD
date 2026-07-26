@@ -97,7 +97,7 @@ Section 7 locks 15 commands and names what is deleted. It does not account for: 
 - state schema addition (declared at review 2026-07-26): `roadmapIds`, a durable flat array of every issued r-MMDD-N id, owned by whichever script issues ids, written through the merge-preserving writer, never a Stop-hook owned key. It is what makes "never reuse an id" hold across process runs and deletions.
 - modify `plugins/claudhd/templates/NOW.md` (becomes the generated shape, not a hand-editing prompt)
 - modify `plugins/claudhd/templates/ROADMAP.md` (items carry ids)
-- modify `plugins/claudhd/scripts/init.js` (backfill roadmap ids at init, per section 4)
+- modify `plugins/claudhd/scripts/init.js` (scaffold a fresh NOW.md via `nowrender.render({})` rather than template copy - AMENDED at review 2026-07-26 to close a genuine plan ambiguity that caused three contradictory review rounds: the renderer-only exit criterion governs, and this bullet now states the wiring explicitly; assign roadmap ids at init through `roadmapids.js` with the current date, never hardcoded template samples; backfill existing id-less items per section 4)
 - create `test/nowrender.test.js` (facts render from state; a thread with no parent renders as unplanned work; intent lines survive a regeneration; the opt-in marker survives)
 - create `test/roadmapids.test.js` (next-unused counter, no reuse after a delete, same-day collision, backfill preserves wording byte-for-byte, non-date-prefixed legacy ids ignored safely)
 - modify `test/init.test.js`, `test/state.test.js`
