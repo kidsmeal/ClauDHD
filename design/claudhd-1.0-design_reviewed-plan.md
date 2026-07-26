@@ -93,7 +93,7 @@ Section 7 locks 15 commands and names what is deleted. It does not account for: 
 - create `plugins/claudhd/scripts/nowrender.js` (pure function: state object in, NOW.md text out; mode-aware, renders mode, plan, phase, position, the `from: <roadmap-id>` link and the counts; keeps the `<!-- claudhd` opt-in marker in the output)
 - create `plugins/claudhd/scripts/roadmapids.js` (id generation `r-MMDD-N`: scan existing ids for today's date prefix, take the next unused counter, never reuse; backfill ids onto existing id-less lines without touching their wording; render the id beside the item text)
 - modify `plugins/claudhd/scripts/nowfile.js` (parse the generated shape; keep the existing extractors working against a hand-written NOW.md so a pre-1.0 project still reports facts)
-- modify `plugins/claudhd/scripts/state.js` (persist `activeRoadmapId` and `from`; persist intent lines if B3 resolves that way)
+- modify `plugins/claudhd/scripts/state.js` (persist `from`, which IS the active-roadmap-id field - one field, resolved at review 2026-07-26, not two names for the same fact; persist intent lines per B3: state fields)
 - modify `plugins/claudhd/templates/NOW.md` (becomes the generated shape, not a hand-editing prompt)
 - modify `plugins/claudhd/templates/ROADMAP.md` (items carry ids)
 - modify `plugins/claudhd/scripts/init.js` (backfill roadmap ids at init, per section 4)
@@ -104,7 +104,7 @@ Section 7 locks 15 commands and names what is deleted. It does not account for: 
 **Verification:** `npm test`. The load-bearing tests: regenerate NOW.md twice from the same state and get identical output; regenerate after an intent-line edit and the intent line survives; backfill ids into a ROADMAP.md with mixed id-carrying and id-less lines and assert every original line's wording is unchanged.
 **Exit criteria:** `npm test` passes; NOW.md's fact lines are produced by `nowrender.js` alone (no other module writes them); id generation never returns an id already present in the file.
 **Blockers:** B2 (does the `## Quick fixes` section exist in the rendered NOW.md), B3 (where intent lines persist). Both must be answered before this phase starts.
-**Wired-by:** phase 4 (the reconcile calls the renderer at the commit boundary) and phase 7 (`/claudhd:now`, `/claudhd:roadmap`, `/claudhd:start` call it on demand).
+**Wired-by:** phase 4 (the reconcile calls the renderer at the commit boundary) and phase 7 (`/claudhd:now`, `/claudhd:roadmap`, `/claudhd:start` call it on demand). nowfile.js's `modeLine`/`fromLine` extractors are consumed by phase 4's reconcile (drift check against the rendered shape) and phase 7's board; test-only reachability in this phase is declared intentional.
 
 ## Phase 4: The commit boundary reconcile
 
