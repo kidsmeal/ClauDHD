@@ -90,7 +90,7 @@ const DEFAULT_CONFIG = {
 // diff - so both are where a second model earns its cost. This is the default
 // routing init writes for a new project, but only when the codex CLI is on
 // PATH, since scaffolding a gate that cannot run is worse than no gate.
-const CODEX_REVIEWER = { backend: "codex", model: "gpt-5.6-terra" };
+const CODEX_REVIEWER = { backend: "codex", model: "gpt-5.6-sol" };
 
 // Build the config to scaffold into a fresh project. `codexAvailable` comes from
 // a probe at the call site (init.js), never from a guess here. `codexBin`

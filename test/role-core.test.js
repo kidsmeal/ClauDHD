@@ -79,7 +79,7 @@ test("scaffoldConfig with codexBin yields reviewers whose invocation argv[0] is 
     assert.equal(r.error, null, role);
     const inv = core.buildInvocation(r, { prompt: "REVIEW" });
     assert.equal(inv.argv[0], bin, role);
-    assert.deepEqual(inv.argv.slice(1, 4), ["exec", "--model", "gpt-5.6-terra"], role);
+    assert.deepEqual(inv.argv.slice(1, 4), ["exec", "--model", "gpt-5.6-sol"], role);
   }
 });
 
