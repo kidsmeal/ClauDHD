@@ -79,7 +79,7 @@ const DEFAULT_CONFIG = {
     // _reviewed doc; the agent prompt is what keeps it read-only on source.
     "codex": {
       type: "cli",
-      cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check",
+      cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check -c model_reasoning_effort=high",
       promptVia: "stdin",
       sandbox: "workspace-write",
     },
@@ -90,7 +90,7 @@ const DEFAULT_CONFIG = {
 // diff - so both are where a second model earns its cost. This is the default
 // routing init writes for a new project, but only when the codex CLI is on
 // PATH, since scaffolding a gate that cannot run is worse than no gate.
-const CODEX_REVIEWER = { backend: "codex", model: "gpt-5.5" };
+const CODEX_REVIEWER = { backend: "codex", model: "gpt-5.6-terra" };
 
 // Build the config to scaffold into a fresh project. `codexAvailable` comes from
 // a probe at the call site (init.js), never from a guess here. `codexBin`

@@ -46,7 +46,7 @@ test("scaffoldConfig with codexBin rewrites the codex backend cmd to the full pa
   const config = core.scaffoldConfig(true, bin);
   const codex = config.backends.codex;
   assert.ok(codex.cmd.startsWith(bin + " "), "cmd should start with the full path: " + codex.cmd);
-  assert.match(codex.cmd, /exec --model \{model\} --sandbox \{sandbox\} --skip-git-repo-check$/);
+  assert.match(codex.cmd, /exec --model \{model\} --sandbox \{sandbox\} --skip-git-repo-check -c model_reasoning_effort=high$/);
   // The rest of the backend definition survives the override.
   assert.equal(codex.promptVia, "stdin");
   assert.equal(codex.sandbox, "workspace-write");
@@ -56,7 +56,7 @@ test("scaffoldConfig codexBin override does not mutate DEFAULT_CONFIG's codex ba
   core.scaffoldConfig(true, "/opt/openai/codex/bin/abc123/codex");
   assert.equal(
     core.DEFAULT_CONFIG.backends.codex.cmd,
-    "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check"
+    "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check -c model_reasoning_effort=high"
   );
 });
 
@@ -79,7 +79,7 @@ test("scaffoldConfig with codexBin yields reviewers whose invocation argv[0] is 
     assert.equal(r.error, null, role);
     const inv = core.buildInvocation(r, { prompt: "REVIEW" });
     assert.equal(inv.argv[0], bin, role);
-    assert.deepEqual(inv.argv.slice(1, 4), ["exec", "--model", "gpt-5.5"], role);
+    assert.deepEqual(inv.argv.slice(1, 4), ["exec", "--model", "gpt-5.6-terra"], role);
   }
 });
 
@@ -345,7 +345,7 @@ test("buildInvocation for codex cli pipes the prompt via stdin", () => {
     backends: {
       codex: {
         type: "cli",
-        cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check",
+        cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check -c model_reasoning_effort=high",
         promptVia: "stdin",
         sandbox: "read-only",
       },
@@ -355,6 +355,7 @@ test("buildInvocation for codex cli pipes the prompt via stdin", () => {
   assert.deepEqual(inv.argv, [
     "codex", "exec", "--model", "gpt-5.5-codex",
     "--sandbox", "read-only", "--skip-git-repo-check",
+    "-c", "model_reasoning_effort=high",
   ]);
   assert.equal(inv.stdin, "REVIEW THIS");
 });
@@ -460,7 +461,7 @@ const REALISTIC_CFG_WITH_ADVERSARY = {
     "claude": { type: "claude-headless" },
     "codex": {
       type: "cli",
-      cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check",
+      cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check -c model_reasoning_effort=high",
       promptVia: "stdin",
       sandbox: "workspace-write",
     },
@@ -490,7 +491,7 @@ test("adversary on design-reviewer resolves to a descriptor", () => {
       "native": { type: "native" },
       "codex": {
         type: "cli",
-        cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check",
+        cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check -c model_reasoning_effort=high",
         promptVia: "stdin",
         sandbox: "workspace-write",
       },
@@ -516,7 +517,7 @@ test("adversary on implementer is silently ignored - no adversary on return", ()
       "native": { type: "native" },
       "codex": {
         type: "cli",
-        cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check",
+        cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check -c model_reasoning_effort=high",
         promptVia: "stdin",
         sandbox: "workspace-write",
       },
@@ -540,7 +541,7 @@ test("adversary on implementer sets adversaryIgnored:true so callers can warn", 
       "native": { type: "native" },
       "codex": {
         type: "cli",
-        cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check",
+        cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check -c model_reasoning_effort=high",
         promptVia: "stdin",
         sandbox: "workspace-write",
       },
@@ -564,7 +565,7 @@ test("adversary on phase-planner is silently ignored - no adversary on return", 
       "native": { type: "native" },
       "codex": {
         type: "cli",
-        cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check",
+        cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check -c model_reasoning_effort=high",
         promptVia: "stdin",
         sandbox: "workspace-write",
       },
@@ -588,7 +589,7 @@ test("adversary on phase-planner sets adversaryIgnored:true so callers can warn"
       "native": { type: "native" },
       "codex": {
         type: "cli",
-        cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check",
+        cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check -c model_reasoning_effort=high",
         promptVia: "stdin",
         sandbox: "workspace-write",
       },
@@ -627,7 +628,7 @@ test("malformed adversary: unknown backend name - fails safe to no adversary, pr
       "native": { type: "native" },
       "codex": {
         type: "cli",
-        cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check",
+        cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check -c model_reasoning_effort=high",
         promptVia: "stdin",
         sandbox: "workspace-write",
       },
@@ -651,7 +652,7 @@ test("malformed adversary: unknown backend type - fails safe to no adversary", (
       "native": { type: "native" },
       "codex": {
         type: "cli",
-        cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check",
+        cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check -c model_reasoning_effort=high",
         promptVia: "stdin",
         sandbox: "workspace-write",
       },
@@ -679,7 +680,7 @@ test("malformed adversary: external backend with no model - fails safe to no adv
       "native": { type: "native" },
       "codex": {
         type: "cli",
-        cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check",
+        cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check -c model_reasoning_effort=high",
         promptVia: "stdin",
         sandbox: "workspace-write",
       },
@@ -708,7 +709,7 @@ test("config without adversary key yields no adversary on phase-reviewer", () =>
       "native": { type: "native" },
       "codex": {
         type: "cli",
-        cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check",
+        cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check -c model_reasoning_effort=high",
         promptVia: "stdin",
         sandbox: "workspace-write",
       },
@@ -733,7 +734,7 @@ test("adversary identical to primary is flagged with adversarySameAsPrimary on t
       "native": { type: "native" },
       "codex": {
         type: "cli",
-        cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check",
+        cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check -c model_reasoning_effort=high",
         promptVia: "stdin",
         sandbox: "workspace-write",
       },
@@ -761,7 +762,7 @@ test("HARNESS_SAFE_TYPES lock does NOT apply to a reviewer adversary: cli advers
       "native": { type: "native" },
       "codex": {
         type: "cli",
-        cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check",
+        cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check -c model_reasoning_effort=high",
         promptVia: "stdin",
         sandbox: "workspace-write",
       },
