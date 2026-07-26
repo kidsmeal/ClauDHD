@@ -87,7 +87,7 @@ Section 7 locks 15 commands and names what is deleted. It does not account for: 
 
 ## Phase 3: Generated NOW.md and generated roadmap ids
 
-**Status:** pending
+**Status:** committed (PASS-WITH-NOTES by codex/sol on round eight, fix-nows applied, zero deferred notes; eight rounds total: two plan-ambiguity oscillations since resolved in plan text, six rounds of real findings, and the phase that triggered the severity-scale review policy)
 **Goal:** NOW.md renders from state (facts machine-generated, intent lines human), and every ROADMAP.md item carries a stable, collision-safe generated id rendered beside its text.
 **Files:**
 - create `plugins/claudhd/scripts/nowrender.js` (pure function: state object in, NOW.md text out; mode-aware, renders mode, plan, phase, position, the `from: <roadmap-id>` link and the counts; keeps the `<!-- claudhd` opt-in marker in the output)

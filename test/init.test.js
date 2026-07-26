@@ -9,6 +9,16 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { makeRepo, cleanup, run, write, read, exists } = require("../tools/helpers.js");
+const { render } = require("../plugins/claudhd/scripts/nowrender.js");
+
+test("init scaffolds a fresh NOW.md by rendering render({}), not by copying templates/NOW.md", () => {
+  const { dir } = makeRepo();
+  try {
+    const r = run(dir, "init.js");
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(read(dir, "NOW.md"), render({}), "a freshly scaffolded NOW.md must be byte-identical to the canonical render");
+  } finally { cleanup(dir); }
+});
 
 test("init filters its own scaffolded files from repo signals", () => {
   const { dir, git } = makeRepo();
@@ -176,6 +186,99 @@ test("with CLAUDE_PLUGIN_ROOT set and --enable-hooks: writes .gantry/enabled", (
     assert.equal(r.status, 0, r.stderr);
     assert.ok(exists(dir, path.join(".gantry", "enabled")), ".gantry/enabled should be created");
     assert.match(r.stdout, /Created \.gantry\/enabled/);
+  } finally { cleanup(dir); }
+});
+
+// ---------------------------------------------------------------------------
+// Phase 3: roadmap id backfill (design section 4).
+// ---------------------------------------------------------------------------
+
+test("backfills r-MMDD-N ids onto an existing ROADMAP.md's id-less items, without touching their wording", () => {
+  const { dir } = makeRepo();
+  try {
+    write(dir, "ROADMAP.md", [
+      "# ROADMAP",
+      "## Next",
+      "- [ ] ship the widget - done: it renders",
+      "## Later",
+      "- [ ] someday: rewrite the parser",
+    ].join("\n"));
+
+    const r = run(dir, "init.js");
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /backfilled ids/i);
+
+    const roadmap = read(dir, "ROADMAP.md");
+    assert.match(roadmap, /ship the widget - done: it renders\s*`r-\d{4}-1`/);
+    assert.match(roadmap, /someday: rewrite the parser\s*`r-\d{4}-2`/);
+  } finally { cleanup(dir); }
+});
+
+test("roadmap id backfill is idempotent: a second init run does not re-tag or duplicate ids", () => {
+  const { dir } = makeRepo();
+  try {
+    write(dir, "ROADMAP.md", "## Next\n- [ ] ship the widget\n");
+    run(dir, "init.js");
+    const once = read(dir, "ROADMAP.md");
+    const r2 = run(dir, "init.js");
+    assert.equal(r2.status, 0, r2.stderr);
+    const twice = read(dir, "ROADMAP.md");
+    assert.equal(twice, once, "a second run must not change an already-backfilled ROADMAP.md");
+    assert.match(r2.stdout, /already has an id/i);
+  } finally { cleanup(dir); }
+});
+
+test("the roadmap id ledger persisted in state.json prevents a later init run from reissuing a deleted id", () => {
+  const { dir } = makeRepo();
+  try {
+    write(dir, "ROADMAP.md", "## Next\n- [ ] first item\n- [ ] second item\n");
+    const r1 = run(dir, "init.js");
+    assert.equal(r1.status, 0, r1.stderr);
+    const afterFirstInit = read(dir, "ROADMAP.md");
+    assert.match(afterFirstInit, /second item\s*`r-\d{4}-2`/, "sanity: second item got the expected counter");
+
+    // Delete the highest-numbered item's line entirely (its id is now nowhere
+    // in the file), and add a brand-new id-less item in its place.
+    const withoutSecond = afterFirstInit.split(/\r?\n/).filter((l) => !l.includes("second item")).join("\n");
+    write(dir, "ROADMAP.md", withoutSecond + "\n- [ ] third item\n");
+
+    const r2 = run(dir, "init.js");
+    assert.equal(r2.status, 0, r2.stderr);
+    const finalRoadmap = read(dir, "ROADMAP.md");
+    assert.doesNotMatch(finalRoadmap, /third item\s*`r-\d{4}-2`/, "must not reissue the id whose line was deleted");
+    assert.match(finalRoadmap, /third item\s*`r-\d{4}-3`/, "the persisted ledger keeps the counter moving forward past the deleted id");
+  } finally { cleanup(dir); }
+});
+
+test("a real read failure on ROADMAP.md (a directory in its place, not a missing file) makes init exit non-zero and name the error, not silently no-op", () => {
+  const { dir } = makeRepo();
+  try {
+    // A directory where ROADMAP.md should be: fs.existsSync sees it as
+    // present, but reading it as a file throws (EISDIR on every platform,
+    // including Windows) - the exact "real read failure" shape this fix
+    // guards, as opposed to ENOENT (genuinely absent, which stays silent/ok).
+    fs.mkdirSync(path.join(dir, "ROADMAP.md"));
+
+    const r = run(dir, "init.js");
+    assert.notEqual(r.status, 0, "init must exit non-zero on a real read failure, not silently succeed");
+    assert.match(r.stderr, /ROADMAP\.md id backfill/i, "the failure must be named as the roadmap id backfill step");
+    assert.match(r.stderr, /EISDIR|illegal operation on a directory/i, "the underlying fs error must be named, not swallowed");
+  } finally { cleanup(dir); }
+});
+
+test("a freshly-scaffolded ROADMAP.md gets real ids assigned for today's date, not a hardcoded sample", () => {
+  const { dir } = makeRepo();
+  try {
+    const r = run(dir, "init.js");
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /backfilled ids/i, "the template's placeholder items are id-less, so a fresh init must backfill them");
+
+    const roadmap = read(dir, "ROADMAP.md");
+    const now = new Date();
+    const mmdd = String(now.getMonth() + 1).padStart(2, "0") + String(now.getDate()).padStart(2, "0");
+    const idsForToday = (roadmap.match(new RegExp("`r-" + mmdd + "-\\d+`", "g")) || []).length;
+    assert.ok(idsForToday >= 4, "every placeholder item (Next/Later/Shipped/Non-goals) should get a real, current-date id");
+    assert.doesNotMatch(roadmap, /r-0801-/, "no hardcoded sample id from the template should ever appear");
   } finally { cleanup(dir); }
 });
 

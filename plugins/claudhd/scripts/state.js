@@ -8,18 +8,28 @@
  * dates. No thresholds and no judgments - consumers derive their own flags
  * from these numbers. Missing source files become null sections, never errors.
  *
- * schemaVersion 2 adds four fields alongside those facts, each owned by a
- * different writer: `mode` and `from` (the roadmap-id parent link) get real
- * writers in phases 5 and 3 respectively; `design` (doc path, resolved/open
- * decision lists) lands in a later phase too; `build` (plan ref, phase, files,
- * allow, started, session - Gantry's sentinel, folded in) gets its writer in
- * THIS phase (sentinel.js) and its readers in this phase too (both guards, via
- * sentinel-core.js's readSentinel). All four are first-class in the schema as
- * of this phase even though only `build` has a real writer yet: a v1 file (no
- * mode/from/build/design keys) and a v2 file both read cleanly through
- * readState(), which normalizes each absent field to null rather than
- * undefined, so phase 3/5 write into a schema that is already complete rather
- * than one they have to finish designing.
+ * schemaVersion 2 adds six fields, each owned by exactly one writer: `mode`,
+ * `from` (the roadmap-id parent link), `build` (Gantry's sentinel, folded
+ * in), `design`, `intent`, `roadmapIds`. readState() normalizes all six to
+ * null when absent, so a v1 file and a v2 file are indistinguishable to a
+ * reader that only cares about presence.
+ *
+ * `intent` (B3): `{ thread, next }`, NOW.md's Active-thread lines. state.json
+ * is their only source - nowrender.js never parses them back out of NOW.md.
+ * Deliberately NOT one of checkpoint.js's STOP_HOOK_OWNED_KEYS: writeStateAtomic
+ * only touches the keys its caller names, so a Stop write (which never claims
+ * "intent") can never erase it - the same guarantee that keeps `build`/`mode`/
+ * `from`/`design` from clobbering each other.
+ *
+ * `roadmapIds`: the durable ledger of every r-MMDD-N id ever issued, so
+ * roadmapids.js's nextId()/backfill() never reissue one whose line was later
+ * deleted (a plain text scan can't prove that on its own). Same
+ * STOP_HOOK_OWNED_KEYS exclusion as `intent`, for the same reason.
+ *
+ * issueRoadmapIds() below is the ONE entry point for issuing ids: read
+ * ROADMAP.md, read the ledger, allocate, write ROADMAP.md, persist the
+ * ledger are race-safe only as a single locked transaction. Every issuer
+ * must call it rather than composing those steps itself.
  *
  * buildState is a pure function (strings + git facts in, object out) so the whole
  * contract is testable without spawning the hook. It only ever produces the
@@ -46,6 +56,7 @@ const {
   queueCount,
   quickFixCount,
 } = require("./nowfile.js");
+const roadmapIds = require("./roadmapids.js");
 
 // Bump only on a BREAKING change to an existing field (rename, removed field,
 // changed meaning). Additive fields do not bump: consumers ignore unknown keys.
@@ -176,10 +187,10 @@ function stateLockPath(nowDir) {
 
 // Read <nowDir>/state.json and normalize it for a consumer that must accept
 // both schema v1 and v2: an absent or unreadable file returns null (there is
-// no state yet - not an error); a parsed v1 file (no mode/from/build/design
-// keys) comes back with all four added as null rather than undefined, so a v1
-// and a v2 file are indistinguishable to a reader that only cares about
-// presence. Never throws.
+// no state yet - not an error); a parsed v1 file (no mode/from/build/design/
+// intent/roadmapIds keys) comes back with all six added as null rather than
+// undefined, so a v1 and a v2 file are indistinguishable to a reader that
+// only cares about presence. Never throws.
 function readState(nowDir) {
   try {
     const raw = fs.readFileSync(path.join(nowDir, "state.json"), "utf8");
@@ -191,6 +202,8 @@ function readState(nowDir) {
       from: obj.from != null ? obj.from : null,
       build: obj.build != null ? obj.build : null,
       design: obj.design != null ? obj.design : null,
+      intent: obj.intent != null ? obj.intent : null,
+      roadmapIds: obj.roadmapIds != null ? obj.roadmapIds : null,
     };
   } catch {
     return null;
@@ -244,12 +257,73 @@ function writeStateAtomic(nowDir, patch, ownedKeys) {
   });
 }
 
+// Dedicated lock for the roadmap-id issuance transaction (read ROADMAP.md +
+// the `roadmapIds` ledger, allocate ids, persist the ledger, write
+// ROADMAP.md). Deliberately NOT stateLockPath: issueRoadmapIds() below calls
+// writeStateAtomic() to persist the ledger, and writeStateAtomic() acquires
+// stateLockPath() itself - nesting the SAME lock inside itself would
+// self-deadlock (a directory mkdir is not reentrant). A separate lock lets
+// the two compose safely: this one serializes concurrent id issuers against
+// EACH OTHER; the inner stateLockPath() (acquired transiently, inside this
+// lock's critical section) still serializes the ledger write against every
+// OTHER state.json writer (the Stop hook, sentinel.js), exactly as before.
+function roadmapLockPath(nowDir) {
+  return path.join(nowDir, "roadmap.lock");
+}
+
+// THE single entry point for issuing/backfilling ROADMAP.md ids. Every
+// current and future issuer (init.js today; the write vocabulary in phase 6)
+// MUST call this rather than composing roadmapIds.backfill() + a raw
+// ROADMAP.md write + writeStateAtomic() by hand: those three steps (read
+// ROADMAP.md, read the ledger, allocate, write ROADMAP.md, persist the
+// ledger) are only race-safe together, under one lock covering all of them -
+// otherwise two concurrent issuers can each allocate from the same stale
+// ledger and duplicate an id, or one issuer's ROADMAP.md write can be
+// overwritten by the other's stale read, or the persisted ledger can shrink
+// back to whichever issuer's read was oldest.
+//
+// Returns { text, changed, issued }. `changed` is false when ROADMAP.md was
+// absent (nothing to backfill) or every item already carried its own id.
+//
+// Only ENOENT (no file there) reads as "nothing to backfill" - init.js is an
+// explicit command whose own contract is to report a real failure loudly and
+// exit non-zero (see init.js's header comment), not to shrug a permissions
+// error or a directory-where-a-file-should-be into silent no-op success. Any
+// other read error (EACCES, EISDIR, ...) propagates out of this function so
+// init.js's existing catch names it and fails the command. This is
+// deliberately NOT the hooks' fail-open contract: readState() (used by the
+// silent Stop/SessionStart hooks and the guards) is untouched and keeps
+// swallowing every error, because THEIR contract is the opposite of this
+// one's.
+function issueRoadmapIds(nowDir, roadmapPath, date) {
+  return withLock(roadmapLockPath(nowDir), () => {
+    let before;
+    try { before = fs.readFileSync(roadmapPath, "utf8"); }
+    catch (e) {
+      if (e.code === "ENOENT") return { text: null, changed: false, issued: [] };
+      throw e;
+    }
+
+    const priorState = readState(nowDir);
+    const ledger = (priorState && Array.isArray(priorState.roadmapIds)) ? priorState.roadmapIds : [];
+
+    const { text: after, issued } = roadmapIds.backfill(before, date, ledger);
+    const changed = after !== before;
+    if (changed) fs.writeFileSync(roadmapPath, after);
+    writeStateAtomic(nowDir, { roadmapIds: issued }, ["roadmapIds"]);
+
+    return { text: after, changed, issued };
+  });
+}
+
 module.exports = {
   SCHEMA_VERSION,
   buildState,
   writeStateAtomic,
   readState,
   stateLockPath,
+  roadmapLockPath,
+  issueRoadmapIds,
   // exported for focused unit tests
   cursorFacts,
   ideasFacts,

@@ -1,6 +1,7 @@
 "use strict";
 /*
- * Shared NOW.md helpers used by checkpoint.js, idea.js, state.js, and budget.js.
+ * Shared NOW.md helpers used by checkpoint.js, idea.js, state.js, budget.js,
+ * and (as of phase 3) nowrender.js.
  *
  * activeThread(text)          - the active thread's name (first **bold** span).
  * activeThreadSection(text)   - the lines of the "## Active thread" section.
@@ -10,9 +11,24 @@
  * lastTouchedDate(text)       - the first YYYY-MM-DD on the "Last touched:" line.
  * queueCount(text)            - list items in "## Queue".
  * quickFixCount(text)         - open "- [ ]" items in "## Quick fixes".
+ * section(text, headingPrefix)- generic: the raw lines of any "## <name>"
+ *                               section (heading through its last non-blank
+ *                               line), joined back to text. nowrender.js uses
+ *                               this to carry the Queue/Quick fixes/Loose ends
+ *                               sections forward verbatim across a
+ *                               regeneration, since state.json only carries
+ *                               their counts, never their item text.
+ * modeLine(text) / fromLine(text) - parse the generated shape's own
+ *                               "Mode: <x>" / "from: <id>" fact lines back out
+ *                               of NOW.md text. These lines exist only in the
+ *                               generated shape (a hand-written pre-1.0
+ *                               NOW.md never has them), so both return null
+ *                               when absent rather than throwing.
  *
- * Pure string in, plain value out; no I/O, so they stay trivially testable and
- * every consumer counts the same way.
+ * These all stay pure string in, plain value out - no I/O - so every consumer
+ * (including nowrender.js, which parses its OWN previous output back for the
+ * sections it cannot regenerate from state alone) counts and parses the same
+ * way, whether the NOW.md in front of it is hand-written or generated.
  */
 
 function activeThread(text) {
@@ -100,6 +116,41 @@ function quickFixCount(text) {
     .filter((l) => /^\s*-\s*\[ \]/.test(l)).length;
 }
 
+// Exported alias of sectionLines(), so callers outside this file (nowrender.js)
+// don't duplicate the heading-scan.
+function section(text, headingStartsWith) {
+  return sectionLines(text, headingStartsWith);
+}
+
+// The generated shape's "Mode: <x>" fact line. null when absent (a
+// hand-written pre-1.0 NOW.md), or when the line is present but says idle
+// (see nowrender.js's modeDisplay() placeholder) - both read as "no mode" to
+// a consumer, same convention as fromLine()'s "(unplanned work)".
+function modeLine(text) {
+  for (const line of String(text || "").split(/\r?\n/)) {
+    const m = line.match(/^\s*Mode:\s*(.+?)\s*$/);
+    if (m) {
+      const v = m[1];
+      return /^\(.*\)$/.test(v) ? null : v; // "(none - idle)" reads as null
+    }
+  }
+  return null;
+}
+
+// The generated shape's "from: <roadmap-id>" fact line. null when absent, or
+// when the line is present but says the thread has no parent (see
+// nowrender.js's UNPLANNED_LABEL) - both read as "no parent" to a consumer.
+function fromLine(text) {
+  for (const line of String(text || "").split(/\r?\n/)) {
+    const m = line.match(/^\s*from:\s*(.+?)\s*$/i);
+    if (m) {
+      const v = m[1];
+      return /^\(.*\)$/.test(v) ? null : v; // "(unplanned work)" reads as null
+    }
+  }
+  return null;
+}
+
 module.exports = {
   activeThread,
   activeThreadSection,
@@ -108,4 +159,7 @@ module.exports = {
   lastTouchedDate,
   queueCount,
   quickFixCount,
+  section,
+  modeLine,
+  fromLine,
 };

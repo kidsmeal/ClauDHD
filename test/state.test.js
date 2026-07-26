@@ -13,6 +13,7 @@ const {
   SCHEMA_VERSION,
   buildState,
   writeStateAtomic,
+  readState,
   cursorFacts,
   ideasFacts,
   shippedFacts,
@@ -217,6 +218,54 @@ test("writeStateAtomic only replaces the keys named in ownedKeys, leaving every 
     assert.deepEqual(parsed.ideas, { total: 1 }, "the first writer's ideas section survives the second write untouched");
     assert.deepEqual(parsed.build, { phase: 2 }, "the second writer's own key is applied");
     assert.equal(parsed.schemaVersion, SCHEMA_VERSION, "schemaVersion is always stamped to the current version");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// --- Phase 3: `intent` (B3 resolution) -------------------------------------
+
+test("readState: intent defaults to null on a v1/v2 file that has not set it yet", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "claudhd-state-intent-"));
+  try {
+    const nowDir = path.join(dir, ".now");
+    writeStateAtomic(nowDir, { build: { phase: 1 } }, ["build"]);
+    const state = readState(nowDir);
+    assert.equal(state.intent, null, "intent defaults to null until a writer sets it");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("writeStateAtomic: an intent-only write leaves every other section untouched, and vice versa", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "claudhd-state-intent-"));
+  try {
+    const nowDir = path.join(dir, ".now");
+    writeStateAtomic(nowDir, { cursor: { activeThread: "a" } }, ["cursor"]);
+    writeStateAtomic(nowDir, { intent: { thread: "wire the parser", next: "write the test" } }, ["intent"]);
+
+    const state = readState(nowDir);
+    assert.deepEqual(state.intent, { thread: "wire the parser", next: "write the test" });
+    assert.deepEqual(state.cursor, { activeThread: "a" }, "an intent-only write must not touch cursor");
+
+    // Simulate a Stop hook's write, which never names "intent" in its owned
+    // keys - intent must survive exactly because ownedKeys is exhaustive.
+    writeStateAtomic(nowDir, { cursor: { activeThread: "b" } }, ["cursor"]);
+    const after = readState(nowDir);
+    assert.deepEqual(after.intent, { thread: "wire the parser", next: "write the test" }, "intent survives a write that does not own it (e.g. a Stop)");
+    assert.deepEqual(after.cursor, { activeThread: "b" });
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("readState: roadmapIds defaults to null, and an intent write does not disturb it or vice versa", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "claudhd-state-roadmapids-"));
+  try {
+    const nowDir = path.join(dir, ".now");
+    writeStateAtomic(nowDir, { build: { phase: 1 } }, ["build"]);
+    assert.equal(readState(nowDir).roadmapIds, null, "roadmapIds defaults to null until a writer sets it");
+
+    writeStateAtomic(nowDir, { roadmapIds: ["r-0725-1", "r-0725-2"] }, ["roadmapIds"]);
+    writeStateAtomic(nowDir, { intent: { thread: "a", next: "b" } }, ["intent"]);
+
+    const state = readState(nowDir);
+    assert.deepEqual(state.roadmapIds, ["r-0725-1", "r-0725-2"]);
+    assert.deepEqual(state.intent, { thread: "a", next: "b" });
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 

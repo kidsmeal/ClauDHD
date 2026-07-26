@@ -32,9 +32,12 @@ const { execFileSync, spawnSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const roleCore = require("./role-core.js");
+const nowrender = require("./nowrender.js");
+const { issueRoadmapIds } = require("./state.js");
 
 const ROOT = require("./root.js")(process.env);
 const TEMPLATES = path.join(__dirname, "..", "templates");
+const NOW_DIR = path.join(ROOT, ".now");
 const MARKER = "<!-- claudhd: opt-in marker (do not remove) -->";
 
 function git(args) {
@@ -52,6 +55,8 @@ function exists(rel) {
   try { return fs.existsSync(path.join(ROOT, rel)); } catch { return false; }
 }
 
+// NOW.md goes through render({}) rather than a template copy, so a fresh
+// cursor can never diverge from the generated shape.
 const created = [];
 const kept = [];
 const failed = [];
@@ -59,11 +64,32 @@ for (const name of ["NOW.md", "IDEAS.md", "SHIPPED.md", "ROADMAP.md"]) {
   const dest = path.join(ROOT, name);
   if (fs.existsSync(dest)) { kept.push(name); continue; }
   try {
-    fs.copyFileSync(path.join(TEMPLATES, name), dest);
+    if (name === "NOW.md") fs.writeFileSync(dest, nowrender.render({}));
+    else fs.copyFileSync(path.join(TEMPLATES, name), dest);
     created.push(name);
   } catch (e) {
     failed.push(name + " (" + e.message + ")");
   }
+}
+
+// Backfill r-MMDD-N ids onto any ROADMAP.md item that does not have one yet
+// (design section 4), through state.js's issueRoadmapIds() - the one locked
+// transaction every id issuer (init.js today; the write vocabulary later)
+// must share, so two concurrent issuers can never duplicate an id, lose an
+// item, or shrink the ledger. `new Date()` is read exactly once, here, and
+// passed in explicitly - roadmapids.js itself never reads the clock.
+let roadmapIdNote = "no ROADMAP.md to backfill";
+const roadmapPath = path.join(ROOT, "ROADMAP.md");
+try {
+  if (fs.existsSync(roadmapPath)) {
+    const { changed } = issueRoadmapIds(NOW_DIR, roadmapPath, new Date());
+    roadmapIdNote = changed
+      ? "backfilled ids onto existing ROADMAP.md items"
+      : "every ROADMAP.md item already has an id";
+  }
+} catch (e) {
+  roadmapIdNote = "could not backfill ROADMAP.md ids (" + e.message + ")";
+  failed.push("ROADMAP.md id backfill (" + e.message + ")");
 }
 
 // Ensure NOW.md carries the opt-in marker the hooks gate on, even if it
@@ -256,6 +282,7 @@ console.log(
   "  Created: " + (created.length ? created.join(", ") : "none (all already present)") + "\n" +
   "  Kept existing: " + (kept.length ? kept.join(", ") : "none") + "\n" +
   "  NOW.md marker: " + markerNote + "\n" +
+  "  ROADMAP.md ids: " + roadmapIdNote + "\n" +
   "  .gitignore: " + giNote
 );
 

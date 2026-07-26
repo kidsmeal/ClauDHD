@@ -6,6 +6,13 @@ One active thread at a time. This file is the cursor: what is live, the next phy
 
 _Committed, so it follows your branch: `git checkout` swaps this cursor to that branch's thread._
 
+This file is generated (design section 4): the facts below (Mode, Position, from, Counts, Last touched) render from `.now/state.json`, never hand-typed. The Active thread's two lines are the one piece of human prose, prompted at boundaries and persisted as state fields too - so it survives a regeneration without ever being parsed back out of this file.
+
+Mode: (none - idle)
+Position: idle - pick a mode with /claudhd:start or /claudhd:design
+from: (unplanned work)
+Counts: queue 0 · quick fixes 0 · ideas untriaged 0
+
 Last touched: (set this when you edit the file)
 
 ## Active thread (only one)
