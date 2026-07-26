@@ -12,7 +12,15 @@ Phase order is dependency order: import (1) -> state contract (2) -> generated d
 
 ## Blockers / Open Questions
 
-These need a human decision. Phase 1 and phase 2 can start today; phases 3, 5, 6 and 7 each carry one.
+All four RESOLVED by the user 2026-07-25, recorded inline below. Nothing blocks any phase.
+
+**B1 resolution:** enforcement stays per-project opt-in. The activation gate is `.now/enabled`, written only by /claudhd:init's explicit opt-in step; the legacy `.gantry/enabled` is also honored so gantry-era projects stay enforced. The mode allowlists apply only inside an adopted project; a repo without either marker is entirely inert, asserted by test.
+
+**B2 resolution:** the batch survives, merged into the quick lane. `/claudhd:quick <text>` appends to the `## Quick fixes` batch (script write, zero tokens, as today); bare `/claudhd:quick` runs the clearing pass and writes a sentinel scoped to the batch's files (the section-7 "small change, scoped sentinel" behavior). The triage card's quick-fix tap writes to the batch via the same script. The section stays in rendered NOW.md; `quickFixCount` stays in state.
+
+**B3 resolution:** intent lines persist as fields in state.json (thread intent, next intent), rendered into NOW.md like every other fact. The renderer never parses NOW.md to recover them; there is no second source of truth.
+
+**B4 resolution:** `/claudhd:version` stays; the surface is 16 commands and the design's section-7 count is amended accordingly. `/gantry:verify`'s RUNTIME_VERIFICATION_QUEUE maintenance folds into `/claudhd:audit`. `skills/gantry/SKILL.md` is rewritten as the claudhd pipeline orchestration (start, design, plan, build, review); `skills/design-plan-creator/SKILL.md` folds into `/claudhd:design`. Anything left redundant after those folds is deleted, the table stays authoritative.
 
 **B1. What activates the guards in a project that has not adopted 1.0?** (blocks phase 5)
 Section 6 makes idle mode deny source-shaped paths, and section 11 says nothing may assume the other six projects migrate during this plan. Today both guards gate on a `.gantry/enabled` opt-in marker (`file-list-guard.js` step 4, `commit-guard.js` step 4) and are inert without it. The design never mentions that marker. If the marker is dropped and absent state means idle, installing 1.0 denies every Edit in every repo that has the plugin but no `.now/state.json`. Reading section 11 forward, the marker (or an equivalent explicit opt-in) has to survive as the guard's activation gate, with the mode allowlist applying only inside an adopted project. That reading is not written down anywhere in the design, and it decides whether phase 5 ships a fleet-wide denial. Confirm the activation gate and its filename before phase 5.
