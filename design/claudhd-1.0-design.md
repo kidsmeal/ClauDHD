@@ -56,7 +56,7 @@ All implementation is gantry-lane work. Design sessions exist solely to turn the
 
 ## 7. Command surface (one plugin, one namespace)
 
-[OPEN: awaiting the user's nod or renames on this table.]
+Locked 2026-07-25 (user approved the table as written).
 
 | command | role |
 |---|---|
@@ -88,7 +88,7 @@ Deleted because the machine does the job: wrap (commit boundary reconciles), shi
 
 One idea per card in chat: text, age, capture context, buttons (roadmap / quick fix / drop / skip). Each tap sends the decision as a prompt; the agent applies it to the files under the normal gates. Thinking stays in session; the chore cost collapses to taps.
 
-[OPEN: the user asked whether triage could be app-native rather than a chat widget. As designed it is a chat widget because the applying agent lives in the session and the app never writes project files. Moving it in-app moves the safe-structural-edits line and duplicates write logic outside the plugin. Recommendation: keep chat widget, app dispatches. User to rule.]
+[OPEN, revised recommendation 2026-07-25: triage decisions are mechanical line moves (promote, drop, quick-fix, park) needing no model. The plugin owns them as scripts (idea.js-class atomic writes); /claudhd:triage calls them in chat, and the app calls the SAME scripts, so there is one write path and no duplicated logic. Recommendation now: in-app triage taps, yes. Thinking work still dispatches: a card's "discuss" button opens a primed session; design stays in session entirely. Terminal injection into a live session was investigated and rejected (no such channel exists; headless-per-tap crosses the no-tokens-from-buttons line). OP's rule updates from "zero writes to project files" to "writes only through the plugin's own scripts". User to ratify.]
 
 ## 10. Object Permanence v2 (the visual half, sequenced second)
 
@@ -111,10 +111,10 @@ Rescoped from "out of scope, knowingly broken" to the ambient layer of 1.0, upda
 
 ## 12. Open items
 
-1. Command table nod (section 7).
-2. Triage in-app vs chat widget (section 9).
-3. OP v2 safe structural edits (section 10).
-4. The 1.0 migration path for the six other initialized projects' in-flight plans and cursors: migrate or new-threads-only. (Deferred; bakingapp's reconciliation prompt is the template.)
+1. ~~Command table nod~~ RESOLVED 2026-07-25: table locked as written.
+2. Triage in-app vs chat widget (section 9). Recommended yes: taps invoke the plugin's own scripts, one write path, git-revertable; the "discuss" button dispatches when thinking is needed.
+3. OP v2 structural edits (section 10). Recommended yes with the vocabulary rule: the app may only invoke the plugin's script vocabulary (append-capture, move, mark, reorder, park), and that vocabulary contains no free-text operation. Free-text always dispatches to a session.
+4. Migration path for the six other initialized projects: DEFERRED until 1.0 is proven on bakingapp. Bakingapp's reconciliation (appendix A) is the template.
 
 ## Appendix A: bakingapp reconciliation prompt
 
