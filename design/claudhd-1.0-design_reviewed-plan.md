@@ -36,6 +36,8 @@ Section 7 locks 15 commands and names what is deleted. It does not account for: 
 
 **Resolved by reading, recorded so nobody re-opens it:** section 6's mode table says design mode is entered "(design marker)", but the same section's prose resolves that mode lives ONLY in `.now/state.json` with no sibling marker file. The prose wins. Do not create a design-marker file.
 
+**Ambient repo state (not phase artifacts):** the repo root carries its own untracked ClauDHD working files, predating this plan (NOW.md with the opt-in marker since 2026-07-11, IDEAS.md and SHIPPED.md since 2026-06-02, all template-identical). The NOW.md opt-in marker is what activates the plugin's hooks on this repo, so these files are load-bearing and must not be removed by any phase. Reviewers: treat them as pre-existing background, out of every phase's diff.
+
 ## Phase 1: Import the Gantry runtime into plugins/claudhd
 
 **Status:** committed (reviewed PASS-WITH-NOTES by codex 2026-07-25 after two FAIL rounds; one deferred note in CURRENTNESS_AUDIT.md)
