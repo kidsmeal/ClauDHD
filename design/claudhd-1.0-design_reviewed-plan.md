@@ -81,7 +81,7 @@ Section 7 locks 15 commands and names what is deleted. It does not account for: 
 **Verification:** `npm test`. Three assertions carry the phase: a v1 `state.json` read produces no throw and null build/design; a write of the build section leaves `cursor`, `ideas`, `shipped`, `roadmap` and `git` byte-identical; a legacy `.gantry/active-phase.json` present at first read is imported and then gone.
 **Exit criteria:** `npm test` passes; no script writes `state.json` outside the merge-preserving locked writer; no code path anywhere reads `.gantry/active-phase.json` except the one-shot legacy import.
 **Blockers:** None.
-**Wires:** `checkpoint.js`, `sentinel.js` and both guards all read and write the v2 fields in this phase; nothing new is left without a caller.
+**Wires:** `checkpoint.js`, `sentinel.js` and both guards all read and write the v2 fields in this phase. `readState()` is the one deliberate exception: it is the read contract phase 3's NOW renderer and statusline retarget consume, declared here so its test-only reachability in this phase is intentional.
 
 ## Phase 3: Generated NOW.md and generated roadmap ids
 
