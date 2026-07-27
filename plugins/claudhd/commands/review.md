@@ -1,0 +1,45 @@
+---
+description: Review the uncommitted diff for one phase against the plan and the project's conventions
+argument-hint: <path-to-plan> <phase-number>
+---
+Arguments: $ARGUMENTS
+
+Resolve a plan file and a phase number from those arguments before doing anything else, tolerating filler:
+- **Plan file**: the plan path (a path, normally ending in `_plan.md` or `-plan.md`).
+- **Phase**: the phase number (the integer). Ignore a literal `phase` token if present, so `<plan> phase 3`, `<plan> 3`, and `phase 3` all resolve the same.
+- If a phase number is given with no plan path, locate the plan the project is currently building and confirm it with me.
+- If you cannot determine BOTH a plan file and a phase number, ask me. Do not guess.
+
+Use the resolved plan path and phase number (`<plan>` and `<phase>` below), not the raw argument tokens, in every command and subagent call.
+
+**Dispatch the phase-reviewer to its configured model backend.** Run `node ${CLAUDE_PLUGIN_ROOT}/scripts/role.js resolve phase-reviewer`:
+- If it prints `DISPATCH: native`: spawn the **phase-reviewer** subagent (read-only) via the Task tool to review the current uncommitted diff against the plan, passing it the resolved `<plan>` and `<phase>` (use the model the resolve output names).
+- If it prints `DISPATCH: external`: run `node ${CLAUDE_PLUGIN_ROOT}/scripts/role.js run phase-reviewer -- <plan> <phase>` and treat its stdout as the reviewer's verdict. The external reviewer gathers the diff itself; do not also spawn the subagent. If the run fails (CLI missing, not authed, non-zero exit), report that and fall back to the native subagent so the gate is never skipped.
+
+The reviewer is read-only and produces a verdict either way; everything below treats that verdict identically.
+
+**Re-review context (fix rounds only, never round one).** Each reviewer run is stateless, so a fresh re-review can contradict the very fixes the prior round required. This closes that loop with `.gantry/review-round.json`: every time you relay Required fixes or Fix-now notes to the implementer (below), you first record the round, and every reviewer run AFTER a fix pass carries the recorded rounds as context. The context instructs the reviewer that a prior required fix applied as ordered is settled. It may be flagged only for a NEW defect the fix itself introduced, never re-litigated or ordered reverted.
+- **Record** (before each fix relay): `node ${CLAUDE_PLUGIN_ROOT}/scripts/sentinel.js record-round <plan> <phase> <verdict>` with the reviewer's Required fixes (or Fix-now notes) piped verbatim on stdin (e.g. a bash heredoc).
+- **Re-review, external dispatch**: add the context flag: `node ${CLAUDE_PLUGIN_ROOT}/scripts/role.js run phase-reviewer --context .gantry/review-round.json -- <plan> <phase>`.
+- **Re-review, native dispatch**: run `node ${CLAUDE_PLUGIN_ROOT}/scripts/role.js show-round` and include its output verbatim in the phase-reviewer subagent's prompt, after the plan and phase.
+The first review of a phase runs with no context (do not pass the flag or the block on round one; `sentinel.js write` for a new phase removes any stale round file). An absent or malformed round file never blocks a review; `role.js` warns and reviews without it.
+
+Relay the agent's verdict verbatim (PASS / FAIL / PASS-WITH-NOTES) and its specific findings, including the Docs impact section listing any standing docs (`docs/INDEX.md`, `docs/GLOSSARY.md`, `docs/CONVENTIONS.md`) the diff made stale, each tagged mechanical or judgment. Handle them by tag: a **mechanical** flag (doc still references a moved/renamed/deleted path) you fix immediately yourself, plain text edit, no design decision, and report as refreshed. A **judgment** flag goes to the ledger: append it to `CURRENTNESS_AUDIT.md`'s `## Open doc flags` section as `- [ ] <doc path>: <one line, what the diff invalidated> (phase N, <feature or plan name>)`, for `/claudhd:audit` to reconcile; if no audit file exists, skip and note that `/claudhd:init` would enable it.
+
+**On FAIL:** do not commit. Before re-spawning the implementer for the fix pass, run: `node ${CLAUDE_PLUGIN_ROOT}/scripts/sentinel.js add-files <space-separated list of the reviewer's cited file paths>` (this widens the active sentinel so the fix pass can touch exactly those files), then record the round: `node ${CLAUDE_PLUGIN_ROOT}/scripts/sentinel.js record-round <plan> <phase> FAIL` with the Required fixes on stdin. Then send the Required fixes back to the implementer via `/claudhd:build <plan> <phase>`, passing the Required fixes text VERBATIM as part of the implementer's prompt (build.md's own fix-relay dispatch reads them back from the round you just recorded and includes them verbatim, native Task prompt or external `role.js run implementer` input alike - never a paraphrase), and re-review with the recorded context (see Re-review context above). Repeat the fix-and-re-review loop while FAIL persists. **After 5 FAIL rounds on this phase, the loop stops**, regardless of trajectory: present the outstanding findings to me together with the full round history (each round's verdict and required fixes), and give me three options: (1) keep iterating (I take responsibility for the added rounds); (2) amend the plan (the findings reveal the plan is incomplete; I revise it and we re-run the phase); (3) overrule the reviewer (I judge a finding a false positive and log an explicit reason before the commit gate opens). Never auto-pass because the cap was reached. Fix, defer, or overrule past round 5 is always my call, not yours.
+
+**On PASS-WITH-NOTES:** if there are **Fix-now notes**, before re-spawning the implementer run `node ${CLAUDE_PLUGIN_ROOT}/scripts/sentinel.js add-files <reviewer's cited file paths>` the same way, then record the round (`node ${CLAUDE_PLUGIN_ROOT}/scripts/sentinel.js record-round <plan> <phase> PASS-WITH-NOTES` with the Fix-now notes on stdin), then send them to the implementer as a scoped fix pass on the same phase - the Fix-now notes text passed verbatim, same as a FAIL's Required fixes - and re-review with the recorded context before presenting for commit. Fix-now passes share the same 5-round cap as FAIL fixes; past the cap, stop and hand me the outstanding notes with the round history, same three options as above. Only **Deferred notes** (pending APIs, plan-blessed placeholders, later-phase consumers) may survive into the commit unchanged. Do not present a diff with outstanding fix-now notes for commit.
+
+**Before the commit gate, log every Deferred note so none is dropped.** Append each to `CURRENTNESS_AUDIT.md`'s `## Deferred review notes` section: `- [ ] <note, with file:line>: <why deferred> (phase N, <feature or plan name>)`. If no audit file exists, append them to the plan's own phase section instead and tell me that `/claudhd:init` would enable persistent tracking. A deferred note must land in writing somewhere durable, never only in chat.
+
+**On PASS** (or PASS-WITH-NOTES with only deferred notes remaining, now logged): present the clean diff and verdict, and the exact compound command below, then wait for me to say go. Never commit on my behalf unless I explicitly say so. claudhd 1.0 ships primary-reviewer-only: there is no second-opinion pass, so the primary reviewer's clean verdict is what opens the gate.
+
+**The commit itself is ONE Bash invocation, never split into a separate clear step and a separate commit step:**
+
+```
+node ${CLAUDE_PLUGIN_ROOT}/scripts/sentinel.js clear && node ${CLAUDE_PLUGIN_ROOT}/scripts/thread.js clear-mode && git add <files> && git commit -m "<message>"
+```
+
+This shape matters mechanically, not just stylistically: the commit-boundary reconcile runs inside the SAME `PreToolUse` hook invocation that this whole compound command triggers, which fires before any part of it has executed - so the reconcile still sees the phase's real, pre-clear sentinel (plan, phase, files) at the instant it runs, which is what lets it flip the plan's phase `**Status:**` line to `committed` and move the roadmap item to Shipped (at the final phase), automatically, riding this same commit. Splitting `sentinel.js clear` into its own earlier Bash call means the reconcile, when the later `git commit` call fires, finds an already-cleared (null) sentinel and silently skips both of those writes - the phase closes out with no record of which plan or phase it was.
+
+Do not hand-edit the plan's `**Status:**` line to `committed` yourself once the compound command above lands - the reconcile just wrote it, and a hand edit would race or contradict that write. Keep the line current only for the states the reconcile does not cover: `review failed` on FAIL, `ready to commit` when presenting for commit here. The reviewer is read-only and the implementer never edits the plan; those two pre-commit writes are yours, the post-commit one is the reconcile's.

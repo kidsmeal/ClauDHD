@@ -1,12 +1,15 @@
 "use strict";
 /*
- * Shared NOW.md helpers used by checkpoint.js, idea.js, state.js, budget.js,
- * and (as of phase 3) nowrender.js.
+ * Shared NOW.md helpers used by checkpoint.js, state.js, vocab.js,
+ * nowrender.js, and (as of phase 7, the modeLine()/fromLine() drift check)
+ * brief.js.
  *
  * activeThread(text)          - the active thread's name (first **bold** span).
  * activeThreadSection(text)   - the lines of the "## Active thread" section.
- * activeThreadLineCount(text) - how many lines that section runs. The wrap budget
- *                               and the statusline [over] flag both key off this.
+ * activeThreadLineCount(text) - how many lines that section runs. Measured
+ *                               against ACTIVE_THREAD_LINE_BUDGET (see
+ *                               constants.js) and stored as
+ *                               cursor.activeThreadLineCount in state.json.
  * nextAction(text)            - the first unchecked "- [ ]" step in that section.
  * lastTouchedDate(text)       - the first YYYY-MM-DD on the "Last touched:" line.
  * queueCount(text)            - list items in "## Queue".
@@ -110,7 +113,7 @@ function queueCount(text) {
 }
 
 // Open (unchecked) items in the quick-fixes batch, counted the same way brief.js
-// and statusline.js already count them.
+// already counts them.
 function quickFixCount(text) {
   return sectionLines(text, "## Quick fixes")
     .filter((l) => /^\s*-\s*\[ \]/.test(l)).length;

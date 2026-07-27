@@ -52,13 +52,23 @@ Every current writer, its owned keys, and the lock it uses:
 | `reconcile.js` (commit boundary) | same facts-only set as checkpoint.js | `stateLockPath` |
 | `sentinel.js` (`write`/`clear`/`add-files`) | `build` | `stateLockPath` |
 | `override.js` (`recordOverride`/`noteOverrideFile`) | `override` | `override.lock`, then `stateLockPath` inside the write |
+| `thread.js` (`enterDesign`/`enterBuild`/`setDesignDoc`/`auditDesign`, which also CLEAR `override`; `setIntent`/`addDecision`/`resolveDecision`/`clearMode` do not touch `override`) | `mode`, `from`, `intent`, `design`, `override` | `design.lock` (only for the `design`-mutating calls), then `stateLockPath` inside the write |
 | `state.js`'s `issueRoadmapIds()` (called by `init.js`, `reconcile.js`) | `roadmapIds` | `roadmapLockPath`, then `stateLockPath` inside the write |
 | `vocab.js` (`move`) | `roadmapIds` (the identical read-ledger/backfill/persist-ledger transaction, composed inline under `move()`'s own already-held `roadmapLockPath` instead of calling `issueRoadmapIds()` - see `docs/SCRIPT-VOCABULARY.md`'s cross-verb stability note) | `roadmapLockPath`, then `stateLockPath` inside the write |
 
-No writer ever sets `mode`, `from`, `design`, or `intent` as of this phase;
-those fields are written by hand today (or not at all) and read by the
-renderer/guards. Their write paths land in a later phase (`/claudhd:start`,
-`/claudhd:design`) - see "reserved" notes below.
+`thread.js` is `mode`/`from`/`intent`/`design`'s writer (wired by
+`/claudhd:start` and `/claudhd:design`, phase 7): `enterDesign()` sets
+`mode`, `from`, and seeds `intent`, and always starts `design` fresh
+(`{doc:null,resolved:[],open:[]}` - a completed or abandoned prior design's
+lists never leak into a new session); `enterBuild()` sets `mode` only
+(display, since the guards enforce off the sentinel's presence, not this
+field); `setIntent()`/`setDesignDoc()`/`addDecision()`/`resolveDecision()`
+update their one field each; `clearMode()` resets `mode` to `null`;
+`auditDesign(docPath)` is `/claudhd:design`'s existing-doc entry point (sol
+round seven), choosing fresh-entry vs. continuation semantics by comparing
+`docPath` to the currently-active `design.doc` under `design.lock` - see the
+`design`/`override` sections below for exactly what it sets on each branch.
+See the per-field sections below for exact detail.
 
 ## Top-level fields
 
@@ -120,20 +130,31 @@ from `0`, a real clean count). `lastCommitMsg` is capped at 200 chars.
 ### `mode` (string enum, or `null`)
 
 One of `"build"`, `"design"`, or `null` (idle - no active mode). Read by
-`modes.js`'s `decide()` for the guards' deny-by-default allowlist. No script
-writes this field as of this phase; it is set by hand or by a future
-`/claudhd:start`/`/claudhd:design` writer (reserved).
+`modes.js`'s `decide()` for the guards' deny-by-default allowlist ONLY when
+the `build` sentinel is absent - a live sentinel makes the guard enforce
+`"build"` unconditionally regardless of this field's value (`file-list-guard.js`
+hardcodes it), so `mode` here is mainly a display fact for `nowrender.js`'s
+Position line once a sentinel exists. Written by `thread.js`: `enterDesign()`
+sets `"design"`, `enterBuild()` sets `"build"` (paired with `/claudhd:build`'s
+own `sentinel.js write` call, which is what the guard actually enforces
+against), `clearMode()` resets it to `null`, `auditDesign()` sets `"design"`
+on both its fresh-entry and continuation branches (a re-audit reaffirms the
+mode even though the board itself is left untouched).
 
 ### `from` (string, or `null`)
 
 The active thread's parent roadmap id (e.g. `"r-0725-1"`), or `null` for
 unplanned work. Rendered into NOW.md as the `from:` line by `nowrender.js`.
-Reserved: no script in this phase writes it.
+Written by `thread.js`'s `enterDesign()` (the `fromId` argument, or `null`
+for unplanned design work) and `auditDesign()`'s fresh-entry branch (always
+`null` - an existing-doc audit never carries a roadmap parent, since it did
+not arrive via `/claudhd:start`); `auditDesign()`'s continuation branch
+leaves it untouched. No other writer sets it.
 
 ### `build` (object, or `null`)
 
 Gantry's sentinel, folded into state.json (phase 2). `null` means no active
-build phase. Otherwise:
+build phase. Otherwise, the plan-backed shape (`sentinel.js write`):
 
 ```
 {
@@ -146,21 +167,71 @@ build phase. Otherwise:
 }
 ```
 
-Written only by `sentinel.js`'s `write`/`clear`/`add-files` subcommands, via
-`readSentinel(root)` (`sentinel-core.js`) on the read side. A sentinel is
-"stale" (see `isStale()`) when its `session` differs from the current
-session AND `started` is more than 6 hours old - staleness is a read-time
-judgment, not a stored field. On first read after upgrading a project that
-never re-ran `/claudhd:build`, a legacy `.gantry/active-phase.json` is
-imported into this field once, then the legacy file is deleted.
+Written by `sentinel.js`'s `write`/`clear`/`add-files`/`write-files`
+subcommands, via `readSentinel(root)` (`sentinel-core.js`) on the read side.
+A sentinel is "stale" (see `isStale()`) when its `session` differs from the
+current session AND `started` is more than 6 hours old - staleness is a
+read-time judgment, not a stored field. On first read after upgrading a
+project that never re-ran `/claudhd:build`, a legacy
+`.gantry/active-phase.json` is imported into this field once, then the
+legacy file is deleted.
+
+**The planless quick-sentinel shape** (`sentinel.js write-files`, phase 7,
+`/claudhd:quick`'s clearing pass): the same object shape, but with no plan
+or phase number to parse Files from:
+
+```
+{
+  plan: null,
+  phase: "quick",     // a string, not a number - there is no real phase
+  files: string[],    // the batch's own files, named explicitly by the caller
+  allow: ["NOW.md"],  // always includes NOW.md, since the clearing pass
+                       // checks off batch items there and a live sentinel's
+                       // build-mode allowlist has no generic *.md allowance
+  started: string,
+  session: string,
+}
+```
+
+`reconcile.js`'s plan-Status-line step reads `build.plan` and no-ops when it
+is `null`, so a quick sentinel never tries to flip a nonexistent phase's
+status; `moveRoadmapItemToShipped` is likewise never reached for it (that
+path is gated on `build.plan` truthiness too).
 
 ### `design` (object, or `null`)
 
-Declared shape (phase 2's goal: doc path, resolved/open decision lists).
-`nowrender.js` reads `design.doc` today (falls back to `"(no doc yet)"` when
-`design` is `null` or `design.doc` is unset). `design.resolved` and
-`design.open` are RESERVED - no script reads or writes them yet; they land
-with `/claudhd:design` in a later phase.
+`{ doc, resolved, open }`: `doc` is the design doc's path (or `null`);
+`resolved` and `open` are flat arrays of decision-text strings, the design
+board `/claudhd:now` renders and `/claudhd:design`'s grill maintains.
+`nowrender.js` reads `design.doc` (falls back to `"(no doc yet)"` when
+`design` is `null` or `design.doc` is unset). Written by `thread.js`:
+`enterDesign()` always resets it to a fresh `{doc:null,resolved:[],open:[]}`
+(entering design starts a new session, never resumes a completed or
+abandoned prior one's lists); `setDesignDoc()` sets `doc`, preserving
+`resolved`/`open`; `addDecision(kind, text)` appends `text` to
+`design.resolved` or `design.open`; `resolveDecision(openText, resolutionText)`
+removes the exact-match `openText` from `open`, then appends `resolutionText`
+to `resolved` - or `openText` itself when `resolutionText` is omitted (the
+grill's own resolve-in-place flow, where the resolution IS the deferred
+text). The two-argument form is what `/claudhd:design`'s existing-doc audit
+path needs: a design-reviewer's `[NEEDS USER DECISION: ...]` marker is
+recorded as the open text, but the real resolution the user picks is a
+different string. Throws, writing nothing, if `openText` was never recorded
+as open. `auditDesign(docPath)` (sol round seven) is `/claudhd:design`'s
+existing-doc entry point, and is itself the one that decides which of two
+behaviors applies to `design`: comparing `docPath` to the currently-active
+`design.doc` under `design.lock`, a DIFFERENT doc (or no active design
+thread at all) resets it to a fresh `{doc:docPath,resolved:[],open:[]}`,
+exactly like `enterDesign()` - a stale board from an unrelated prior thread
+must never leak into a brand-new doc's audit; the SAME doc currently active
+is a continuation, and `design` (along with `from`/`intent`) is left
+completely untouched, preserving whatever the in-progress audit has already
+accumulated. All the mutators (`setDesignDoc`/`addDecision`/
+`resolveDecision`/`auditDesign`) are
+serialized under a dedicated `design.lock` (`designLockPath`) spanning their
+whole read-modify-write, the same discipline `issueRoadmapIds()` uses for
+the `roadmapIds` ledger, so two concurrent decisions can never have the
+second write silently drop the first's addition.
 
 ### `intent` (object, or `null`)
 
@@ -169,8 +240,10 @@ is the ONLY source for them: `nowrender.js` never parses NOW.md to recover
 them, so there is no second source of truth. `thread` is the bold thread
 name; `next` is the next physical action. Deliberately excluded from
 `checkpoint.js`'s owned keys, so a Stop-hook write (which never claims
-`intent`) can never erase it. Reserved for writing: today it is set by hand
-or not at all; a future boundary-prompt writer lands later.
+`intent`) can never erase it. Written by `thread.js`: `enterDesign()` seeds
+it from the `thread`/`next` arguments (falling back to whatever was already
+there for an argument not given); `setIntent(thread, next)` overwrites both
+fields directly, independent of `mode`/`from`/`design`.
 
 ### `roadmapIds` (array of strings, or `null`)
 
@@ -194,8 +267,21 @@ lock is required.
 
 Written by `override.js`'s `recordOverride`/`noteOverrideFile`. Absent until
 the first `/claudhd:override` call (or the first guard-permitted edit under
-an active override) in a project's lifetime; never explicitly reset to
-`null` afterward - one project carries at most one override record.
+an active override) in a project's lifetime. One project carries at most one
+override record. It is explicitly cleared (set to absent) by `thread.js`'s
+`enterDesign()`/`enterBuild()`/`setDesignDoc()`/`auditDesign()`: a mode
+transition invalidates the override, since it is a per-emergency escape for
+the CURRENT unguarded stretch, never a standing permit that should keep
+applying once a new, properly-scoped mode begins (sol round-one finding 1,
+widened to `setDesignDoc()` in round six, then consolidated into
+`auditDesign()` in round seven - `auditDesign()` is now `/claudhd:design`'s
+one existing-doc entry point, and clears the override on BOTH its branches,
+whether the board itself resets (fresh entry) or is left untouched
+(continuation), since a properly-scoped transition invalidates a stale
+override either way). The rendered "unguarded session ..." line in NOW.md's
+`## Loose ends` section is stripped at the same time (`override.js`'s
+`clearOverrideLine()`), so the board never shows a permit that no longer
+applies.
 
 ```
 {

@@ -4,7 +4,7 @@ Last updated: <DATE>
 
 The live list of systems that are code-complete or mostly shipped but still need real-run
 confidence. Keep code/test facts separate from the manual check still owed, so stale TODOs
-are easy to retire. Curate with `/gantry:verify`.
+are easy to retire. Curate with `/claudhd:audit`.
 
 ---
 

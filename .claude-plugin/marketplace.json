@@ -5,13 +5,13 @@
     "name": "kidsmeal",
     "url": "https://github.com/kidsmeal"
   },
-  "description": "ClauDHD: Focus and drift control for Claude Code.",
+  "description": "ClauDHD: a generated NOW cursor, mode-enforced phase pipeline, and reviewed commit gate for Claude Code.",
   "plugins": [
     {
       "name": "claudhd",
       "source": "./plugins/claudhd",
-      "description": "A NOW cursor that follows your branch, an idea inbox you can backfill from past sessions, a project roadmap, a shipped log, mid-session regroup, end-of-session wrap-up, and branch-aware session breadcrumbs, so stopping mid-thought is always safe.",
-      "version": "0.9.0",
+      "description": "A generated NOW cursor, mode-enforced phase pipeline, and reviewed commit gate: idea inbox, roadmap with tap-card triage, design grill and review, phased implementation with a reviewed commit gate, and a commit-boundary reconcile that keeps the docs honest without you remembering to.",
+      "version": "1.0.0",
       "author": { "name": "kidsmeal" }
     }
   ]

@@ -34,9 +34,9 @@ const NOW_DIR = path.join(ROOT, ".now");
 const PLAIN = process.argv.includes("--plain");
 // Advancing the "shipped since you were last here" anchor is a side effect that
 // must happen only on an actual session visit. SessionStart passes --record-visit;
-// /now, /regroup and /wrap (which also run this script) read the wins without
-// consuming the anchor, so the next SessionStart still reports what shipped while
-// you were away instead of finding it already swallowed by a mid-session /now.
+// /claudhd:now (which also runs this script) reads the wins without consuming
+// the anchor, so the next SessionStart still reports what shipped while you
+// were away instead of finding it already swallowed by a mid-session /now.
 const RECORD_VISIT = process.argv.includes("--record-visit");
 
 function git(args) {
@@ -55,6 +55,33 @@ function section(text, heading) {
   const esc = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const m = text.match(new RegExp(esc + "[\\s\\S]*?(?=\\n## |$)"));
   return m ? m[0].trim() : "";
+}
+
+// Drift check: does NOW.md's own rendered Mode:/from: lines still agree with
+// what .now/state.json says right now? They can disagree when a hand-edit
+// touched NOW.md after it was generated, or (rarer) a write raced the read.
+// modeLine()/fromLine() parse the generated shape's own fact lines back out
+// of the text (nowfile.js); comparing them against state is a read-only
+// sanity check, never a repair - the next commit-boundary reconcile (or a
+// fresh /claudhd:build or /claudhd:design call) is what actually fixes it.
+function modeDriftFlag(nowText) {
+  let state = null;
+  try {
+    const p = path.join(NOW_DIR, "state.json");
+    if (fs.existsSync(p)) state = JSON.parse(fs.readFileSync(p, "utf8"));
+  } catch { state = null; }
+  if (!state) return null;
+
+  const { modeLine, fromLine } = require("./nowfile.js");
+  const renderedMode = modeLine(nowText);
+  const renderedFrom = fromLine(nowText);
+  const stateMode = state.mode != null ? state.mode : null;
+  const stateFrom = state.from != null ? state.from : null;
+
+  if (renderedMode !== stateMode || renderedFrom !== stateFrom) {
+    return `NOW.md's Mode/from lines ("${renderedMode || "idle"}"/"${renderedFrom || "unplanned"}") disagree with .now/state.json ("${stateMode || "idle"}"/"${stateFrom || "unplanned"}"). NOW.md may have been hand-edited since it was last generated; the next commit (or /claudhd:build, /claudhd:design) regenerates it.`;
+  }
+  return null;
 }
 
 // Neutralize an externally-authored single token (a branch name on a checked-out
@@ -233,11 +260,14 @@ try {
     flags.push(`NOW.md has not been touched in ${Math.floor(age / 24)} days. Is the active thread still right?`);
   }
 
+  const modeDrift = modeDriftFlag(txt);
+  if (modeDrift) flags.push(modeDrift);
+
   // A thread that has quietly overstayed: the file stays fresh but THIS thread has
   // been active too long. Catches the drift the mtime check above cannot see.
   const threadAge = activeThreadAgeDays(active);
   if (threadAge && threadAge.days > ACTIVE_THREAD_STALE_DAYS) {
-    flags.push(`Active thread "${safeInline(threadAge.name)}" has been active for ${threadAge.days} days. If its headline criteria are met, close it with /claudhd:wrap and promote the next on purpose; if it is genuinely still in flight, carry on.`);
+    flags.push(`Active thread "${safeInline(threadAge.name)}" has been active for ${threadAge.days} days. If its headline criteria are met, close it out and promote the next on purpose; if it is genuinely still in flight, carry on.`);
   }
 
   // Count only real work as drift. ClauDHD's own bookkeeping files (NOW.md and
@@ -286,12 +316,12 @@ try {
     if (wins.length > 6) body += `\n- ... and ${wins.length - 6} more`;
     out += "\n\n## Shipped since you were last here\n\n"
       + fenceData(capText(body, BRIEF_SECTION_CAP), "git commit messages")
-      + "\n\n(Run /claudhd:shipped to log these to SHIPPED.md.)";
+      + "\n\n(Already logged to SHIPPED.md automatically at each commit.)";
   }
   if (flags.length) {
     out += "\n\n## Drift flags\n\n" + flags.map((f) => `- ${f}`).join("\n");
   }
-  out += "\n\n(Read NOW.md first. As you work, keep it live: when you finish a step, check it off in NOW.md and write the next tiny action, instead of waiting until you stop. Run /claudhd:wrap to reconcile NOW.md at the end of a session.)";
+  out += "\n\n(Read NOW.md first. As you work, keep it live: when you finish a step, check it off in NOW.md and write the next tiny action, instead of waiting until you stop. NOW.md regenerates itself at every commit.)";
 
   // Backstop the total injected size. The data fence sits early in `out`, so a
   // total-cap truncation only trims ClauDHD's own trailing guidance and leaves

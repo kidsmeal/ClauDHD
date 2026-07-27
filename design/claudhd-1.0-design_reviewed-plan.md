@@ -162,7 +162,7 @@ Section 7 locks 15 commands and names what is deleted. It does not account for: 
 
 ## Phase 7: The 15-command surface, docs, and the 1.0.0 release
 
-**Status:** pending
+**Status:** committed (PASS-WITH-NOTES on round eight, zero fix-now, two S3 deferred notes in the audit ledger; eight rounds, valve tripped twice with user rulings fix and comprehensive; the sweep found nine unpropagated siblings and locked every dual-source contract; real install check passed via claude -p --plugin-dir. THE PLAN IS COMPLETE: all seven phases committed, ClauDHD 1.0.0)
 **Goal:** One plugin, one namespace, the locked command table, and a release the manifests agree on.
 **Files:**
 - create `plugins/claudhd/commands/start.md`, `design.md`, `plan.md`, `build.md`, `review.md`, `override.md`, `audit.md`, `models.md` (start absorbs the readiness gate; design absorbs grill-me and drives the design board; build/review/plan/models/audit adapted from gantry's equivalents with `/claudhd:` names and the new script paths)

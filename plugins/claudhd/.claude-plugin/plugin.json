@@ -2,8 +2,8 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "claudhd",
   "displayName": "ClauDHD",
-  "version": "0.9.0",
-  "description": "Focus and drift control for Claude Code: a NOW cursor that follows your branch, an idea inbox you can backfill from past sessions, a project roadmap, a shipped log, mid-session regroup, end-of-session wrap-up, and branch-aware session breadcrumbs so stopping mid-thought is always safe.",
+  "version": "1.0.0",
+  "description": "A generated NOW cursor, mode-enforced phase pipeline, and reviewed commit gate for Claude Code: idea inbox, roadmap with tap-card triage, design grill and review, phased implementation with a reviewed commit gate, and a commit-boundary reconcile that keeps the docs honest without you remembering to.",
   "author": {
     "name": "kidsmeal",
     "url": "https://github.com/kidsmeal"

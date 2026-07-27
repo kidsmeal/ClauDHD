@@ -8,16 +8,58 @@
  *       Read the named phase's Files list from the plan file, compute the
  *       allow-list (plan path + two scaffolded audit docs at docs/ or root +
  *       ROADMAP.md if present), stamp started (ISO) and session, and write the
- *       sentinel into state.json's build section. Overwrites any prior
- *       sentinel.
+ *       sentinel into state.json's build section. A re-write for the SAME
+ *       plan+phase (the /claudhd:build fix-relay path) keeps any paths a
+ *       prior sentinel.js add-files call widened in, so a fix pass never
+ *       loses the exact files it was sent to fix. A write for a different
+ *       plan/phase overwrites cleanly.
  *
  *   clear
- *       Set the build section back to null. No-op (no throw) when already
- *       absent.
+ *       Set the build section back to null and remove any recorded review
+ *       rounds (see record-round below) - the phase is closing, so its
+ *       rounds die with it. No-op (no throw) when already absent.
  *
  *   add-files <path> [<path>...]
  *       Append one or more paths to the active sentinel's files list,
  *       idempotently. No-op when no sentinel exists.
+ *
+ *   write-files <path> [<path>...]
+ *       Write an ad-hoc sentinel scoped to an explicit file list, with no
+ *       plan or phase (plan: null, phase: "quick"). This is /claudhd:quick's
+ *       "scoped sentinel" (design section 6/7): the batch's clearing pass is
+ *       ordinary source edits, so it needs a live sentinel like any other
+ *       mode-enforced work, but it has no plan/phase to parse Files from.
+ *       `allow` always includes NOW.md, since the clearing pass checks off
+ *       batch items there and a live sentinel's build-mode allowlist has no
+ *       generic *.md allowance to fall back on.
+ *
+ *       REFUSES (exit non-zero, no write) when the current build section
+ *       carries an ACTIVE plan-backed phase - build.plan non-null and not
+ *       stale (sol round-four ruling). Quick fixes clear BETWEEN phases,
+ *       never mid-phase: overwriting a live plan-backed sentinel would
+ *       silently discard its file scope, and the quick lane's own
+ *       `sentinel.js clear` at the end of /claudhd:quick would then remove
+ *       the phase's recorded review rounds and open the commit gate as if
+ *       the phase's review had passed, when it never ran. A STALE sentinel
+ *       (abandoned phase - same staleness rule the guards use) does not
+ *       block; it is not really active anymore. Only when no plan-backed
+ *       phase is blocking does write-files proceed, overwriting any prior
+ *       (non-blocking) sentinel the same way `write` does.
+ *
+ *   record-round <plan-path> <phase-number> <verdict>
+ *       Append one review round (verdict + the required fixes piped on
+ *       stdin) to .gantry/review-round.json, for role.js to relay as
+ *       re-review context (`run --context` / `show-round`). A round file
+ *       recorded for a DIFFERENT plan or phase is replaced on the next
+ *       `write` (see below), so another phase's rounds can never leak in.
+ *       This file is a plain fs read/write, independent of state.json's
+ *       merge-preserving writer - it is advisory re-review context, not part
+ *       of the frozen state.json contract (docs/STATE-SCHEMA.md).
+ *
+ * The review-round file shares the sentinel's lifecycle: `write` for a
+ * DIFFERENT plan/phase removes it (a fresh phase starts with no prior
+ * rounds; a re-write for the SAME plan+phase - the /claudhd:build fix-relay
+ * path - keeps it), and `clear` always removes it.
  *
  * The sentinel is ONLY written/removed by this script (invoked over Bash by the
  * orchestrator). It is never written or removed via a tool op (Edit/Write/rm),
@@ -36,11 +78,12 @@
 const fs = require("fs");
 const path = require("path");
 
-const { resolveRoot, normalize, readSentinel } = require("./sentinel-core.js");
+const { resolveRoot, normalize, readSentinel, isStale } = require("./sentinel-core.js");
 const { writeStateAtomic } = require("./state.js");
 
 const ROOT = resolveRoot(process.env);
 const NOW_DIR = path.join(ROOT, ".now");
+const ROUND_PATH = path.join(ROOT, ".gantry", "review-round.json");
 
 // ---------------------------------------------------------------------------
 // Plan parsing
@@ -195,6 +238,33 @@ function _exists(p) {
 }
 
 // ---------------------------------------------------------------------------
+// Review-round file helpers
+// ---------------------------------------------------------------------------
+
+// Read .gantry/review-round.json, or null when absent/malformed. The round
+// file is advisory context, so any damage reads as "no rounds recorded".
+function _readRoundFile() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(ROUND_PATH, "utf8"));
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+// Remove the review-round file. Never fatal: round context is advisory and
+// must not block the phase lifecycle commands that call this.
+function _clearRoundFile() {
+  try {
+    fs.unlinkSync(ROUND_PATH);
+  } catch (e) {
+    if (e.code !== "ENOENT") {
+      process.stderr.write("sentinel.js: could not remove review-round.json: " + e.message + "\n");
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Subcommands
 // ---------------------------------------------------------------------------
 
@@ -252,6 +322,21 @@ function cmdWrite(args) {
 
   const planRel = _toRelPosix(planAbsPath);
 
+  // An existing sentinel for the SAME plan+phase is the /claudhd:build
+  // fix-relay path re-running write mid-review-loop: any paths the review
+  // step widened in via add-files (reviewer-cited files outside the plan's
+  // Files list) must survive, or the fix pass gets denied edits to exactly
+  // the files it was sent to fix. A sentinel for a different plan or phase
+  // is a fresh start and its widening does not carry over.
+  let existing = null;
+  try { existing = readSentinel(ROOT); } catch { existing = null; }
+  if (existing && existing.plan === planRel && existing.phase === phaseNumber &&
+      Array.isArray(existing.files)) {
+    for (const p of existing.files) {
+      if (typeof p === "string" && !files.includes(p)) files.push(p);
+    }
+  }
+
   const sentinel = {
     plan: planRel,
     phase: phaseNumber,
@@ -268,7 +353,70 @@ function cmdWrite(args) {
     process.exit(1);
   }
 
+  // A recorded review-round file for a DIFFERENT plan or phase is stale - a
+  // fresh phase must start with no prior-round context. Same plan+phase is
+  // the /claudhd:build fix-relay path re-running write mid-review-loop; its
+  // rounds are live and must survive, or the re-review loses exactly the
+  // context this file exists to carry.
+  const round = _readRoundFile();
+  if (round && (round.plan !== planRel || round.phase !== phaseNumber)) {
+    _clearRoundFile();
+  }
+
   console.log("sentinel.js: wrote phase " + phaseNumber + " sentinel (" + files.length + " file(s) in scope)");
+}
+
+function cmdWriteFiles(args) {
+  const files = args.filter(Boolean);
+  if (files.length === 0) {
+    console.error("sentinel.js write-files: usage: write-files <path> [<path>...]");
+    process.exit(1);
+  }
+
+  const session = process.env.GANTRY_SESSION_ID || process.env.CLAUDE_CODE_SESSION_ID || "";
+
+  // Refuse to clobber an ACTIVE plan-backed build phase (sol round-four
+  // ruling). Quick fixes clear between phases, never mid-phase: replacing a
+  // live sentinel here would silently discard its file scope, and the quick
+  // lane's own `sentinel.js clear` at the end of /claudhd:quick would then
+  // remove the phase's recorded review rounds and open the commit gate as
+  // if the phase's review had passed, when it never ran at all. A STALE
+  // sentinel (abandoned phase, same rule the guards use) does not block.
+  let existing = null;
+  try { existing = readSentinel(ROOT); } catch { existing = null; }
+  if (existing && existing.plan != null && !isStale(existing, session)) {
+    console.error(
+      "sentinel.js write-files: refusing - phase " + existing.phase + " of " +
+      existing.plan + " is an active build phase. Quick fixes clear BETWEEN " +
+      "phases, never mid-phase: finish this phase (/claudhd:review, then " +
+      "commit) or clear it first (`node sentinel.js clear`), then re-run " +
+      "/claudhd:quick."
+    );
+    process.exit(1);
+  }
+
+  const sentinel = {
+    plan: null,
+    phase: "quick",
+    files,
+    // NOW.md is always in scope: the clearing pass this sentinel guards checks
+    // off batch items in NOW.md itself, and build mode's allowlist has no
+    // generic *.md allowance (that is design/idle mode's rule, not build's -
+    // a live sentinel routes through modes.decide("build", ...) unconditionally),
+    // so without this the check-off step would deny itself.
+    allow: ["NOW.md"],
+    started: new Date().toISOString(),
+    session,
+  };
+
+  try {
+    writeStateAtomic(NOW_DIR, { build: sentinel }, ["build"]);
+  } catch (e) {
+    console.error("sentinel.js write-files: cannot write sentinel: " + e.message);
+    process.exit(1);
+  }
+
+  console.log("sentinel.js: wrote a quick-fix sentinel (" + files.length + " file(s) in scope)");
 }
 
 function cmdClear() {
@@ -278,6 +426,8 @@ function cmdClear() {
   // stranded on disk.
   let current;
   try { current = readSentinel(ROOT); } catch { current = null; }
+  // The phase is closing either way: any recorded review rounds die with it.
+  _clearRoundFile();
   if (current == null) return; // no-op for an already-absent sentinel - exit 0 silently.
 
   try {
@@ -287,6 +437,72 @@ function cmdClear() {
     console.error("sentinel.js clear: unexpected error: " + e.message);
     process.exit(1);
   }
+}
+
+function cmdRecordRound(args) {
+  const planArg = args[0];
+  const phaseArg = args[1];
+  const verdict = args[2];
+
+  if (!planArg || !phaseArg || !verdict) {
+    console.error(
+      "sentinel.js record-round: usage: record-round <plan-path> <phase-number> <verdict>" +
+      "  (pipe the required fixes on stdin)"
+    );
+    process.exit(1);
+  }
+
+  const phaseNumber = parseInt(phaseArg, 10);
+  if (isNaN(phaseNumber)) {
+    console.error("sentinel.js record-round: phase-number must be an integer, got: " + phaseArg);
+    process.exit(1);
+  }
+
+  let fixes = "";
+  try { fixes = fs.readFileSync(0, "utf8"); } catch { /* no stdin */ }
+  fixes = fixes.trim();
+  // A round with no fixes text is useless context - refuse it loudly so the
+  // caller re-runs with the reviewer's actual Required fixes piped in.
+  if (!fixes) {
+    console.error(
+      "sentinel.js record-round: no fixes text on stdin - pipe the reviewer's" +
+      " Required fixes (or Fix-now notes) verbatim."
+    );
+    process.exit(1);
+  }
+
+  const planAbsPath = path.isAbsolute(planArg) ? planArg : path.join(ROOT, planArg);
+  const planRel = _toRelPosix(planAbsPath);
+
+  // Rounds accumulate for the same plan+phase; anything else (different phase,
+  // absent, malformed) starts a fresh file, so stale rounds never leak.
+  let state = _readRoundFile();
+  if (
+    !state || state.plan !== planRel || state.phase !== phaseNumber ||
+    !Array.isArray(state.rounds)
+  ) {
+    state = { plan: planRel, phase: phaseNumber, rounds: [] };
+  }
+
+  state.rounds.push({
+    round: state.rounds.length + 1,
+    verdict,
+    fixes,
+    recorded: new Date().toISOString(),
+  });
+
+  try {
+    fs.mkdirSync(path.join(ROOT, ".gantry"), { recursive: true });
+    fs.writeFileSync(ROUND_PATH, JSON.stringify(state, null, 2) + "\n", "utf8");
+  } catch (e) {
+    console.error("sentinel.js record-round: cannot write review-round.json: " + e.message);
+    process.exit(1);
+  }
+
+  console.log(
+    "sentinel.js: recorded review round " + state.rounds.length +
+    " (" + verdict + ") for phase " + phaseNumber
+  );
 }
 
 function cmdAddFiles(args) {
@@ -342,13 +558,21 @@ switch (subcommand) {
   case "add-files":
     cmdAddFiles(rest);
     break;
+  case "write-files":
+    cmdWriteFiles(rest);
+    break;
+  case "record-round":
+    cmdRecordRound(rest);
+    break;
   default:
     console.error(
       "sentinel.js: unknown subcommand: " + subcommand + "\n" +
       "Usage:\n" +
       "  sentinel.js write <plan-path> <phase-number> [session-id]\n" +
       "  sentinel.js clear\n" +
-      "  sentinel.js add-files <path> [<path>...]\n"
+      "  sentinel.js add-files <path> [<path>...]\n" +
+      "  sentinel.js write-files <path> [<path>...]\n" +
+      "  sentinel.js record-round <plan-path> <phase-number> <verdict>  (fixes on stdin)\n"
     );
     process.exit(1);
 }

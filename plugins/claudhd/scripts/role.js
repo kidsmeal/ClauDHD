@@ -12,22 +12,28 @@
  *       the orchestrator branches on:
  *         DISPATCH: native    -> spawn the <role> subagent via the Task tool
  *         DISPATCH: external  -> run `role.js run <role> -- <inputs>` and relay
- *       Always prints an ADVERSARY: line after the primary block (a descriptor
- *       when one is configured and valid, or "ADVERSARY: none"). Exits non-zero
- *       (with the reason) on an invalid assignment - notably an implementer
- *       routed off the Claude Code harness.
+ *       Exits non-zero (with the reason) on an invalid assignment - notably an
+ *       implementer routed off the Claude Code harness.
  *
- *   run <role> [--adversary] [-- <inputs...>]
+ *   run <role> [--context <file>] [-- <inputs...>]
  *       Run a NON-native backend: compose the prompt from the agent .md body
  *       plus <inputs>, spawn the backend, stream its stderr (progress) through,
  *       and print its stdout (the agent's final output) for the orchestrator to
  *       relay. Errors for a native role (those are Task-spawned, not run here).
- *       With --adversary, runs the role's configured adversary backend instead
- *       of the primary, using the same agent .md body plus a one-line note that
- *       it is the adversarial final pass on an already-primary-passed artifact
- *       (a diff for phase-reviewer, a design doc for design-reviewer).
- *       A native adversary is refused (use the Task tool for native roles). An
- *       adversary identical to the primary is refused (warn and exit non-zero).
+ *       With --context <file>, reads the named review-round file (written by
+ *       `sentinel.js record-round`) and appends the prior rounds' verdicts and
+ *       required fixes to the prompt as re-review context, with the rule that
+ *       a prior required fix applied as ordered is settled unless it introduced
+ *       a NEW defect. An absent or malformed context file warns and runs the
+ *       review without context - the gate is never blocked by missing context.
+ *       First-round reviews are invoked without the flag and are unchanged.
+ *
+ *   show-round
+ *       Print the same re-review context block run --context would append,
+ *       rendered from .gantry/review-round.json, for the orchestrator to paste
+ *       into a NATIVE reviewer's Task prompt. Prints nothing (exit 0) when no
+ *       rounds are recorded, so native and external re-reviews carry identical
+ *       wording from one formatter.
  *
  *   detect
  *       Report which external agent CLIs (codex, claude, gemini) are on PATH.
@@ -35,7 +41,6 @@
  *
  *   show
  *       Print the resolved backend for every role. Used by /claudhd:models.
- *       Includes an adversary line for each reviewer role.
  *
  *   write-default
  *       Write .gantry/models.json with the all-native default if it is absent.
@@ -80,39 +85,6 @@ function fail(msg) {
 
 // --- resolve ---
 
-// Print the ADVERSARY: line that follows every primary dispatch block. When the
-// adversary descriptor is present and not identical to the primary, prints a
-// one-line summary of the adversary backend. When the adversary is identical to
-// the primary, warns to stderr and prints ADVERSARY: none (skip). When there is
-// no adversary, prints ADVERSARY: none. Also handles adversaryIgnored (a config
-// key on a non-reviewer role).
-function printAdversaryLine(r, role) {
-  if (r.adversaryIgnored) {
-    process.stderr.write(
-      "role.js: adversary key on '" + role + "' is ignored" +
-      " (adversary is only honored on reviewer roles: " +
-      core.REVIEWER_ROLES.join(", ") + ").\n"
-    );
-  }
-  if (!r.adversary) {
-    console.log("ADVERSARY: none");
-    return;
-  }
-  const adv = r.adversary;
-  if (adv.adversarySameAsPrimary) {
-    process.stderr.write(
-      "role.js: adversary for '" + role + "' is identical to the primary" +
-      " (same backend and model). Skipping adversary.\n"
-    );
-    console.log("ADVERSARY: none (identical to primary - skipped)");
-    return;
-  }
-  console.log(
-    "ADVERSARY: " + adv.backendName +
-    " (type " + adv.type + ", model " + adv.model + ", dispatch " + adv.dispatch + ")"
-  );
-}
-
 function cmdResolve(args) {
   const role = args[0];
   if (!role) fail("resolve: usage: resolve <role>");
@@ -129,7 +101,6 @@ function cmdResolve(args) {
     );
     console.log("DISPATCH: native");
     console.log("Spawn the " + role + " subagent via the Task tool (config fell back to native).");
-    console.log("ADVERSARY: none");
     return;
   }
 
@@ -150,89 +121,75 @@ function cmdResolve(args) {
     );
     console.log("Relay its stdout verbatim as the " + role + "'s output.");
   }
-
-  printAdversaryLine(r, role);
 }
 
 // --- run ---
 
 function cmdRun(args) {
   const role = args[0];
-  if (!role) fail("run: usage: run <role> [--adversary] [-- <inputs...>]");
+  if (!role) fail("run: usage: run <role> [--context <file>] [-- <inputs...>]");
 
-  // Parse --adversary flag (must immediately follow the role name, before --).
+  // Parse flags (any order, between the role name and the -- separator).
   let rest = args.slice(1);
-  const adversaryMode = rest[0] === "--adversary";
-  if (adversaryMode) rest = rest.slice(1);
+  let contextPath = null;
+  while (rest.length > 0) {
+    if (rest[0] === "--context") {
+      if (!rest[1] || rest[1] === "--") fail("run: --context requires a file path");
+      contextPath = rest[1];
+      rest = rest.slice(2);
+      continue;
+    }
+    break;
+  }
 
-  // Inputs: everything after the role (and optional --adversary), dropping an
-  // optional `--` separator.
+  // Inputs: everything after the role and flags, dropping an optional `--`
+  // separator.
   if (rest[0] === "--") rest = rest.slice(1);
   const inputs = rest.join(" ");
 
   const r = core.resolveRole(loadConfig(), role);
   if (r.error) fail(r.error);
 
-  // Select descriptor: adversary path or primary path.
-  let descriptor = r;
-  if (adversaryMode) {
-    // adversaryIgnored means the role is not a reviewer - the key was silently
-    // dropped; surface a useful message here rather than "no adversary".
-    if (r.adversaryIgnored) {
-      fail(
-        "adversary key on '" + role + "' is ignored (only reviewer roles" +
-        " support an adversary: " + core.REVIEWER_ROLES.join(", ") + ")."
-      );
-    }
-    if (!r.adversary) {
-      fail(
-        "no adversary configured for role '" + role + "'. Add an 'adversary'" +
-        " object to this role's entry in .gantry/models.json."
-      );
-    }
-    const adv = r.adversary;
-    if (adv.adversarySameAsPrimary) {
-      fail(
-        "adversary for '" + role + "' is identical to the primary" +
-        " (same backend and model). Skipping adversary run."
-      );
-    }
-    if (adv.dispatch === "native") {
-      fail(
-        "adversary for '" + role + "' is native; spawn it via the Task tool, not role.js run."
-      );
-    }
-    descriptor = adv;
-  } else {
-    if (r.dispatch === "native") {
-      fail(
-        "role '" + role + "' is native; spawn it via the Task tool, not role.js run."
-      );
-    }
+  const descriptor = r;
+  if (r.dispatch === "native") {
+    fail(
+      "role '" + role + "' is native; spawn it via the Task tool, not role.js run."
+    );
   }
 
   const agentMd = readAgent(role);
   if (!agentMd) fail("could not read agent definition for role '" + role + "'.");
 
-  const body = core.stripFrontmatter(agentMd);
-  // For the adversary invocation, append a one-line note that this is the
-  // adversarial final pass on an already-primary-passed artifact. The wording
-  // is role-appropriate: design-reviewer references the design doc; all other
-  // reviewer roles (phase-reviewer) reference the diff.
-  let promptBody = body;
-  if (adversaryMode) {
-    const advNote = role === "design-reviewer"
-      ? "(Adversarial final pass: the design doc above has already passed " +
-        "the primary design review. Apply the same checklist independently.)"
-      : "(Adversarial final pass: the diff above has already passed " +
-        "the primary reviewer. Apply the same checklist independently.)";
-    promptBody = body + "\n\n" + advNote;
+  const promptBody = core.stripFrontmatter(agentMd);
+
+  // Re-review context: an absent or malformed context file is a warning, never
+  // a failure - the review gate must run regardless, just without the context.
+  let rereviewBlock = null;
+  if (contextPath) {
+    const contextAbs = path.isAbsolute(contextPath)
+      ? contextPath
+      : path.join(ROOT, contextPath);
+    let contextText = null;
+    try {
+      contextText = fs.readFileSync(contextAbs, "utf8");
+    } catch {
+      /* absent -> warn below */
+    }
+    const state = core.parseReviewRound(contextText);
+    if (state) {
+      rereviewBlock = core.formatRereviewBlock(state);
+    } else {
+      process.stderr.write(
+        "role.js: context file '" + contextPath + "' is absent or malformed;" +
+        " running the review without re-review context.\n"
+      );
+    }
   }
-  const prompt = core.composePrompt(promptBody, inputs);
+
+  const prompt = core.composePrompt(promptBody, inputs, rereviewBlock);
   const allowedTools = core.parseTools(agentMd);
 
   // Secret: read the backend's declared env var here (kept out of role-core).
-  // Use descriptor (primary or adversary) for the active backend.
   let authToken;
   if (descriptor.backend && descriptor.backend.env_key) {
     authToken = process.env[descriptor.backend.env_key];
@@ -342,26 +299,28 @@ function cmdShow() {
         " (" + r.type + (r.model ? ", " + r.model : "") + ")"
       );
     }
-    // Adversary line: only for reviewer roles. Non-reviewers skip quietly.
-    if (core.REVIEWER_ROLES.includes(role)) {
-      if (r.adversaryIgnored || !r.adversary) {
-        console.log("  " + " ".repeat(16) + "adversary: none");
-      } else {
-        const adv = r.adversary;
-        if (adv.adversarySameAsPrimary) {
-          console.log(
-            "  " + " ".repeat(16) + "adversary: " + adv.backendName +
-            " (" + adv.type + ", " + adv.model + ") [identical to primary - skipped]"
-          );
-        } else {
-          console.log(
-            "  " + " ".repeat(16) + "adversary: " + adv.backendName +
-            " (" + adv.type + ", " + adv.model + ", dispatch " + adv.dispatch + ")"
-          );
-        }
-      }
-    }
   }
+}
+
+// --- show-round ---
+
+// Print the re-review context block for the recorded rounds, or nothing when
+// no rounds are recorded. The orchestrator pastes this into a NATIVE
+// reviewer's Task prompt; the external path gets the identical block via
+// `run --context`, so both dispatches carry one formatter's wording.
+function cmdShowRound() {
+  let text = null;
+  try {
+    text = fs.readFileSync(path.join(ROOT, ".gantry", "review-round.json"), "utf8");
+  } catch {
+    /* absent -> nothing to show */
+  }
+  const state = core.parseReviewRound(text);
+  if (!state) {
+    process.stderr.write("role.js: no recorded review rounds; nothing to show.\n");
+    return;
+  }
+  console.log(core.formatRereviewBlock(state));
 }
 
 // --- write-default ---
@@ -390,15 +349,17 @@ switch (subcommand) {
   case "run": cmdRun(rest); break;
   case "detect": cmdDetect(); break;
   case "show": cmdShow(); break;
+  case "show-round": cmdShowRound(); break;
   case "write-default": cmdWriteDefault(); break;
   default:
     fail(
       "unknown subcommand: " + subcommand + "\n" +
       "Usage:\n" +
       "  role.js resolve <role>\n" +
-      "  role.js run <role> [--adversary] [-- <inputs...>]\n" +
+      "  role.js run <role> [--context <file>] [-- <inputs...>]\n" +
       "  role.js detect\n" +
       "  role.js show\n" +
+      "  role.js show-round\n" +
       "  role.js write-default"
     );
 }

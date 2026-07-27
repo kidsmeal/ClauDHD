@@ -6,8 +6,33 @@
  */
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const { makeRepo, cleanup, run, read, write, exists, optIn } = require("../tools/helpers.js");
-const { appendEntry, entryKey, recordedHashlessCounts } = require("../plugins/claudhd/scripts/shipped.js");
+const { appendEntry, entryKey, recordedHashlessCounts, migrateLegacyHeader, HEADER } = require("../plugins/claudhd/scripts/shipped.js");
+
+const TEMPLATE_PATH = path.join(__dirname, "..", "plugins", "claudhd", "templates", "SHIPPED.md");
+
+// LOCK (sol round-six finding 4): templates/SHIPPED.md (what init.js copies
+// into a fresh project) and shipped.js's HEADER constant (what appendEntry()
+// scaffolds and what a legacy header migrates TO) must read byte-identical -
+// otherwise a freshly-init'd project's SHIPPED.md would say one thing and a
+// migrated pre-1.0 project's would say another, for the exact same file.
+test("LOCK: templates/SHIPPED.md and shipped.js's HEADER constant are byte-identical", () => {
+  const template = fs.readFileSync(TEMPLATE_PATH, "utf8");
+  assert.equal(template, HEADER,
+    "templates/SHIPPED.md drifted from shipped.js's HEADER - regenerate the template from HEADER, never hand-edit it out of sync");
+});
+
+// A real-shape pre-1.0 SHIPPED.md: this repo's own live file carried exactly
+// this header (the /claudhd:shipped command it names was deleted in phase
+// 7's command-surface cut) until the migration below was written.
+const LEGACY_SHAPE_SHIPPED = `# SHIPPED
+
+Finished work, newest first. Run \`/claudhd:shipped\` to add commits since the last entry. This file records completed work so progress stays visible.
+
+<!-- last-sha: -->
+`;
 
 // Matches reconcile.js's todayDate() exactly (LOCAL date, not toISOString's
 // UTC) - the CLI's own git log --date=short also renders in local time, so
@@ -111,6 +136,48 @@ test("appendEntry creates SHIPPED.md from the standard header when absent", () =
     const shipped = read(dir, "SHIPPED.md");
     assert.match(shipped, /^# SHIPPED/);
     assert.match(shipped, /first ship/);
+  } finally { cleanup(dir); }
+});
+
+// --- legacy header migration (sol round-two finding 3) ---------------------
+
+test("migrateLegacyHeader: rewrites the pre-1.0 header line naming the deleted /claudhd:shipped command", () => {
+  const migrated = migrateLegacyHeader(LEGACY_SHAPE_SHIPPED);
+  assert.doesNotMatch(migrated, /\/claudhd:shipped/, "the deleted command must not survive the migration");
+  assert.match(migrated, /Written automatically at the commit boundary/, "the 1.0 wording must be present");
+  assert.equal(migrated, HEADER, "a migrated legacy header must read identical to the current HEADER constant");
+});
+
+test("migrateLegacyHeader: idempotent - a second pass changes nothing further", () => {
+  const once = migrateLegacyHeader(LEGACY_SHAPE_SHIPPED);
+  const twice = migrateLegacyHeader(once);
+  assert.equal(twice, once, "running the migration twice must be a no-op the second time");
+});
+
+test("migrateLegacyHeader: a no-op on a file that never carried the legacy line (already current, or hand-written)", () => {
+  assert.equal(migrateLegacyHeader(HEADER), HEADER);
+  const handWritten = "# SHIPPED\n\nsomething else entirely\n";
+  assert.equal(migrateLegacyHeader(handWritten), handWritten);
+});
+
+test("appendEntry: migrates a pre-1.0 SHIPPED.md's legacy header in place before appending, and a second commit changes the header no further", () => {
+  const { dir } = makeRepo();
+  try {
+    write(dir, "SHIPPED.md", LEGACY_SHAPE_SHIPPED);
+    appendEntry(dir, "first entry after upgrading to 1.0", "2026-07-27");
+
+    const afterFirst = read(dir, "SHIPPED.md");
+    assert.doesNotMatch(afterFirst, /\/claudhd:shipped/, "the legacy command reference must be gone");
+    assert.match(afterFirst, /Written automatically at the commit boundary/);
+    assert.match(afterFirst, /first entry after upgrading to 1\.0/, "the new entry must still be appended");
+
+    // A second commit (the writer that runs on every commit boundary) must
+    // not re-touch an already-migrated header.
+    appendEntry(dir, "second entry", "2026-07-27");
+    const afterSecond = read(dir, "SHIPPED.md");
+    const headerLineCount = (afterSecond.match(/Written automatically at the commit boundary/g) || []).length;
+    assert.equal(headerLineCount, 1, "the migrated header line must not be duplicated or re-migrated on a later write");
+    assert.match(afterSecond, /second entry/);
   } finally { cleanup(dir); }
 });
 

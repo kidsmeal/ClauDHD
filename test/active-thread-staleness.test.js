@@ -37,7 +37,7 @@ test("flags an active thread that has overstayed its welcome", () => {
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /## Drift flags/);
     assert.match(r.stdout, /Active thread "long running campaign" has been active for \d+ days/);
-    assert.match(r.stdout, /\/claudhd:wrap/, "should point at the wrap ritual to close it");
+    assert.match(r.stdout, /close it out and promote the next on purpose/, "should prompt closing it out");
   } finally { cleanup(dir); }
 });
 

@@ -83,6 +83,18 @@ function ideaLineAt(dir, position) {
   throw new Error("no idea line at position " + position + " in " + path.join(dir, "IDEAS.md"));
 }
 
+// LOCK (sol round-six sweep): templates/IDEAS.md (what init.js copies into a
+// fresh project) and vocab.js's own HEADER constant (what appendCapture()
+// scaffolds when IDEAS.md is absent) must read byte-identical - otherwise a
+// freshly-init'd project's IDEAS.md would describe the capture/triage flow
+// one way, and a project whose first capture happened before init ran would
+// get a different description of the exact same file.
+test("LOCK: templates/IDEAS.md and vocab.js's HEADER constant are byte-identical", () => {
+  const template = fs.readFileSync(path.join(__dirname, "..", "plugins", "claudhd", "templates", "IDEAS.md"), "utf8");
+  assert.equal(template, vocab.HEADER,
+    "templates/IDEAS.md drifted from vocab.js's HEADER - regenerate the template from HEADER, never hand-edit it out of sync");
+});
+
 // --- append-capture ---------------------------------------------------------
 
 test("append-capture writes the exact shape idea.js's IDEAS.md capture has always used", () => {
@@ -173,6 +185,89 @@ test("move promotes an idea's exact wording into ROADMAP.md byte-for-byte, stamp
     const ideas = read(dir, "IDEAS.md");
     assert.match(ideas, /\[~\]/, "the original IDEAS.md line is marked promoted, not deleted");
     assert.ok(ideas.includes(wording), "IDEAS.md keeps its own copy of the line too - move never deletes history");
+  } finally { cleanup(dir); }
+});
+
+// --- triage.md's "discuss" flow (sol round-two finding 1) ---
+//
+// A lost-context fragment cannot be saved by verbatim promotion, so the
+// command's contract is: talk it through, REPLACE the original IDEAS.md
+// line with the resolved wording (a normal gated edit - free text, never a
+// verb), re-read that exact new line, then fire move()/mark() with THAT as
+// expectedLine. This exercises the vocab-level tail of that loop: once the
+// line has been replaced and re-read, promotion of the REPLACED line must
+// carry the resolved wording verbatim into ROADMAP.md, not the original
+// fragment.
+//
+// replaceIdeaLine simulates the discussion's Edit-tool rewrite: same
+// checkbox marker, same timestamp, same (while: ...) tag if present, only
+// the text after the tag changes - exactly what triage.md instructs.
+function replaceIdeaLine(dir, position, newText) {
+  const lines = read(dir, "IDEAS.md").split(/\r?\n/);
+  let count = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (!vocab.parseIdeaLine(lines[i])) continue;
+    count++;
+    if (count !== position) continue;
+    const parsed = vocab.parseIdeaLine(lines[i]);
+    const tag = parsed.thread ? ` (while: ${parsed.thread})` : "";
+    lines[i] = `- [ ] ${parsed.date}${tag} ${newText}`;
+    write(dir, "IDEAS.md", lines.join("\n"));
+    return lines[i];
+  }
+  throw new Error("no idea line at position " + position);
+}
+
+test("discuss flow: promotion of the line REPLACED through discussion carries the resolved wording verbatim, not the original lost-context fragment", () => {
+  const { dir, git } = makeRepo();
+  try {
+    optIn(dir, git, "cleanup thread");
+    write(dir, "ROADMAP.md", ROADMAP_FIXTURE);
+
+    // A lost-context fragment: no verb, trivially short - the case verbatim
+    // promotion alone cannot save.
+    const cap = vocab.appendCapture(dir, "thing");
+    assert.match(cap.entry, /thing$/, "the captured fragment is exactly what verbatim promotion cannot save");
+
+    // The discussion resolves the wording; the session replaces the line.
+    const resolvedWording = "clean up the leftover debug logging in the sync path";
+    const replacedLine = replaceIdeaLine(dir, 1, resolvedWording);
+    assert.match(replacedLine, /\(while: cleanup thread\)/, "the replace step preserves the while-context tag");
+    assert.doesNotMatch(replacedLine, /\bthing$/, "the fragment's own wording must not survive the replace");
+
+    // The card re-reads the exact line it just wrote, then fires the verb
+    // with THAT as expectedLine (never the pre-discussion line).
+    const reRead = ideaLineAt(dir, 1);
+    assert.equal(reRead, replacedLine, "re-reading position 1 must yield exactly the replaced line");
+
+    const result = vocab.move(dir, { position: 1, expectedLine: reRead });
+    assert.equal(result.ok, true);
+
+    const roadmap = read(dir, "ROADMAP.md");
+    const nextBlock = roadmap.slice(roadmap.indexOf("## Next"), roadmap.indexOf("## Later"));
+    assert.ok(nextBlock.includes(resolvedWording),
+      "the resolved wording must land on the roadmap verbatim, as a substring");
+    assert.doesNotMatch(nextBlock, /\[ \]\s*thing\b/,
+      "the promoted line must not carry the original lost-context fragment's own wording");
+  } finally { cleanup(dir); }
+});
+
+test("discuss flow: promotion refuses the STALE pre-discussion line (expectedLine must be the re-read, replaced line)", () => {
+  const { dir, git } = makeRepo();
+  try {
+    optIn(dir, git);
+    write(dir, "ROADMAP.md", ROADMAP_FIXTURE);
+    const cap = vocab.appendCapture(dir, "thing");
+    replaceIdeaLine(dir, 1, "clean up the leftover debug logging in the sync path");
+
+    // Firing the verb with the ORIGINAL (now-stale) captured line, instead
+    // of re-reading after the replace, must refuse - the same optimistic-
+    // concurrency guarantee any other stale tap gets.
+    assert.throws(() => vocab.move(dir, { position: 1, expectedLine: cap.entry }),
+      /no longer matches the expected line/);
+    const roadmap = read(dir, "ROADMAP.md");
+    assert.ok(!roadmap.includes("clean up the leftover debug logging"),
+      "a refused move must write nothing");
   } finally { cleanup(dir); }
 });
 

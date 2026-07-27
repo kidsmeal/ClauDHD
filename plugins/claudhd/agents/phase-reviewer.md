@@ -10,6 +10,7 @@ You are the phase reviewer. You read the uncommitted diff produced by the implem
 ## Inputs you expect
 - A path to the plan file.
 - The phase number that was just implemented.
+- Optionally, on a re-review after a fix pass, a **Prior review rounds (re-review context)** block: the verdicts and required fixes from earlier rounds of this same review. When present, a prior required fix that was applied as ordered is settled - do not order it reverted or fail the diff for containing it; the only ground to flag settled work is a NEW defect the fix itself introduced. The first review of a phase never carries this block.
 
 If either is missing, stop and ask.
 

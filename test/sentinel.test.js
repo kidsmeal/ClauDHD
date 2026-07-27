@@ -490,3 +490,249 @@ test("add-files: no-op (no throw, exit 0) when sentinel is absent", () => {
     assert.ok(!sentinelExists(dir), "no sentinel should be created");
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+// --- write: same-plan+phase re-write preserves add-files widening (fix-relay path) ---
+
+test("write: a re-write for the SAME plan+phase keeps files widened in by add-files", () => {
+  const dir = mk();
+  try {
+    const planPath = writePlan(dir);
+    run(dir, ["write", planPath, "2"]);
+    run(dir, ["add-files", "reviewer/cited.js"]);
+    const r = run(dir, ["write", planPath, "2"]);
+    assert.equal(r.status, 0, r.stderr);
+    const s = readSentinel(dir);
+    assert.ok(s.files.includes("reviewer/cited.js"),
+      "the fix-relay path must not lose a reviewer-cited file on re-write");
+    assert.ok(s.files.includes("src/foo.js"), "the plan's own files must still be present");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("write: a re-write for a DIFFERENT phase does NOT carry over add-files widening", () => {
+  const dir = mk();
+  try {
+    const planPath = writePlan(dir);
+    run(dir, ["write", planPath, "2"]);
+    run(dir, ["add-files", "reviewer/cited.js"]);
+    const r = run(dir, ["write", planPath, "3"]);
+    assert.equal(r.status, 0, r.stderr);
+    const s = readSentinel(dir);
+    assert.ok(!s.files.includes("reviewer/cited.js"),
+      "a fresh phase must not inherit the prior phase's widened files");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// --- write-files subcommand: /claudhd:quick's scoped, plan-less sentinel ---
+
+test("write-files: writes a sentinel with plan null and phase 'quick'", () => {
+  const dir = mk();
+  try {
+    const r = run(dir, ["write-files", "src/a.js", "src/b.js"]);
+    assert.equal(r.status, 0, "write-files should exit 0\nstdout: " + r.stdout + "\nstderr: " + r.stderr);
+    const s = readSentinel(dir);
+    assert.equal(s.plan, null);
+    assert.equal(s.phase, "quick");
+    assert.deepEqual(s.files, ["src/a.js", "src/b.js"]);
+    assert.deepEqual(s.allow, ["NOW.md"],
+      "allow must include NOW.md - the clearing pass checks off batch items there");
+    assert.ok(s.started, "started must be stamped");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("write-files: no args exits non-zero with usage, no sentinel written", () => {
+  const dir = mk();
+  try {
+    const r = run(dir, ["write-files"]);
+    assert.notEqual(r.status, 0, "write-files with no files must be refused");
+    assert.match(r.stderr, /usage/i);
+    assert.ok(!sentinelExists(dir), "no sentinel should be written");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("write-files: refuses to clobber an ACTIVE plan-backed build phase - sentinel and recorded review rounds stay byte-untouched, commit gate stays closed (sol round-four ruling)", () => {
+  const dir = mk();
+  try {
+    const planPath = writePlan(dir);
+    run(dir, ["write", planPath, "2"]);
+    const roundResult = runIn(dir, ["record-round", planPath, "2", "FAIL"], "1. fix the thing\n2. fix the other thing\n");
+    assert.equal(roundResult.status, 0, "recording the round should exit 0\n" + roundResult.stderr);
+
+    const stateJsonPath = path.join(dir, ".now", "state.json");
+    const roundJsonPath = path.join(dir, ".gantry", "review-round.json");
+    const stateBefore = fs.readFileSync(stateJsonPath, "utf8");
+    const roundBefore = fs.readFileSync(roundJsonPath, "utf8");
+
+    const r = run(dir, ["write-files", "quick/fix.js"]);
+    assert.notEqual(r.status, 0, "write-files must refuse while an active plan-backed phase is in flight");
+    assert.match(r.stderr, /active build phase/i, "the refusal must name it as an active build phase");
+    assert.match(r.stderr, /phase 2/, "the refusal must name the blocking phase number");
+    assert.match(r.stderr, /docs\/plan\.md/, "the refusal must name the blocking plan path");
+    assert.match(r.stderr, /claudhd:review|sentinel\.js clear/i, "the refusal must name a remedy: finish or clear the phase");
+
+    const stateAfter = fs.readFileSync(stateJsonPath, "utf8");
+    const roundAfter = fs.readFileSync(roundJsonPath, "utf8");
+    assert.equal(stateAfter, stateBefore, "state.json (the sentinel) must be byte-untouched by a refused write-files");
+    assert.equal(roundAfter, roundBefore, "review-round.json must be byte-untouched by a refused write-files");
+
+    const s = readSentinel(dir);
+    assert.equal(s.plan, "docs/plan.md", "the real phase's sentinel must still be the active one, not replaced");
+    assert.equal(s.phase, 2, "the commit gate stays closed on the real phase, never silently reset to the quick lane");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("write-files: a STALE plan-backed sentinel does not block - an abandoned phase is not really active", () => {
+  const dir = mk();
+  try {
+    const planPath = writePlan(dir);
+    run(dir, ["write", planPath, "2"], { GANTRY_SESSION_ID: "stale-session" });
+
+    // Backdate `started` so isStale()'s AND condition (different session +
+    // > 6h old) is satisfied, simulating an abandoned phase.
+    const stateJsonPath = path.join(dir, ".now", "state.json");
+    const state = JSON.parse(fs.readFileSync(stateJsonPath, "utf8"));
+    state.build.started = new Date(Date.now() - 7 * 3600 * 1000).toISOString();
+    fs.writeFileSync(stateJsonPath, JSON.stringify(state, null, 2));
+
+    const r = run(dir, ["write-files", "quick/fix.js"], { GANTRY_SESSION_ID: "current-session" });
+    assert.equal(r.status, 0, "a stale sentinel must not block write-files\nstderr: " + r.stderr);
+    const s = readSentinel(dir);
+    assert.equal(s.plan, null, "the stale phase's sentinel is replaced by the quick sentinel");
+    assert.equal(s.phase, "quick");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("write-files: a plan-less quick sentinel does not block a later write-files call", () => {
+  const dir = mk();
+  try {
+    run(dir, ["write-files", "first/fix.js"]);
+    const r = run(dir, ["write-files", "second/fix.js"]);
+    assert.equal(r.status, 0, "a prior quick (plan: null) sentinel must never block another quick pass\nstderr: " + r.stderr);
+    const s = readSentinel(dir);
+    assert.deepEqual(s.files, ["second/fix.js"]);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// --- record-round subcommand: re-review context rounds ---
+
+// Like run(), but with stdin content (the fixes text record-round expects).
+function runIn(dir, args, input) {
+  return spawnSync(process.execPath, [SENTINEL_SCRIPT, ...args], {
+    encoding: "utf8",
+    input,
+    env: { ...process.env, GANTRY_PROJECT_DIR: dir },
+  });
+}
+function readRounds(dir) {
+  return JSON.parse(fs.readFileSync(path.join(dir, ".gantry", "review-round.json"), "utf8"));
+}
+function roundsExist(dir) {
+  return fs.existsSync(path.join(dir, ".gantry", "review-round.json"));
+}
+
+test("record-round: creates review-round.json with round 1 from stdin fixes", () => {
+  const dir = mk();
+  try {
+    const planPath = writePlan(dir);
+    const r = runIn(dir, ["record-round", planPath, "2", "FAIL"], "1. fix the thing\n2. fix the other thing\n");
+    assert.equal(r.status, 0, "record-round should exit 0\nstdout: " + r.stdout + "\nstderr: " + r.stderr);
+    const s = readRounds(dir);
+    assert.equal(s.plan, "docs/plan.md", "plan must be stored root-relative posix");
+    assert.equal(s.phase, 2);
+    assert.equal(s.rounds.length, 1);
+    assert.equal(s.rounds[0].round, 1);
+    assert.equal(s.rounds[0].verdict, "FAIL");
+    assert.match(s.rounds[0].fixes, /fix the thing/);
+    assert.ok(s.rounds[0].recorded, "round must carry a recorded timestamp");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("record-round: appends round 2 for the same plan and phase", () => {
+  const dir = mk();
+  try {
+    const planPath = writePlan(dir);
+    runIn(dir, ["record-round", planPath, "2", "FAIL"], "round one fixes");
+    const r = runIn(dir, ["record-round", planPath, "2", "PASS-WITH-NOTES"], "round two fixes");
+    assert.equal(r.status, 0, r.stderr);
+    const s = readRounds(dir);
+    assert.equal(s.rounds.length, 2, "rounds must accumulate for the same plan+phase");
+    assert.equal(s.rounds[1].round, 2);
+    assert.equal(s.rounds[1].verdict, "PASS-WITH-NOTES");
+    assert.match(s.rounds[1].fixes, /round two fixes/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("record-round: a different phase starts a fresh file (no cross-phase leak)", () => {
+  const dir = mk();
+  try {
+    const planPath = writePlan(dir);
+    runIn(dir, ["record-round", planPath, "2", "FAIL"], "phase two fixes");
+    const r = runIn(dir, ["record-round", planPath, "3", "FAIL"], "phase three fixes");
+    assert.equal(r.status, 0, r.stderr);
+    const s = readRounds(dir);
+    assert.equal(s.phase, 3);
+    assert.equal(s.rounds.length, 1, "prior phase's rounds must be discarded");
+    assert.match(s.rounds[0].fixes, /phase three fixes/);
+    assert.doesNotMatch(JSON.stringify(s), /phase two fixes/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("record-round: empty stdin exits non-zero and writes nothing", () => {
+  const dir = mk();
+  try {
+    const planPath = writePlan(dir);
+    const r = runIn(dir, ["record-round", planPath, "2", "FAIL"], "");
+    assert.notEqual(r.status, 0, "a round with no fixes text must be refused");
+    assert.match(r.stderr, /stdin/i, "the error must say the fixes go on stdin");
+    assert.ok(!roundsExist(dir), "no round file should be written");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("record-round: missing args exit non-zero with usage", () => {
+  const dir = mk();
+  try {
+    const r = runIn(dir, ["record-round", "plan.md", "2"], "fixes");
+    assert.notEqual(r.status, 0, "record-round without a verdict must fail");
+    assert.match(r.stderr, /usage/i);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("write: removes a stale round file recorded for a different phase", () => {
+  const dir = mk();
+  try {
+    const planPath = writePlan(dir);
+    runIn(dir, ["record-round", planPath, "2", "FAIL"], "phase two fixes");
+    assert.ok(roundsExist(dir));
+    const r = run(dir, ["write", planPath, "3"]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(!roundsExist(dir),
+      "starting phase 3 must remove phase 2's recorded rounds");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("write: keeps the round file for the same plan and phase (the fix-relay path)", () => {
+  const dir = mk();
+  try {
+    const planPath = writePlan(dir);
+    run(dir, ["write", planPath, "2"]);
+    runIn(dir, ["record-round", planPath, "2", "FAIL"], "mid-loop fixes");
+    // /claudhd:build re-invoked for the fix pass runs write again for the SAME
+    // plan+phase; the live rounds must survive or the re-review loses its context.
+    const r = run(dir, ["write", planPath, "2"]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(roundsExist(dir), "same-phase re-write must keep the recorded rounds");
+    assert.match(readRounds(dir).rounds[0].fixes, /mid-loop fixes/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("clear: removes the round file along with the sentinel", () => {
+  const dir = mk();
+  try {
+    const planPath = writePlan(dir);
+    run(dir, ["write", planPath, "2"]);
+    runIn(dir, ["record-round", planPath, "2", "FAIL"], "some fixes");
+    const r = run(dir, ["clear"]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(!sentinelExists(dir), "sentinel must be cleared");
+    assert.ok(!roundsExist(dir), "recorded rounds die with the phase");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});

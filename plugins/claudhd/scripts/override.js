@@ -105,6 +105,32 @@ function spliceOverrideLine(text, sessionId, count) {
   return lines.slice(0, sec.start + 1).concat(secLines, lines.slice(sec.end)).join(nl);
 }
 
+// The inverse of spliceOverrideLine: remove any existing override line from
+// `text`'s Loose ends section (restoring the placeholder if that line was
+// the section's only content), or return `text` unchanged if there is no
+// override line to remove. Used by thread.js's enterDesign()/enterBuild()
+// (sol round-one finding 1): a mode transition invalidates the override, so
+// its rendered record must not linger once the state-side record is gone.
+function clearOverrideLine(text) {
+  const nl = text.includes("\r\n") ? "\r\n" : "\n";
+  const lines = text.split(/\r?\n/);
+  const sec = findLooseSection(lines);
+  if (!sec) return text;
+
+  const secLines = lines.slice(sec.start + 1, sec.end);
+  const existingIdx = secLines.findIndex((l) => OVERRIDE_LINE_RE.test(l));
+  if (existingIdx === -1) return text; // nothing to clear
+
+  const hasOtherContent = secLines.some((l, i) => i !== existingIdx && l.trim() !== "");
+  if (hasOtherContent) {
+    secLines.splice(existingIdx, 1);
+  } else {
+    secLines[existingIdx] = LOOSE_PLACEHOLDER;
+  }
+
+  return lines.slice(0, sec.start + 1).concat(secLines, lines.slice(sec.end)).join(nl);
+}
+
 // Re-render NOW.md from state through nowrender.render(), the same render
 // path reconcile.js uses at the commit boundary - mode/position/counts come
 // fresh off `state`; the Queue/Quick-fixes/Loose-ends sections carry forward
@@ -190,7 +216,7 @@ function noteOverrideFile(root, sessionId, relPath) {
   });
 }
 
-module.exports = { recordOverride, noteOverrideFile, OVERRIDE_OWNED_KEYS };
+module.exports = { recordOverride, noteOverrideFile, clearOverrideLine, OVERRIDE_OWNED_KEYS };
 
 function runCli() {
   const ROOT = require("./root.js")(process.env);

@@ -332,6 +332,87 @@ test("composePrompt appends a runtime inputs block", () => {
   assert.match(out, /plan: p\.md, phase: 2/);
 });
 
+test("composePrompt without a re-review block is unchanged (no prior-rounds text)", () => {
+  const out = core.composePrompt("INSTRUCTIONS", "plan: p.md, phase: 2");
+  assert.doesNotMatch(out, /Prior review rounds/,
+    "a first-round prompt must not mention prior rounds");
+});
+
+test("composePrompt inserts the re-review block between the inputs and the gather instruction", () => {
+  const state = {
+    plan: "docs/p.md", phase: 3,
+    rounds: [{ round: 1, verdict: "FAIL", fixes: "1. render NOW.md via the renderer" }],
+  };
+  const block = core.formatRereviewBlock(state);
+  const out = core.composePrompt("INSTRUCTIONS", "plan: p.md, phase: 3", block);
+  const inputsIdx = out.indexOf("Runtime inputs");
+  const blockIdx = out.indexOf("Prior review rounds");
+  const gatherIdx = out.indexOf("Gather the diff");
+  assert.ok(blockIdx > inputsIdx, "re-review block must follow the runtime inputs");
+  assert.ok(gatherIdx > blockIdx, "gather instruction must follow the re-review block");
+  assert.match(out, /render NOW\.md via the renderer/);
+});
+
+// --- parseReviewRound / formatRereviewBlock ---
+
+const ROUND_STATE = {
+  plan: "docs/p_plan.md",
+  phase: 3,
+  rounds: [
+    { round: 1, verdict: "FAIL", fixes: "1. init.js must render NOW.md via the renderer", recorded: "2026-07-26T00:00:00Z" },
+    { round: 2, verdict: "PASS-WITH-NOTES", fixes: "1. rename the helper", recorded: "2026-07-26T01:00:00Z" },
+  ],
+};
+
+test("parseReviewRound parses a valid round file", () => {
+  const state = core.parseReviewRound(JSON.stringify(ROUND_STATE));
+  assert.equal(state.phase, 3);
+  assert.equal(state.plan, "docs/p_plan.md");
+  assert.equal(state.rounds.length, 2);
+  assert.equal(state.rounds[0].verdict, "FAIL");
+});
+
+test("parseReviewRound fails safe to null on garbage", () => {
+  assert.equal(core.parseReviewRound(null), null);
+  assert.equal(core.parseReviewRound(""), null);
+  assert.equal(core.parseReviewRound("not json {"), null);
+  assert.equal(core.parseReviewRound("[1,2,3]"), null);
+  assert.equal(core.parseReviewRound(JSON.stringify({ phase: "3", rounds: [] })), null);
+});
+
+test("parseReviewRound with no usable rounds is null, and unusable rounds are dropped", () => {
+  assert.equal(core.parseReviewRound(JSON.stringify({ phase: 3, rounds: [] })), null,
+    "empty rounds means no context");
+  assert.equal(
+    core.parseReviewRound(JSON.stringify({ phase: 3, rounds: [{ verdict: "FAIL", fixes: "" }] })),
+    null, "a round with empty fixes is unusable");
+  const mixed = core.parseReviewRound(JSON.stringify({
+    phase: 3,
+    rounds: [{ verdict: "FAIL", fixes: "fix it" }, { bogus: true }],
+  }));
+  assert.equal(mixed.rounds.length, 1, "only the well-formed round survives");
+});
+
+test("formatRereviewBlock renders every round with verdict and fixes", () => {
+  const block = core.formatRereviewBlock(ROUND_STATE);
+  assert.match(block, /Prior review rounds/);
+  assert.match(block, /Round 1 - FAIL/);
+  assert.match(block, /init\.js must render NOW\.md via the renderer/);
+  assert.match(block, /Round 2 - PASS-WITH-NOTES/);
+  assert.match(block, /rename the helper/);
+  assert.match(block, /phase 3/);
+});
+
+test("formatRereviewBlock carries the settled-unless-NEW-defect contract", () => {
+  const block = core.formatRereviewBlock(ROUND_STATE);
+  assert.match(block, /SETTLED/,
+    "the block must declare applied prior fixes settled");
+  assert.match(block, /applied as ordered/,
+    "settled status must be conditioned on the fix being applied as ordered");
+  assert.match(block, /NEW defect/,
+    "the one reopening ground must be a NEW defect the fix introduced");
+});
+
 // --- buildInvocation ---
 
 test("buildInvocation throws for a native descriptor", () => {
@@ -439,338 +520,4 @@ test("buildInvocation for openai-compat selects the provider by name (no spaces 
     assert.ok(!/\s/.test(tok), "no argv element should contain whitespace: " + tok);
   }
   assert.equal(inv.stdin, "REVIEW");
-});
-
-// --- resolveRole: adversary resolution (Phase 4) ---
-
-// Mirrors the real repo .gantry/models.json shape: codex phase-reviewer with
-// an adversary that is a second external reviewer (opus via claude-headless).
-const REALISTIC_CFG_WITH_ADVERSARY = {
-  roles: {
-    "implementer": { backend: "native", model: "sonnet" },
-    "phase-planner": { backend: "native", model: "opus" },
-    "design-reviewer": { backend: "native", model: "opus" },
-    "phase-reviewer": {
-      backend: "codex",
-      model: "gpt-5.5",
-      adversary: { backend: "claude", model: "claude-opus-4-5" },
-    },
-  },
-  backends: {
-    "native": { type: "native" },
-    "claude": { type: "claude-headless" },
-    "codex": {
-      type: "cli",
-      cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check -c model_reasoning_effort=high",
-      promptVia: "stdin",
-      sandbox: "workspace-write",
-    },
-  },
-};
-
-test("adversary on phase-reviewer resolves to a descriptor with the expected fields", () => {
-  const r = core.resolveRole(REALISTIC_CFG_WITH_ADVERSARY, "phase-reviewer");
-  assert.equal(r.error, null, "primary should resolve clean");
-  assert.ok(r.adversary, "adversary descriptor should be present");
-  assert.equal(r.adversary.type, "claude-headless");
-  assert.equal(r.adversary.model, "claude-opus-4-5");
-  assert.equal(r.adversary.backendName, "claude");
-  assert.equal(r.adversary.dispatch, "external");
-});
-
-test("adversary on design-reviewer resolves to a descriptor", () => {
-  const cfg = {
-    roles: {
-      "design-reviewer": {
-        backend: "codex",
-        model: "gpt-5.5",
-        adversary: { backend: "codex", model: "o3" },
-      },
-    },
-    backends: {
-      "native": { type: "native" },
-      "codex": {
-        type: "cli",
-        cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check -c model_reasoning_effort=high",
-        promptVia: "stdin",
-        sandbox: "workspace-write",
-      },
-    },
-  };
-  const r = core.resolveRole(cfg, "design-reviewer");
-  assert.equal(r.error, null);
-  assert.ok(r.adversary, "adversary descriptor should be present");
-  assert.equal(r.adversary.type, "cli");
-  assert.equal(r.adversary.model, "o3");
-});
-
-test("adversary on implementer is silently ignored - no adversary on return", () => {
-  const cfg = {
-    roles: {
-      "implementer": {
-        backend: "native",
-        model: "sonnet",
-        adversary: { backend: "codex", model: "gpt-5.5" },
-      },
-    },
-    backends: {
-      "native": { type: "native" },
-      "codex": {
-        type: "cli",
-        cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check -c model_reasoning_effort=high",
-        promptVia: "stdin",
-        sandbox: "workspace-write",
-      },
-    },
-  };
-  const r = core.resolveRole(cfg, "implementer");
-  assert.equal(r.error, null, "primary implementer should still resolve clean");
-  assert.ok(!r.adversary, "adversary must not appear on implementer return");
-});
-
-test("adversary on implementer sets adversaryIgnored:true so callers can warn", () => {
-  const cfg = {
-    roles: {
-      "implementer": {
-        backend: "native",
-        model: "sonnet",
-        adversary: { backend: "codex", model: "gpt-5.5" },
-      },
-    },
-    backends: {
-      "native": { type: "native" },
-      "codex": {
-        type: "cli",
-        cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check -c model_reasoning_effort=high",
-        promptVia: "stdin",
-        sandbox: "workspace-write",
-      },
-    },
-  };
-  const r = core.resolveRole(cfg, "implementer");
-  assert.equal(r.adversaryIgnored, true,
-    "adversaryIgnored must be true when implementer carries an adversary key");
-});
-
-test("adversary on phase-planner is silently ignored - no adversary on return", () => {
-  const cfg = {
-    roles: {
-      "phase-planner": {
-        backend: "native",
-        model: "opus",
-        adversary: { backend: "codex", model: "gpt-5.5" },
-      },
-    },
-    backends: {
-      "native": { type: "native" },
-      "codex": {
-        type: "cli",
-        cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check -c model_reasoning_effort=high",
-        promptVia: "stdin",
-        sandbox: "workspace-write",
-      },
-    },
-  };
-  const r = core.resolveRole(cfg, "phase-planner");
-  assert.equal(r.error, null, "primary planner should still resolve clean");
-  assert.ok(!r.adversary, "adversary must not appear on phase-planner return");
-});
-
-test("adversary on phase-planner sets adversaryIgnored:true so callers can warn", () => {
-  const cfg = {
-    roles: {
-      "phase-planner": {
-        backend: "native",
-        model: "opus",
-        adversary: { backend: "codex", model: "gpt-5.5" },
-      },
-    },
-    backends: {
-      "native": { type: "native" },
-      "codex": {
-        type: "cli",
-        cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check -c model_reasoning_effort=high",
-        promptVia: "stdin",
-        sandbox: "workspace-write",
-      },
-    },
-  };
-  const r = core.resolveRole(cfg, "phase-planner");
-  assert.equal(r.adversaryIgnored, true,
-    "adversaryIgnored must be true when phase-planner carries an adversary key");
-});
-
-test("adversaryIgnored is absent when a reviewer role carries an adversary", () => {
-  const r = core.resolveRole(REALISTIC_CFG_WITH_ADVERSARY, "phase-reviewer");
-  assert.equal(r.error, null);
-  assert.ok(r.adversary, "reviewer adversary must resolve normally");
-  assert.ok(!("adversaryIgnored" in r),
-    "adversaryIgnored must not appear on reviewer roles");
-});
-
-test("adversaryIgnored is absent when a non-reviewer role has no adversary key", () => {
-  const r = core.resolveRole(core.DEFAULT_CONFIG, "implementer");
-  assert.equal(r.error, null);
-  assert.ok(!("adversaryIgnored" in r),
-    "adversaryIgnored must not appear when no adversary key is present");
-});
-
-test("malformed adversary: unknown backend name - fails safe to no adversary, primary still resolves", () => {
-  const cfg = {
-    roles: {
-      "phase-reviewer": {
-        backend: "codex",
-        model: "gpt-5.5",
-        adversary: { backend: "ghost", model: "x" },
-      },
-    },
-    backends: {
-      "native": { type: "native" },
-      "codex": {
-        type: "cli",
-        cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check -c model_reasoning_effort=high",
-        promptVia: "stdin",
-        sandbox: "workspace-write",
-      },
-    },
-  };
-  const r = core.resolveRole(cfg, "phase-reviewer");
-  assert.equal(r.error, null, "primary should still resolve clean");
-  assert.ok(!r.adversary, "malformed adversary must fail safe to no adversary");
-});
-
-test("malformed adversary: unknown backend type - fails safe to no adversary", () => {
-  const cfg = {
-    roles: {
-      "phase-reviewer": {
-        backend: "codex",
-        model: "gpt-5.5",
-        adversary: { backend: "weird", model: "x" },
-      },
-    },
-    backends: {
-      "native": { type: "native" },
-      "codex": {
-        type: "cli",
-        cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check -c model_reasoning_effort=high",
-        promptVia: "stdin",
-        sandbox: "workspace-write",
-      },
-    },
-    // 'weird' backend has an unknown type
-    // (backends merged below to show the unknown type scenario)
-  };
-  // Add a weird backend with unknown type
-  cfg.backends.weird = { type: "frobnicate" };
-  const r = core.resolveRole(cfg, "phase-reviewer");
-  assert.equal(r.error, null, "primary should still resolve clean");
-  assert.ok(!r.adversary, "adversary with unknown type must fail safe to no adversary");
-});
-
-test("malformed adversary: external backend with no model - fails safe to no adversary", () => {
-  const cfg = {
-    roles: {
-      "phase-reviewer": {
-        backend: "codex",
-        model: "gpt-5.5",
-        adversary: { backend: "codex" },  // missing model
-      },
-    },
-    backends: {
-      "native": { type: "native" },
-      "codex": {
-        type: "cli",
-        cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check -c model_reasoning_effort=high",
-        promptVia: "stdin",
-        sandbox: "workspace-write",
-      },
-    },
-  };
-  const r = core.resolveRole(cfg, "phase-reviewer");
-  assert.equal(r.error, null, "primary should still resolve clean");
-  assert.ok(!r.adversary, "adversary without model must fail safe to no adversary");
-});
-
-test("DEFAULT_CONFIG yields no adversary for any role", () => {
-  for (const role of core.VALID_ROLES) {
-    const r = core.resolveRole(core.DEFAULT_CONFIG, role);
-    assert.equal(r.error, null, role + " should resolve without error");
-    assert.ok(!r.adversary, role + " must have no adversary in default config");
-  }
-});
-
-test("config without adversary key yields no adversary on phase-reviewer", () => {
-  // This mirrors the existing repo .gantry/models.json (codex reviewer, no adversary key).
-  const cfg = {
-    roles: {
-      "phase-reviewer": { backend: "codex", model: "gpt-5.5" },
-    },
-    backends: {
-      "native": { type: "native" },
-      "codex": {
-        type: "cli",
-        cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check -c model_reasoning_effort=high",
-        promptVia: "stdin",
-        sandbox: "workspace-write",
-      },
-    },
-  };
-  const r = core.resolveRole(cfg, "phase-reviewer");
-  assert.equal(r.error, null);
-  assert.ok(!r.adversary, "no adversary key in assignment must yield no adversary");
-});
-
-test("adversary identical to primary is flagged with adversarySameAsPrimary on the return", () => {
-  // Same backend + model on adversary as the primary.
-  const cfg = {
-    roles: {
-      "phase-reviewer": {
-        backend: "codex",
-        model: "gpt-5.5",
-        adversary: { backend: "codex", model: "gpt-5.5" },
-      },
-    },
-    backends: {
-      "native": { type: "native" },
-      "codex": {
-        type: "cli",
-        cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check -c model_reasoning_effort=high",
-        promptVia: "stdin",
-        sandbox: "workspace-write",
-      },
-    },
-  };
-  const r = core.resolveRole(cfg, "phase-reviewer");
-  assert.equal(r.error, null, "primary should still resolve clean");
-  assert.ok(r.adversary, "adversary descriptor should be present even when identical");
-  assert.equal(r.adversary.adversarySameAsPrimary, true,
-    "identical adversary must be flagged with adversarySameAsPrimary");
-});
-
-test("HARNESS_SAFE_TYPES lock does NOT apply to a reviewer adversary: cli adversary on phase-reviewer resolves", () => {
-  // If the harness guard were mistakenly applied to the adversary, a cli
-  // adversary on phase-reviewer would fail. It must not.
-  const cfg = {
-    roles: {
-      "phase-reviewer": {
-        backend: "native",
-        model: "opus",
-        adversary: { backend: "codex", model: "gpt-5.5" },
-      },
-    },
-    backends: {
-      "native": { type: "native" },
-      "codex": {
-        type: "cli",
-        cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check -c model_reasoning_effort=high",
-        promptVia: "stdin",
-        sandbox: "workspace-write",
-      },
-    },
-  };
-  const r = core.resolveRole(cfg, "phase-reviewer");
-  assert.equal(r.error, null, "primary (native) should resolve clean");
-  assert.ok(r.adversary, "cli adversary on reviewer must resolve without the harness lock");
-  assert.equal(r.adversary.type, "cli");
-  assert.equal(r.adversary.dispatch, "external");
 });

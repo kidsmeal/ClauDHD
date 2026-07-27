@@ -42,8 +42,10 @@ const VALID_ROLES = [
   "phase-reviewer",
 ];
 
-// Roles that may carry an adversary. The implementer and phase-planner must
-// never run off-harness, so their adversary key is ignored even when present.
+// The two review-gate roles. scaffoldConfig() routes both to codex by
+// default when the codex CLI is available (a second model's eyes on the
+// two gates that read a Claude role's own output - the design doc and the
+// diff).
 const REVIEWER_ROLES = ["design-reviewer", "phase-reviewer"];
 
 // The backend types resolveRole knows how to dispatch and buildInvocation knows
@@ -233,7 +235,7 @@ function resolveRole(config, role) {
     };
   }
 
-  const primaryResult = {
+  return {
     role,
     error: null,
     dispatch: type === "native" ? "native" : "external",
@@ -242,54 +244,6 @@ function resolveRole(config, role) {
     model,
     backend,
   };
-
-  // Non-reviewer roles (implementer, phase-planner) must never run an adversary:
-  // their execution model does not support a second-opinion pass, and their
-  // adversary key is silently ignored. Signal that to callers (e.g. role.js
-  // show/resolve) so they can warn the user rather than losing the config key
-  // with no feedback. No error, no throw - purely additive.
-  if (!REVIEWER_ROLES.includes(role) && assignment.adversary) {
-    primaryResult.adversaryIgnored = true;
-  }
-
-  // Adversary resolution: only for reviewer roles, and only when configured.
-  // Implemented as a fail-safe inner path: any malformed adversary entry yields
-  // no adversary on the return (the primary result is unaffected). The
-  // HARNESS_SAFE_TYPES implementer lock never applies here.
-  if (REVIEWER_ROLES.includes(role) && assignment.adversary) {
-    const adv = assignment.adversary;
-    // Resolve the adversary's backend and model through the same validation as
-    // the primary. Any step that would normally return an error instead causes
-    // a silent fail-safe: no adversary descriptor on the return.
-    const advBackendName = adv.backend;
-    if (advBackendName) {
-      const advBackend =
-        (cfg.backends && cfg.backends[advBackendName]) ||
-        DEFAULT_CONFIG.backends[advBackendName];
-      if (advBackend) {
-        const advType = advBackend.type;
-        const advModel = adv.model || advBackend.model || null;
-        if (
-          KNOWN_BACKEND_TYPES.includes(advType) &&
-          (advType === "native" || advModel)
-        ) {
-          const advDispatch = advType === "native" ? "native" : "external";
-          const isSameAsPrimary =
-            advBackendName === backendName && advModel === model;
-          primaryResult.adversary = {
-            backendName: advBackendName,
-            type: advType,
-            model: advModel,
-            dispatch: advDispatch,
-            backend: advBackend,
-            ...(isSameAsPrimary ? { adversarySameAsPrimary: true } : {}),
-          };
-        }
-      }
-    }
-  }
-
-  return primaryResult;
 }
 
 // Substitute {placeholder} tokens in a command template. Only used for values
@@ -327,16 +281,81 @@ function parseTools(md) {
 // Compose the prompt fed to an external backend: the role's instruction body
 // (frontmatter already stripped) plus a runtime block carrying the caller's
 // inputs and a reminder that the tool must gather the diff/files itself.
-function composePrompt(body, inputs) {
+//
+// rereviewBlock (optional) is the prior-rounds context from formatRereviewBlock,
+// appended after the inputs so a re-review carries the earlier verdicts. Absent
+// on a first-round review, which keeps the first-round prompt byte-identical to
+// what it was before re-review context existed.
+function composePrompt(body, inputs, rereviewBlock) {
   const inputBlock = (inputs && inputs.trim()) || "(no extra inputs)";
   return (
     String(body).trim() +
     "\n\n---\n## Runtime inputs\n" +
     inputBlock +
+    (rereviewBlock ? "\n\n" + String(rereviewBlock).trim() : "") +
     "\n\nGather the diff and any files you need yourself using the tools " +
     "available to you, then produce exactly the output described above. " +
     "Return only that output."
   );
+}
+
+// Parse .gantry/review-round.json text into a prior-rounds state object, or
+// null when the text is absent, malformed, or holds no usable round. Fail-safe
+// like parseConfig: a broken round file must never block a review - the caller
+// simply reviews without context, exactly as before the feature existed.
+function parseReviewRound(text) {
+  if (text == null || text === "") return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object") return null;
+  if (typeof parsed.phase !== "number" || !Array.isArray(parsed.rounds)) {
+    return null;
+  }
+  const rounds = parsed.rounds.filter(
+    (r) =>
+      r && typeof r === "object" &&
+      typeof r.verdict === "string" && r.verdict.trim() !== "" &&
+      typeof r.fixes === "string" && r.fixes.trim() !== ""
+  );
+  if (rounds.length === 0) return null;
+  return {
+    plan: typeof parsed.plan === "string" ? parsed.plan : "",
+    phase: parsed.phase,
+    rounds,
+  };
+}
+
+// Render the prior-rounds state into the context block a re-review carries.
+// The wording IS the contract: a required fix a prior round ordered and the
+// implementer applied as ordered is settled, and only a NEW defect the fix
+// itself introduced may reopen it. This is what stops a stateless round-N
+// reviewer from failing the exact change round N-1 required.
+function formatRereviewBlock(state) {
+  const lines = [
+    "## Prior review rounds (re-review context)",
+    "This diff has already been reviewed for phase " + state.phase + ". Each " +
+      "round below issued required fixes that were relayed to the implementer " +
+      "and applied as ordered.",
+    "",
+  ];
+  state.rounds.forEach((r, i) => {
+    lines.push("### Round " + (r.round || i + 1) + " - " + r.verdict.trim());
+    lines.push(r.fixes.trim());
+    lines.push("");
+  });
+  lines.push(
+    "A fix a prior round ordered and the implementer applied as ordered is " +
+      "SETTLED: do not reverse it, order it undone, or fail the diff for " +
+      "containing it, even if you would not have ordered it yourself. The " +
+      "only ground to flag settled work is a NEW defect the fix itself " +
+      "introduced - name that defect specifically. Everything else in the " +
+      "diff gets the normal checklist, fresh."
+  );
+  return lines.join("\n");
 }
 
 // Build the concrete subprocess invocation for a NON-native resolved role.
@@ -469,6 +488,8 @@ module.exports = {
   stripFrontmatter,
   parseTools,
   composePrompt,
+  parseReviewRound,
+  formatRereviewBlock,
   buildInvocation,
   buildGuardSettings,
 };

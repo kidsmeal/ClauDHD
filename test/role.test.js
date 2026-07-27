@@ -1,7 +1,14 @@
 "use strict";
-/* CLI-level tests for role.js resolve / run --adversary / show: the
- * fail-safe-to-native behavior for ordinary config errors, the one hard stop
- * (off-harness implementer), and the adversary surfaces. */
+/* CLI-level tests for role.js resolve / run / show: the fail-safe-to-native
+ * behavior for ordinary config errors, the one hard stop (off-harness
+ * implementer), and the re-review context surfaces (--context / show-round).
+ *
+ * Adversary support (resolve's ADVERSARY: line, run --adversary, show's
+ * adversary display) was removed: claudhd 1.0 ships primary-reviewer-only
+ * (sol round-one ruling, finding 4). It rode in from gantry's port but was
+ * never in 1.0's scope and its native-dispatch path was broken. See
+ * role-core.js/role.js for what was stripped.
+ */
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const { spawnSync } = require("node:child_process");
@@ -18,20 +25,6 @@ function writeConfig(dir, config) {
 }
 function resolve(dir, role) {
   return spawnSync(process.execPath, [ROLE, "resolve", role], {
-    encoding: "utf8",
-    env: { ...process.env, GANTRY_PROJECT_DIR: dir },
-  });
-}
-function show(dir) {
-  return spawnSync(process.execPath, [ROLE, "show"], {
-    encoding: "utf8",
-    env: { ...process.env, GANTRY_PROJECT_DIR: dir },
-  });
-}
-function runAdversary(dir, role, inputs) {
-  const args = [ROLE, "run", role, "--adversary"];
-  if (inputs && inputs.length) args.push("--", ...inputs);
-  return spawnSync(process.execPath, args, {
     encoding: "utf8",
     env: { ...process.env, GANTRY_PROJECT_DIR: dir },
   });
@@ -108,307 +101,127 @@ test("resolve: implementer with an unknown backend (a typo) fails safe to native
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-// --- adversary surfaces ---
+// --- run --context / show-round: re-review context ---
 
-const CODEX_BACKEND = {
-  type: "cli",
-  cmd: "codex exec --model {model} --sandbox {sandbox} --skip-git-repo-check",
-  promptVia: "stdin",
-  sandbox: "workspace-write",
+function runRole(dir, args) {
+  return spawnSync(process.execPath, [ROLE, ...args], {
+    encoding: "utf8",
+    env: { ...process.env, GANTRY_PROJECT_DIR: dir },
+  });
+}
+
+// Write a .gantry/review-round.json as sentinel.js record-round would.
+function writeRounds(dir, state) {
+  fs.mkdirSync(path.join(dir, ".gantry"), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, ".gantry", "review-round.json"),
+    JSON.stringify(state, null, 2)
+  );
+}
+
+const ROUNDS = {
+  plan: "docs/p_plan.md",
+  phase: 3,
+  rounds: [
+    { round: 1, verdict: "FAIL", fixes: "1. init.js must render NOW.md via the renderer", recorded: "2026-07-26T00:00:00Z" },
+  ],
 };
-const CLAUDE_BACKEND = { type: "claude-headless" };
-
-// A realistic config mirroring the repo .gantry/models.json shape, with an
-// adversary (headless claude-opus) on the codex phase-reviewer.
-const REALISTIC_WITH_ADVERSARY = {
-  roles: {
-    "implementer": { backend: "native", model: "sonnet" },
-    "phase-planner": { backend: "native", model: "opus" },
-    "design-reviewer": { backend: "native", model: "opus" },
-    "phase-reviewer": {
-      backend: "codex",
-      model: "gpt-5.5",
-      adversary: { backend: "claude", model: "claude-opus-4-5" },
-    },
-  },
-  backends: {
-    "native": { type: "native" },
-    "claude": CLAUDE_BACKEND,
-    "codex": CODEX_BACKEND,
-  },
-};
-
-test("resolve: reviewer with adversary prints ADVERSARY: line with descriptor after the primary block", () => {
-  const dir = mk();
-  try {
-    writeConfig(dir, REALISTIC_WITH_ADVERSARY);
-    const r = resolve(dir, "phase-reviewer");
-    assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /DISPATCH: external/);
-    assert.match(r.stdout, /ADVERSARY:/, "must print an ADVERSARY: line");
-    assert.match(r.stdout, /claude/, "adversary backend name must appear");
-    assert.match(r.stdout, /claude-opus-4-5/, "adversary model must appear");
-    assert.match(r.stdout, /external/, "adversary dispatch type must appear");
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
-test("resolve: reviewer with no adversary prints ADVERSARY: none", () => {
-  const dir = mk();
-  try {
-    writeConfig(dir, {
-      roles: { "phase-reviewer": { backend: "codex", model: "gpt-5.5" } },
-      backends: { native: { type: "native" }, codex: CODEX_BACKEND },
-    });
-    const r = resolve(dir, "phase-reviewer");
-    assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /ADVERSARY: none/);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
-test("resolve: native reviewer with no adversary prints ADVERSARY: none", () => {
-  const dir = mk();
-  try {
-    // No models.json: falls back to native default
-    const r = resolve(dir, "phase-reviewer");
-    assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /ADVERSARY: none/);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
-test("resolve: non-reviewer role with an adversary key warns about ignored adversary to stderr", () => {
-  const dir = mk();
-  try {
-    writeConfig(dir, {
-      roles: {
-        "implementer": {
-          backend: "native",
-          model: "sonnet",
-          adversary: { backend: "codex", model: "gpt-5.5" },
-        },
-      },
-      backends: { native: { type: "native" }, codex: CODEX_BACKEND },
-    });
-    const r = resolve(dir, "implementer");
-    assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /DISPATCH: native/);
-    assert.match(r.stderr, /adversary.*ignored|ignored.*adversary/i,
-      "must warn that the adversary key was ignored for a non-reviewer role");
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
-test("resolve: adversary identical to primary warns and skips the adversary", () => {
-  const dir = mk();
-  try {
-    writeConfig(dir, {
-      roles: {
-        "phase-reviewer": {
-          backend: "codex",
-          model: "gpt-5.5",
-          adversary: { backend: "codex", model: "gpt-5.5" },
-        },
-      },
-      backends: { native: { type: "native" }, codex: CODEX_BACKEND },
-    });
-    const r = resolve(dir, "phase-reviewer");
-    assert.equal(r.status, 0, r.stderr);
-    // Should warn about identical adversary
-    assert.match(r.stderr, /identical|same as primary/i,
-      "must warn when adversary is identical to primary");
-    // The adversary line should say none or warn - the adversary is skipped
-    assert.match(r.stdout, /ADVERSARY:/, "ADVERSARY: line must still appear");
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
-test("show: reviewer with adversary displays adversary line in output", () => {
-  const dir = mk();
-  try {
-    writeConfig(dir, REALISTIC_WITH_ADVERSARY);
-    const r = show(dir);
-    assert.equal(r.status, 0, r.stderr);
-    // The show output should include adversary info for phase-reviewer
-    assert.match(r.stdout, /phase-reviewer/);
-    assert.match(r.stdout, /adversary|ADVERSARY/i,
-      "show must include adversary information for reviewer with one configured");
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
-test("show: dormant design-reviewer adversary is parsed and shown", () => {
-  const dir = mk();
-  try {
-    writeConfig(dir, {
-      roles: {
-        "implementer": { backend: "native", model: "sonnet" },
-        "phase-planner": { backend: "native", model: "opus" },
-        "design-reviewer": {
-          backend: "native",
-          model: "opus",
-          adversary: { backend: "codex", model: "o3" },
-        },
-        "phase-reviewer": { backend: "codex", model: "gpt-5.5" },
-      },
-      backends: {
-        "native": { type: "native" },
-        "codex": CODEX_BACKEND,
-      },
-    });
-    const r = show(dir);
-    assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /design-reviewer/);
-    assert.match(r.stdout, /adversary|ADVERSARY/i,
-      "show must display the design-reviewer adversary even though it is dormant (v2)");
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
-test("run --adversary: native adversary is refused (native must be Task-spawned)", () => {
-  const dir = mk();
-  try {
-    writeConfig(dir, {
-      roles: {
-        "phase-reviewer": {
-          backend: "codex",
-          model: "gpt-5.5",
-          adversary: { backend: "native", model: "opus" },
-        },
-      },
-      backends: { native: { type: "native" }, codex: CODEX_BACKEND },
-    });
-    const r = runAdversary(dir, "phase-reviewer", []);
-    assert.notEqual(r.status, 0, "native adversary must be refused by run --adversary");
-    assert.match(r.stderr, /native|Task tool/i,
-      "error must mention that native roles run via the Task tool");
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
-test("run --adversary: warns and exits non-zero when adversary is identical to primary", () => {
-  const dir = mk();
-  try {
-    writeConfig(dir, {
-      roles: {
-        "phase-reviewer": {
-          backend: "codex",
-          model: "gpt-5.5",
-          adversary: { backend: "codex", model: "gpt-5.5" },
-        },
-      },
-      backends: { native: { type: "native" }, codex: CODEX_BACKEND },
-    });
-    const r = runAdversary(dir, "phase-reviewer", []);
-    assert.notEqual(r.status, 0, "identical adversary must not run");
-    assert.match(r.stderr, /identical|same as primary/i,
-      "must warn that the adversary is identical to the primary");
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
-test("run --adversary: no adversary configured exits non-zero with a useful message", () => {
-  const dir = mk();
-  try {
-    writeConfig(dir, {
-      roles: { "phase-reviewer": { backend: "codex", model: "gpt-5.5" } },
-      backends: { native: { type: "native" }, codex: CODEX_BACKEND },
-    });
-    const r = runAdversary(dir, "phase-reviewer", []);
-    assert.notEqual(r.status, 0, "run --adversary with no adversary configured must fail");
-    assert.match(r.stderr, /no adversary|adversary.*not configured/i);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
-test("run --adversary: non-reviewer role with no adversary exits non-zero", () => {
-  const dir = mk();
-  try {
-    writeConfig(dir, {
-      roles: { "implementer": { backend: "native", model: "sonnet" } },
-      backends: { native: { type: "native" } },
-    });
-    const r = runAdversary(dir, "implementer", []);
-    assert.notEqual(r.status, 0, "implementer has no adversary - must fail");
-    assert.match(r.stderr, /no adversary|adversary.*not configured|adversary.*ignored/i);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
-test("run --adversary: dispatches to the adversary backend, not the primary", () => {
-  // Uses two real on-PATH CLIs as distinguishable stand-ins: the primary backend
-  // runs `node --version` (outputs "vX.Y.Z"), the adversary runs `git --version`
-  // (outputs "git version X.Y.Z"). Both ignore stdin and exit 0. The test proves
-  // --adversary selected the adversary descriptor and spawned it.
-  const dir = mk();
-  try {
-    writeConfig(dir, {
-      roles: {
-        "phase-reviewer": {
-          backend: "node-ver",
-          model: "any",
-          adversary: { backend: "git-ver", model: "any" },
-        },
-      },
-      backends: {
-        native:    { type: "native" },
-        "node-ver": { type: "cli", cmd: "node --version", promptVia: "stdin" },
-        "git-ver":  { type: "cli", cmd: "git --version",  promptVia: "stdin" },
-      },
-    });
-    const r = runAdversary(dir, "phase-reviewer", []);
-    // The adversary (git --version) must have run. Exit 0 means it spawned fine.
-    assert.equal(r.status, 0, "adversary cli exited non-zero: " + r.stderr);
-    // git --version outputs "git version ..." - must appear in stdout
-    assert.match(r.stdout, /git version/i,
-      "stdout must contain the adversary (git) output, got: " + r.stdout);
-    // The primary (node --version) must NOT have run
-    assert.doesNotMatch(r.stdout, /^v\d+\.\d+\.\d+/m,
-      "primary (node --version) output must not appear in stdout");
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
 
 // A stdin-echo backend: pipes stdin straight to stdout so the composed prompt
-// appears in the process stdout. Used to assert prompt note wording.
+// appears in the process stdout. Used to assert prompt/context wording.
 const ECHO_BACKEND = {
   type: "cli",
   cmd: "node -e \"process.stdin.pipe(process.stdout)\"",
   promptVia: "stdin",
 };
 
-test("run --adversary: phase-reviewer adversary prompt carries diff wording", () => {
-  // The phase-reviewer adversary note must mention "diff" (unchanged behavior).
+const ECHO_REVIEWER_CONFIG = {
+  roles: { "phase-reviewer": { backend: "echo", model: "any" } },
+  backends: { native: { type: "native" }, echo: ECHO_BACKEND },
+};
+
+test("run --context: appends the prior-rounds block with the settled contract", () => {
   const dir = mk();
   try {
-    writeConfig(dir, {
-      roles: {
-        "phase-reviewer": {
-          backend: "native",
-          model: "opus",
-          adversary: { backend: "echo", model: "any" },
-        },
-      },
-      backends: { native: { type: "native" }, echo: ECHO_BACKEND },
-    });
-    const r = runAdversary(dir, "phase-reviewer", []);
-    assert.equal(r.status, 0, "echo adversary exited non-zero: " + r.stderr);
-    assert.match(r.stdout, /diff/i,
-      "phase-reviewer adversary prompt must contain 'diff'");
-    assert.doesNotMatch(r.stdout, /design doc/i,
-      "phase-reviewer adversary prompt must not contain 'design doc'");
+    writeConfig(dir, ECHO_REVIEWER_CONFIG);
+    writeRounds(dir, ROUNDS);
+    const r = runRole(dir, ["run", "phase-reviewer", "--context", ".gantry/review-round.json", "--", "docs/p_plan.md", "3"]);
+    assert.equal(r.status, 0, "echo backend exited non-zero: " + r.stderr);
+    assert.match(r.stdout, /^## Prior review rounds/m, "prompt must carry the context block");
+    assert.match(r.stdout, /Round 1 - FAIL/);
+    assert.match(r.stdout, /init\.js must render NOW\.md via the renderer/);
+    assert.match(r.stdout, /SETTLED/, "prompt must carry the settled rule");
+    assert.match(r.stdout, /NEW defect/, "prompt must carry the NEW-defect reopening ground");
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("run --adversary: design-reviewer adversary prompt carries design-doc wording, not diff", () => {
-  // The design-reviewer adversary note must not say "diff"; it must reference
-  // the design doc and the primary design review.
+test("run without --context: first-round prompt carries no prior-rounds block", () => {
   const dir = mk();
   try {
-    writeConfig(dir, {
-      roles: {
-        "design-reviewer": {
-          backend: "native",
-          model: "opus",
-          adversary: { backend: "echo", model: "any" },
-        },
-      },
-      backends: { native: { type: "native" }, echo: ECHO_BACKEND },
-    });
-    const r = runAdversary(dir, "design-reviewer", []);
-    assert.equal(r.status, 0, "echo adversary exited non-zero: " + r.stderr);
-    assert.match(r.stdout, /design doc/i,
-      "design-reviewer adversary prompt must contain 'design doc'");
-    assert.doesNotMatch(r.stdout, /the diff above/i,
-      "design-reviewer adversary prompt must not contain 'the diff above'");
+    writeConfig(dir, ECHO_REVIEWER_CONFIG);
+    writeRounds(dir, ROUNDS); // present on disk, but not passed - must not leak in
+    const r = runRole(dir, ["run", "phase-reviewer", "--", "docs/p_plan.md", "3"]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.doesNotMatch(r.stdout, /^## Prior review rounds/m,
+      "context must only enter the prompt via the explicit --context flag");
+    assert.doesNotMatch(r.stdout, /init\.js must render NOW\.md/,
+      "the recorded fixes must not leak into a no-context prompt");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("run --context: absent context file warns and still runs the review", () => {
+  const dir = mk();
+  try {
+    writeConfig(dir, ECHO_REVIEWER_CONFIG);
+    const r = runRole(dir, ["run", "phase-reviewer", "--context", ".gantry/review-round.json", "--", "docs/p_plan.md", "3"]);
+    assert.equal(r.status, 0, "a missing context file must never block the review: " + r.stderr);
+    assert.match(r.stderr, /absent or malformed/i, "must warn about the missing context");
+    assert.doesNotMatch(r.stdout, /^## Prior review rounds/m);
+    assert.match(r.stdout, /Runtime inputs/, "the review prompt itself must still be composed");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("run --context: malformed context file warns and still runs the review", () => {
+  const dir = mk();
+  try {
+    writeConfig(dir, ECHO_REVIEWER_CONFIG);
+    fs.mkdirSync(path.join(dir, ".gantry"), { recursive: true });
+    fs.writeFileSync(path.join(dir, ".gantry", "review-round.json"), "not json {");
+    const r = runRole(dir, ["run", "phase-reviewer", "--context", ".gantry/review-round.json", "--", "docs/p_plan.md", "3"]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stderr, /absent or malformed/i);
+    assert.doesNotMatch(r.stdout, /^## Prior review rounds/m);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("run --context: --context requires a file path", () => {
+  const dir = mk();
+  try {
+    writeConfig(dir, ECHO_REVIEWER_CONFIG);
+    const r = runRole(dir, ["run", "phase-reviewer", "--context", "--", "docs/p_plan.md", "3"]);
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /--context requires a file path/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("show-round: prints the same block run --context appends", () => {
+  const dir = mk();
+  try {
+    writeRounds(dir, ROUNDS);
+    const r = runRole(dir, ["show-round"]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /Prior review rounds/);
+    assert.match(r.stdout, /Round 1 - FAIL/);
+    assert.match(r.stdout, /SETTLED/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("show-round: no recorded rounds prints nothing to stdout, exit 0", () => {
+  const dir = mk();
+  try {
+    const r = runRole(dir, ["show-round"]);
+    assert.equal(r.status, 0, "show-round with no rounds must exit 0: " + r.stderr);
+    assert.equal(r.stdout, "", "stdout must be empty so nothing gets pasted into a prompt");
+    assert.match(r.stderr, /no recorded review rounds/i);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

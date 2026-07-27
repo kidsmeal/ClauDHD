@@ -259,6 +259,7 @@ const GITIGNORE_ENTRIES = [
   ".gantry/active-phase.json",
   ".gantry/models.json",
   ".gantry/headless-implementer-settings.json",
+  ".gantry/review-round.json",
 ];
 const gi = path.join(ROOT, ".gitignore");
 let giTxt = "";

@@ -488,6 +488,215 @@ test("file-list-guard OVERRIDE (review item 2): the REAL flow - record an overri
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+test("file-list-guard OVERRIDE (sol round-one finding 1): entering build mode invalidates a prior override - the same edit that was permitted now denies", () => {
+  const dir = mk();
+  try {
+    writeEnabled(dir);
+    writeRealNow(dir);
+    const override = require("../plugins/claudhd/scripts/override.js");
+    const thread = require("../plugins/claudhd/scripts/thread.js");
+    override.recordOverride(dir, "emergency-session");
+
+    const absPath = path.join(dir, "src", "unscoped.js");
+    const permitted = runGuard(dir, editPayload(dir, absPath, "emergency-session"));
+    assert.equal(permitted.status, 0, permitted.stderr);
+    assert.equal(permitted.stdout.trim(), "", "the override must permit the edit before the mode transition");
+
+    // Entering build (a properly-scoped mode) must invalidate the override -
+    // it is a per-emergency escape, not a standing permit that survives into
+    // whatever comes next.
+    thread.enterBuild(dir);
+
+    const denied = runGuard(dir, editPayload(dir, absPath, "emergency-session"));
+    assert.equal(denied.status, 0, denied.stderr);
+    const deny = parseDeny(denied.stdout);
+    assert.ok(deny !== null, "the SAME edit, SAME session must now deny after enterBuild cleared the override; got: " + denied.stdout);
+
+    const state = readState(dir);
+    assert.ok(!state.override, "state.override must be cleared (absent), not merely stale");
+
+    const now = fs.readFileSync(path.join(dir, "NOW.md"), "utf8");
+    assert.doesNotMatch(now, /unguarded session/i, "the rendered Loose ends line must not linger after the override is cleared");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("file-list-guard OVERRIDE (sol round-one finding 1): entering design mode invalidates a prior override the same way", () => {
+  const dir = mk();
+  try {
+    writeEnabled(dir);
+    writeRealNow(dir);
+    const override = require("../plugins/claudhd/scripts/override.js");
+    const thread = require("../plugins/claudhd/scripts/thread.js");
+    override.recordOverride(dir, "emergency-session-2");
+
+    const absPath = path.join(dir, "src", "unscoped2.js");
+    const permitted = runGuard(dir, editPayload(dir, absPath, "emergency-session-2"));
+    assert.equal(permitted.stdout.trim(), "", "the override must permit the edit before the mode transition");
+
+    thread.enterDesign(dir, {});
+
+    // A source-shaped path is denied under design mode regardless of the
+    // override, since the override no longer applies at all.
+    const denied = runGuard(dir, editPayload(dir, absPath, "emergency-session-2"));
+    const deny = parseDeny(denied.stdout);
+    assert.ok(deny !== null, "the edit must deny after enterDesign cleared the override; got: " + denied.stdout);
+
+    const state = readState(dir);
+    assert.ok(!state.override, "state.override must be cleared (absent) after enterDesign");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("file-list-guard OVERRIDE (sol round-six finding 3): setDesignDoc invalidates a prior override too, WITHOUT wiping the accumulated design board (still true post round-seven, though design.md's audit entry point is now auditDesign - see below)", () => {
+  const dir = mk();
+  try {
+    writeEnabled(dir);
+    writeRealNow(dir);
+    const override = require("../plugins/claudhd/scripts/override.js");
+    const thread = require("../plugins/claudhd/scripts/thread.js");
+
+    // An in-progress design board, accumulated before a mid-grill doc write.
+    thread.enterDesign(dir, { from: "r-0725-8", thread: "t", next: "n" });
+    thread.addDecision(dir, "open", "still deciding this one");
+    thread.addDecision(dir, "resolved", "already settled this one");
+
+    override.recordOverride(dir, "emergency-session-3");
+    const absPath = path.join(dir, "src", "unscoped3.js");
+    const permitted = runGuard(dir, editPayload(dir, absPath, "emergency-session-3"));
+    assert.equal(permitted.stdout.trim(), "", "the override must permit the edit before the transition");
+
+    thread.setDesignDoc(dir, "design/existing-draft.md");
+
+    const denied = runGuard(dir, editPayload(dir, absPath, "emergency-session-3"));
+    const deny = parseDeny(denied.stdout);
+    assert.ok(deny !== null, "the edit must deny after setDesignDoc cleared the override; got: " + denied.stdout);
+
+    const state = readState(dir);
+    assert.ok(!state.override, "state.override must be cleared (absent) after setDesignDoc");
+
+    // The board itself must survive - this is what distinguishes setDesignDoc
+    // from enterDesign.
+    assert.equal(state.design.doc, "design/existing-draft.md");
+    assert.deepEqual(state.design.open, ["still deciding this one"]);
+    assert.deepEqual(state.design.resolved, ["already settled this one"]);
+    assert.equal(state.from, "r-0725-8", "from must also survive - setDesignDoc never touches it");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("file-list-guard OVERRIDE (sol round-seven): auditDesign's CONTINUATION branch (re-auditing the currently-active doc) invalidates a prior override too, WITHOUT wiping the accumulated design board", () => {
+  const dir = mk();
+  try {
+    writeEnabled(dir);
+    writeRealNow(dir);
+    const override = require("../plugins/claudhd/scripts/override.js");
+    const thread = require("../plugins/claudhd/scripts/thread.js");
+
+    // An in-progress audit, accumulated before a re-audit of the SAME doc.
+    thread.enterDesign(dir, { from: "r-0725-9", thread: "t", next: "n" });
+    thread.setDesignDoc(dir, "design/existing-draft.md");
+    thread.addDecision(dir, "open", "still deciding this one");
+    thread.addDecision(dir, "resolved", "already settled this one");
+
+    override.recordOverride(dir, "emergency-session-4");
+    const absPath = path.join(dir, "src", "unscoped4.js");
+    const permitted = runGuard(dir, editPayload(dir, absPath, "emergency-session-4"));
+    assert.equal(permitted.stdout.trim(), "", "the override must permit the edit before the transition");
+
+    // design.md's own existing-doc entry point - re-auditing the SAME doc.
+    thread.auditDesign(dir, "design/existing-draft.md");
+
+    const denied = runGuard(dir, editPayload(dir, absPath, "emergency-session-4"));
+    const deny = parseDeny(denied.stdout);
+    assert.ok(deny !== null, "the edit must deny after auditDesign cleared the override; got: " + denied.stdout);
+
+    const state = readState(dir);
+    assert.ok(!state.override, "state.override must be cleared (absent) after auditDesign's continuation branch");
+    assert.equal(state.design.doc, "design/existing-draft.md");
+    assert.deepEqual(state.design.open, ["still deciding this one"]);
+    assert.deepEqual(state.design.resolved, ["already settled this one"]);
+    assert.equal(state.from, "r-0725-9", "from must survive the continuation branch too");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("file-list-guard OVERRIDE (sol round-seven): auditDesign's FRESH-ENTRY branch (a different doc, or idle) invalidates a prior override AND does not leak a prior unrelated thread's board/from", () => {
+  const dir = mk();
+  try {
+    writeEnabled(dir);
+    writeRealNow(dir);
+    const override = require("../plugins/claudhd/scripts/override.js");
+    const thread = require("../plugins/claudhd/scripts/thread.js");
+
+    // A completed, unrelated prior design thread.
+    thread.enterDesign(dir, { from: "r-0710-2", thread: "old thread", next: "old next" });
+    thread.setDesignDoc(dir, "design/old-draft.md");
+    thread.addDecision(dir, "resolved", "an old, unrelated decision");
+    thread.enterBuild(dir); // the old thread moved on
+
+    override.recordOverride(dir, "emergency-session-5");
+    const absPath = path.join(dir, "src", "unscoped5.js");
+    const permitted = runGuard(dir, editPayload(dir, absPath, "emergency-session-5"));
+    assert.equal(permitted.stdout.trim(), "", "the override must permit the edit before the transition");
+
+    // A brand-new existing-doc audit, unrelated to the old thread above.
+    thread.auditDesign(dir, "design/brand-new-draft.md");
+
+    const denied = runGuard(dir, editPayload(dir, absPath, "emergency-session-5"));
+    const deny = parseDeny(denied.stdout);
+    assert.ok(deny !== null, "the edit must deny after auditDesign cleared the override; got: " + denied.stdout);
+
+    const state = readState(dir);
+    assert.ok(!state.override, "state.override must be cleared (absent) after auditDesign's fresh-entry branch");
+    assert.equal(state.mode, "design");
+    assert.equal(state.from, null, "a fresh existing-doc audit never carries an unrelated thread's from");
+    assert.deepEqual(state.design, { doc: "design/brand-new-draft.md", resolved: [], open: [] },
+      "the old thread's resolved decisions must not leak into this fresh audit's board");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// --- the quick sentinel must include NOW.md (sol round-one finding 3) ---
+
+test("file-list-guard: a quick sentinel (write-files) permits the source edit AND the NOW.md batch check-off, end to end", () => {
+  const dir = mk();
+  try {
+    writeEnabled(dir);
+    writeRealNow(dir);
+    const sentinelScript = path.join(__dirname, "..", "plugins", "claudhd", "scripts", "sentinel.js");
+
+    // The real /claudhd:quick clearing pass: write a scoped sentinel over the
+    // batch's own files via write-files (as quick.md instructs).
+    const write = spawnSync(process.execPath, [sentinelScript, "write-files", "src/quickfix.js"], {
+      encoding: "utf8",
+      env: { ...process.env, GANTRY_PROJECT_DIR: dir },
+    });
+    assert.equal(write.status, 0, "sentinel write-files should exit 0\n" + write.stderr);
+
+    // 1. The source edit itself must be permitted.
+    const sourceEdit = runGuard(dir, editPayload(dir, path.join(dir, "src", "quickfix.js")));
+    assert.equal(sourceEdit.status, 0, sourceEdit.stderr);
+    assert.equal(sourceEdit.stdout.trim(), "", "the batch's own file must be permitted under the quick sentinel");
+
+    // 2. Checking off the item in NOW.md (part of the same clearing pass)
+    // must ALSO be permitted - this is finding 3: a live sentinel's allow
+    // list has no generic *.md allowance, so NOW.md must be named explicitly.
+    const nowEdit = runGuard(dir, editPayload(dir, path.join(dir, "NOW.md")));
+    assert.equal(nowEdit.status, 0, nowEdit.stderr);
+    assert.equal(nowEdit.stdout.trim(), "", "checking off the batch item in NOW.md must be permitted under the quick sentinel");
+
+    // 3. An unrelated source file, outside the scoped list, must still deny.
+    const outside = runGuard(dir, editPayload(dir, path.join(dir, "src", "unrelated.js")));
+    const deny = parseDeny(outside.stdout);
+    assert.ok(deny !== null, "a file outside the quick sentinel's scope must still deny");
+
+    // 4. Clearing the sentinel closes the gate.
+    const clear = spawnSync(process.execPath, [sentinelScript, "clear"], {
+      encoding: "utf8",
+      env: { ...process.env, GANTRY_PROJECT_DIR: dir },
+    });
+    assert.equal(clear.status, 0, clear.stderr);
+    const afterClear = readState(dir);
+    assert.equal(afterClear.build, null, "the quick sentinel must be cleared from state.json");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("file-list-guard OVERRIDE (review item 4): two racing guard invocations for the SAME session never lose either file (atomic read-modify-write under the shared lock)", async () => {
   const dir = mk();
   try {

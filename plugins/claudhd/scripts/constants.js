@@ -21,33 +21,21 @@ const CURSOR_STALE_HOURS = 72;
 // instead. Default 14 days (a real campaign can legitimately run a couple weeks).
 const ACTIVE_THREAD_STALE_DAYS = 14;
 
-// ACTIVE_THREAD_LINE_BUDGET: how many lines the "## Active thread" section may run
-// before /claudhd:wrap runs a migrate pass (shipped bundles -> SHIPPED.md, parked
-// or future material -> ROADMAP.md / IDEAS.md, the thread keeps only its summary,
-// live state, and the next physical action). Also drives the statusline [over]
-// flag. Tunable: raise it if your threads legitimately need more live state.
+// ACTIVE_THREAD_LINE_BUDGET: how many lines the "## Active thread" section may
+// run before it is considered over budget (shipped bundles belong in
+// SHIPPED.md, parked or future material in ROADMAP.md / IDEAS.md; the thread
+// itself keeps only its summary, live state, and the next physical action).
+// cursor.activeThreadLineCount in .now/state.json is measured against this.
+// Tunable: raise it if your threads legitimately need more live state.
 // The count is measured from the "## Active thread" heading through the last
 // non-blank line before the next "## " section (see nowfile.activeThreadLineCount).
 const ACTIVE_THREAD_LINE_BUDGET = 40;
-
-// CURSOR_DRIFT_DAYS: how many days the cursor's "Last touched" date may lag behind
-// recent session activity before the statusline shows [drift]. Catches the case
-// where you keep working (fresh checkpoints) but never update the cursor prose.
-// Distinct from CURSOR_STALE_HOURS (which measures the file's mtime, i.e. being
-// away): [drift] is the "active but the cursor is rotting" signal.
-const CURSOR_DRIFT_DAYS = 3;
 
 // Max chars of a free-text field copied into .now/state.json (active thread name,
 // next action, last commit subject, roadmap top item). NOW.md and the other source
 // files are committed and branch-aware, so a pulled file shouldn't be able to bloat
 // the machine snapshot an external watcher reads.
 const STATE_TEXT_CAP = 200;
-
-// Max chars of the active-thread name shown in the status bar (statusline.js).
-// NOT a model-context path — the status line is for the user — but NOW.md is
-// committed and branch-aware, so a pulled file shouldn't be able to flood or
-// garble the status bar with a huge/multi-line "active thread".
-const STATUSLINE_THREAD_CAP = 60;
 
 // Caps for the SessionStart brief injection (brief.js). NOW.md is committed and
 // branch-aware by design, so its content can be authored by someone other than
@@ -97,9 +85,7 @@ module.exports = {
   CURSOR_STALE_HOURS,
   ACTIVE_THREAD_STALE_DAYS,
   ACTIVE_THREAD_LINE_BUDGET,
-  CURSOR_DRIFT_DAYS,
   STATE_TEXT_CAP,
-  STATUSLINE_THREAD_CAP,
   BRIEF_SECTION_CAP,
   BRIEF_CONTEXT_CAP,
   BRIEF_LINE_CAP,
