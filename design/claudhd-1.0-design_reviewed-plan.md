@@ -145,7 +145,7 @@ Section 7 locks 15 commands and names what is deleted. It does not account for: 
 
 ## Phase 6: The mechanical write vocabulary
 
-**Status:** pending
+**Status:** committed (PASS-WITH-NOTES on round three, fix-now applied, zero deferred; findings 3 -> 3 -> 1, all real, zero relitigation under the full calibration stack)
 **Goal:** Triage and roadmap decisions are scripts, not model work: one write path that chat and (later) Object Permanence both call, containing no free-text operation.
 **Files:**
 - create `plugins/claudhd/scripts/vocab.js` (the five verbs from section 10: `append-capture`, `move`, `mark`, `reorder`, `park`. Promotion is verbatim: the script moves the line, stamps a generated id via `roadmapids.js`, and carries the capture date and while-context along. Atomic + locked, in the shape `idea.js` already uses)

@@ -154,4 +154,4 @@ function backfill(text, date, ledger) {
   return { text: joinLines(lines), issued: Array.from(seen) };
 }
 
-module.exports = { nextId, backfill, idsInText, usedIds };
+module.exports = { nextId, backfill, idsInText, usedIds, splitPreservingEol, joinLines };

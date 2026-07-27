@@ -7,10 +7,17 @@
  * test here is an end-to-end smoke check that idea.js actually wires the lock in
  * and that many simultaneous captures all land - it can't, on its own, force the
  * race, but it guards against the lock being dropped from this script entirely.
+ *
+ * Phase 6: idea.js no longer writes IDEAS.md itself - it delegates to
+ * vocab.js's appendCapture(), the plugin's one write path for a capture. The
+ * source-level proof that idea.js requires vocab.js lives in vocab.test.js;
+ * the test below is the behavioral half - idea.js's CLI output must be byte-
+ * identical to calling vocab.appendCapture() directly for the same text.
  */
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const { makeRepo, cleanup, run, runAsync, read, write, nowFile } = require("../tools/helpers.js");
+const vocab = require("../plugins/claudhd/scripts/vocab.js");
 
 test("captures a single idea into IDEAS.md", () => {
   const { dir } = makeRepo();
@@ -48,6 +55,24 @@ test("empty input captures nothing and does not create IDEAS.md", () => {
     assert.equal(r.status, 0);
     assert.match(r.stdout, /Nothing captured/);
     assert.equal(require("node:fs").existsSync(require("node:path").join(dir, "IDEAS.md")), false);
+  } finally { cleanup(dir); }
+});
+
+test("idea.js's CLI capture matches vocab.appendCapture()'s write shape exactly - one write path, not a parallel one", () => {
+  const { dir } = makeRepo();
+  try {
+    run(dir, "idea.js", ["from the CLI"]);
+    const viaCli = read(dir, "IDEAS.md");
+
+    const { dir: dir2 } = makeRepo();
+    try {
+      vocab.appendCapture(dir2, "from the CLI");
+      const viaVocab = read(dir2, "IDEAS.md");
+      // Both entries share the identical shape modulo the timestamp, which
+      // ticks between the two calls: strip it before comparing.
+      const strip = (s) => s.replace(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}/g, "<ts>");
+      assert.equal(strip(viaCli), strip(viaVocab), "idea.js's CLI write and a direct vocab.appendCapture() call must produce the same IDEAS.md shape");
+    } finally { cleanup(dir2); }
   } finally { cleanup(dir); }
 });
 
