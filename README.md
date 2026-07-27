@@ -2,7 +2,7 @@
 
 Focus and drift control for [Claude Code](https://claude.com/claude-code), with a reviewed build pipeline.
 
-ClauDHD keeps track of where you are in a project and enforces the phase boundary while you get there. Work drifts: threads stall half-done and changes ship without review. ClauDHD writes your place down as you go, in a few plain Markdown files at the root of your repo, and holds a hard gate around what you can edit while a phase is in flight. Coming back, you read a file instead of reconstructing your own train of thought, and the docs are already true at every commit.
+ClauDHD keeps track of where you are in a project and enforces the phase boundary while you get there. ClauDHD records the position of work in a few plain Markdown files at the repo root, enforces a per-mode file allowlist while a phase is in flight, and regenerates the tracking files at each commit.
 
 It has zero dependencies and runs entirely on local files plus ordinary git. There is no ClauDHD account or server, and it makes no network calls beyond normal Claude Code usage (or an external model backend you configure yourself for a review role). It uses the Node.js runtime Claude Code already bundles.
 
@@ -14,13 +14,13 @@ It has zero dependencies and runs entirely on local files plus ordinary git. The
 | drive + orient | chat (commands, boards) | the board rides your first reply; `/claudhd:now` on demand |
 | glance + dispatch | a companion app (optional, out of this repo) | always visible, live, model-free |
 
-The hooks are the only layer that cannot be talked around: a `PreToolUse` guard denies an edit outside the active mode's allowlist, and a second guard denies `git commit`/`git push` while a phase is mid-review, both fail-open on any hook error so a bug here can never brick your repo. Chat is where you drive: sixteen commands cover capture, triage, design, the phased build, and review. The board renders as a widget when the harness provides one, otherwise as the same board in plain text, which is the acceptance baseline.
+The hook layer holds regardless of prompt content: a `PreToolUse` guard denies an edit outside the active mode's allowlist, and a second guard denies `git commit`/`git push` while a phase is mid-review. Both fail open on any hook error. The chat layer is sixteen commands covering capture, triage, design, the phased build, and review. The board renders as a widget when the harness provides one, otherwise as the same board in plain text, which is the acceptance baseline.
 
 ## What it gives you
 
-- **A generated NOW cursor** (`NOW.md`). Mode, position, the active thread, and the queue behind it. The facts render from `.now/state.json`; only the active thread's two lines are yours to keep current. It stays a real committed file, so `git checkout` swaps the cursor to that branch's thread and `git log -p NOW.md` is an honest history.
-- **Mode-enforced phases.** Design mode allows `*.md` edits only; build mode allows exactly the active phase's file list; idle denies source edits and leaves markdown editable. The guard is deny-by-default once a project opts in, with `/claudhd:override` as a loud, recorded escape hatch for the rare genuinely unscoped edit.
-- **A commit-boundary reconcile.** Every `git commit` inside a session regenerates `NOW.md`, the plan's per-phase status, the `SHIPPED.md` entry, and the roadmap item's state, then stages them onto the same commit. There is no `/claudhd:wrap` to remember; the machine does it when you commit.
+- **A generated NOW cursor** (`NOW.md`). Mode, position, the active thread, and the queue behind it. The facts render from `.now/state.json`; only the active thread's two lines are yours to keep current. It stays a real committed file: `git checkout` swaps the cursor to that branch's thread, and `git log -p NOW.md` shows the cursor at each commit.
+- **Mode-enforced phases.** Design mode allows `*.md` edits only; build mode allows exactly the active phase's file list; idle denies source edits and leaves markdown editable. The guard is deny-by-default once a project opts in, with `/claudhd:override` as a recorded, per-session escape hatch.
+- **A commit-boundary reconcile.** Every `git commit` inside a session regenerates `NOW.md`, the plan's per-phase status, the `SHIPPED.md` entry, and the roadmap item's state, then stages them onto the same commit. This replaces the old `/claudhd:wrap` command.
 - **An idea inbox** (`IDEAS.md`) and **tap-card triage**. `/claudhd:idea <text>` captures verbatim, in one line, at zero tokens. `/claudhd:triage` renders each open idea as a card (roadmap / quick fix / drop / skip / discuss) and applies your tap through the plugin's own mechanical write vocabulary. Your wording is preserved verbatim.
 - **A roadmap with stable ids** (`ROADMAP.md`). Every item carries a generated `r-MMDD-N` id, rendered beside its text. `/claudhd:start <id>` is the readiness gate: it restates a vague item concretely and activates a design thread.
 - **A design grill and review gate.** `/claudhd:design` interrogates the open decisions one fork at a time, tracks a live resolved/open board, writes the design doc, then hands it to a design-reviewer before `/claudhd:plan` turns it into phases.
@@ -54,7 +54,7 @@ ClauDHD does nothing in a project until you opt in. In the project you want to m
 /claudhd:init
 ```
 
-That scaffolds `NOW.md`, `IDEAS.md`, `SHIPPED.md`, `ROADMAP.md` (without overwriting any you already have), the two living pipeline docs, `.gantry/models.json`, and the `.gitignore` entries for the plugin's own local state. Claude then reads the repo, proposes your one active thread and its next step, and you confirm or correct it. It also asks, plainly, whether to enable the enforcement hooks; say yes to make mode enforcement mechanical rather than a promise, or no to keep everything at prompt level for now (you can re-run the opt-in step later).
+That scaffolds `NOW.md`, `IDEAS.md`, `SHIPPED.md`, `ROADMAP.md` (without overwriting any you already have), the two living pipeline docs, `.gantry/models.json`, and the `.gitignore` entries for the plugin's own local state. Claude then reads the repo, proposes your one active thread and its next step, and you confirm or correct it. It also asks whether to enable the enforcement hooks; the opt-in step can be re-run later.
 
 In every other repo, ClauDHD stays silent.
 
@@ -118,7 +118,7 @@ One privacy note on `/claudhd:harvest`: it is the only command that reads your p
 
 Claude Code plugins cannot create scheduled remote agents, but ClauDHD ships two ready-to-use routine prompts in [`routines/`](routines/): a daily drift check and a weekly idea-triage reminder. Set them up with the `/schedule` skill or at [claude.ai/code/routines](https://claude.ai/code/routines). See [routines/README.md](routines/README.md).
 
-## How it stays out of your way
+## Activation scope
 
 - It is silent in any project without a ClauDHD-marked `NOW.md`. The hooks gate on a marker that `/claudhd:init` writes, so an unrelated `NOW.md` in another repo never triggers them. You can install it globally without noise.
 - Enforcement itself is a second, explicit opt-in on top of that (`.now/enabled`), so a project can adopt the file set at prompt level before ever turning the guard on.
@@ -131,7 +131,7 @@ These are deliberate design limits:
 
 - **No cross-repo workspace cursor.** A feature that spans several repos gets one cursor per repo, each scoped to its local slice.
 - **No commits on your behalf.** Every guard and every reviewer stops short of the commit itself. You always gate the commit.
-- **One active thread per repo (or per branch).** The single-cursor limit is what keeps you finishing things instead of accumulating half-done threads.
+- **One active thread per repo (or per branch).** The roadmap and queue hold everything else.
 
 ## Requirements
 
