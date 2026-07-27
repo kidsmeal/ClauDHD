@@ -42,8 +42,8 @@ Format: `- [ ] <doc path>: <one line, what the diff invalidated> (phase N, <feat
 
 ## Deferred review notes
 
-- [ ] README.md:22: garbled idle-mode summary disagrees with the authoritative table at ~82-88; S3 prose, post-1.0 README copy pass (phase 7, claudhd 1.0)
-- [ ] plugins/claudhd/scripts/init.js:13: comment says three local/transient .gantry/* files, there are four; S3 comment-only, post-1.0 sweep (phase 7, claudhd 1.0)
+- [x] RESOLVED post-1.0 copy pass: README.md garbled idle-mode summary disagrees with the authoritative table at ~82-88; S3 prose, post-1.0 README copy pass (phase 7, claudhd 1.0)
+- [x] RESOLVED post-1.0 copy pass: init.js:13 comment said three local/transient .gantry/* files, there are four; S3 comment-only, post-1.0 sweep (phase 7, claudhd 1.0)
 
 Written by the review relay at the commit gate, one line per Deferred note the phase-reviewer
 chose not to fix this phase (pending external API, plan-blessed placeholder, later-phase consumer).

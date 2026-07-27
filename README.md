@@ -1,8 +1,8 @@
 # ClauDHD
 
-Focus, drift control, and a reviewed build pipeline for [Claude Code](https://claude.com/claude-code).
+Focus and drift control for [Claude Code](https://claude.com/claude-code), with a reviewed build pipeline.
 
-ClauDHD keeps track of where you are in a project and enforces the phase boundary while you get there. It is easy to wander off task, chase a new idea, or ship a change nobody reviewed. ClauDHD writes your place down as you go, in a few plain Markdown files at the root of your repo, and holds a hard gate around what you can edit while a phase is in flight. When you come back, you read a file instead of reconstructing your own train of thought. When you commit, the docs are already true.
+ClauDHD keeps track of where you are in a project and enforces the phase boundary while you get there. It is easy to wander off task, and easy to ship a change nobody reviewed. ClauDHD writes your place down as you go, in a few plain Markdown files at the root of your repo, and holds a hard gate around what you can edit while a phase is in flight. When you come back, you read a file instead of reconstructing your own train of thought. When you commit, the docs are already true.
 
 It has zero dependencies and runs entirely on local files plus ordinary git. There is no ClauDHD account or server, and it makes no network calls beyond normal Claude Code usage (or an external model backend you configure yourself for a review role). It uses the Node.js runtime Claude Code already bundles.
 
@@ -14,14 +14,14 @@ It has zero dependencies and runs entirely on local files plus ordinary git. The
 | drive + orient | chat (commands, boards) | the board rides your first reply; `/claudhd:now` on demand |
 | glance + dispatch | a companion app (optional, out of this repo) | always visible, live, model-free |
 
-The hooks are the only layer that cannot be talked around: a `PreToolUse` guard denies an edit outside the active mode's allowlist, and a second guard denies `git commit`/`git push` while a phase is mid-review, both fail-open on any hook error so a bug here can never brick your repo. Chat is where you drive: sixteen commands cover capture, triage, design, the phased build, and review. The board renders as a widget when the harness provides one, otherwise as the same board in plain text; text is the baseline, never a fallback of last resort.
+The hooks are the only layer that cannot be talked around: a `PreToolUse` guard denies an edit outside the active mode's allowlist, and a second guard denies `git commit`/`git push` while a phase is mid-review, both fail-open on any hook error so a bug here can never brick your repo. Chat is where you drive: sixteen commands cover capture, triage, design, the phased build, and review. The board renders as a widget when the harness provides one, otherwise as the same board in plain text, which is the acceptance baseline.
 
 ## What it gives you
 
 - **A generated NOW cursor** (`NOW.md`). Mode, position, the active thread, and the queue behind it. The facts render from `.now/state.json`; only the active thread's two lines are yours to keep current. It stays a real committed file, so `git checkout` swaps the cursor to that branch's thread and `git log -p NOW.md` is an honest history.
-- **Mode-enforced phases.** Design mode allows `*.md` edits only; build mode allows exactly the active phase's file list; idle allows neither past markdown. The guard is deny-by-default once a project opts in, with `/claudhd:override` as a loud, recorded escape hatch for the rare genuinely unscoped edit.
-- **A commit-boundary reconcile.** Every `git commit` inside a session regenerates `NOW.md`, the plan's per-phase status, the `SHIPPED.md` entry, and the roadmap item's state, then stages them onto the same commit. No `/claudhd:wrap` to remember; the machine does it at the one moment that was always going to happen anyway.
-- **An idea inbox** (`IDEAS.md`) and **tap-card triage**. `/claudhd:idea <text>` captures verbatim, in one line, at zero tokens. `/claudhd:triage` renders each open idea as a card (roadmap / quick fix / drop / skip / discuss) and applies your tap through the plugin's own mechanical write vocabulary, never a model rewrite of your words.
+- **Mode-enforced phases.** Design mode allows `*.md` edits only; build mode allows exactly the active phase's file list; idle denies source edits and leaves markdown editable. The guard is deny-by-default once a project opts in, with `/claudhd:override` as a loud, recorded escape hatch for the rare genuinely unscoped edit.
+- **A commit-boundary reconcile.** Every `git commit` inside a session regenerates `NOW.md`, the plan's per-phase status, the `SHIPPED.md` entry, and the roadmap item's state, then stages them onto the same commit. There is no `/claudhd:wrap` to remember; the machine does it when you commit.
+- **An idea inbox** (`IDEAS.md`) and **tap-card triage**. `/claudhd:idea <text>` captures verbatim, in one line, at zero tokens. `/claudhd:triage` renders each open idea as a card (roadmap / quick fix / drop / skip / discuss) and applies your tap through the plugin's own mechanical write vocabulary. Your wording is preserved verbatim.
 - **A roadmap with stable ids** (`ROADMAP.md`). Every item carries a generated `r-MMDD-N` id, rendered beside its text. `/claudhd:start <id>` is the readiness gate: it restates a vague item concretely and activates a design thread.
 - **A design grill and review gate.** `/claudhd:design` interrogates the open decisions one fork at a time, tracks a live resolved/open board, writes the design doc, then hands it to a design-reviewer before `/claudhd:plan` turns it into phases.
 - **A phased build with a reviewed commit gate.** `/claudhd:build` implements one phase tests-first inside the guard; `/claudhd:review` reviews the diff, relays any required fixes back through a re-review that carries prior rounds as settled context, and opens the commit gate only on a clean verdict (or your explicit overrule, logged). Primary-reviewer-only: there is no second-opinion pass.
@@ -73,7 +73,7 @@ In every other repo, ClauDHD stays silent.
 | `/claudhd:build <plan> <phase>` | Implement exactly one phase, tests-first, inside the mode guard. |
 | `/claudhd:review <plan> <phase>` | Review the phase's diff, relay fixes with settled re-review context, open the commit gate. |
 | `/claudhd:quick [text]` | Add a chore to the quick-fixes batch, or (no argument) clear the batch under a scoped sentinel. |
-| `/claudhd:override` | A loud, recorded escape hatch for a genuinely unscoped edit. Never a silent bypass. |
+| `/claudhd:override` | A loud, recorded escape hatch for a genuinely unscoped edit. |
 | `/claudhd:audit` | Reconcile the currentness audit and the runtime verification queue against real code and commits. |
 | `/claudhd:init` | Scaffold the file set, the pipeline docs, and the enforcement opt-in. |
 | `/claudhd:models` | View or change which model backend each pipeline role runs on. |
@@ -83,7 +83,7 @@ In every other repo, ClauDHD stays silent.
 
 | mode | source edits | doc/design edits | entered by |
 |---|---|---|---|
-| build (sentinel present) | only the active phase's file list | only if in the phase's file/allow list (plan, audit docs, ROADMAP.md, NOW.md for `/claudhd:quick`) - not a generic `*.md` allowance | `/claudhd:build`, `/claudhd:quick` |
+| build (sentinel present) | only the active phase's file list | only if in the phase's file/allow list (plan, audit docs, ROADMAP.md, NOW.md for `/claudhd:quick`); there is no generic `*.md` allowance in build mode | `/claudhd:build`, `/claudhd:quick` |
 | design | denied, with reason | allowed (`*.md` generally) | `/claudhd:start`, `/claudhd:design` |
 | idle (neither) | denied | allowed (`*.md` generally) | pick a mode |
 
@@ -91,7 +91,7 @@ Mode lives only in `.now/state.json`; there is no sibling marker file. A repo wi
 
 ## The mechanical write vocabulary
 
-Triage and roadmap decisions are scripts, not model work. Five verbs (`append-capture`, `move`, `mark`, `reorder`, `park`) live in `plugins/claudhd/scripts/vocab.js`, both as an importable module and a CLI, and are the only write path chat's `/claudhd:triage` uses for a mechanical decision. None of them accept free text as new content except `append-capture`, the one verb defined to carry it: a straight capture, never a rewrite. Promotion is verbatim; no model ever rewords an idea on its way to the roadmap. The full contract, including the optimistic-concurrency rule that protects a tap against a capture landing mid-render, lives in `docs/SCRIPT-VOCABULARY.md`. `docs/STATE-SCHEMA.md` is the matching contract for `.now/state.json` itself.
+Triage and roadmap decisions run as scripts, with no model involved. Five verbs (`append-capture`, `move`, `mark`, `reorder`, `park`) live in `plugins/claudhd/scripts/vocab.js`, both as an importable module and a CLI, and are the only write path chat's `/claudhd:triage` uses for a mechanical decision. The only verb that accepts free text is `append-capture`, defined to carry a capture through unchanged. Promotion is verbatim: the idea reaches the roadmap in your exact words. The full contract, including the optimistic-concurrency rule that protects a tap against a capture landing mid-render, lives in `docs/SCRIPT-VOCABULARY.md`. `docs/STATE-SCHEMA.md` is the matching contract for `.now/state.json` itself.
 
 ## What runs automatically
 

@@ -10,7 +10,7 @@
  * Also scaffolds the two living audit docs (CURRENTNESS_AUDIT.md and
  * RUNTIME_VERIFICATION_QUEUE.md, folded in from Gantry) into docs/ or the
  * project root, and the model-backend config (.gantry/models.json), gitignoring
- * the three local/transient .gantry/* files next to .now/. .gantry/models.json
+ * the four local/transient .gantry/* files next to .now/. .gantry/models.json
  * deliberately keeps its path (it is not tidied into .now/ - see the design's
  * cross-cutting concern 9).
  *
