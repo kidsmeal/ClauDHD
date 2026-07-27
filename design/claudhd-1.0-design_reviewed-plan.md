@@ -141,7 +141,7 @@ Section 7 locks 15 commands and names what is deleted. It does not account for: 
 **Verification:** `npm test`. The phase is proven by two things: a table-driven mode matrix that passes, and a named test for each of the six crash/fail-open branches showing they still exit 0 with no output.
 **Exit criteria:** `npm test` passes; the only branch that changed from allow to deny is sentinel-absent-with-a-known-mode, where malformed or unreadable state.json content in an ADOPTED project is DEFINED as mode null = idle (readState's null-normalization is the contract, not a crash; the fail-open guarantee covers guard crashes and unparseable hook input, never semantic state content); the guard still always exits 0; a project without the activation gate from B1 is still entirely unaffected, asserted by a test.
 **Blockers:** B1 (the activation gate). Do not start this phase before it is answered; it decides whether the six unmigrated projects get denied.
-**Wired-by:** phase 7 for `override.js` (`/claudhd:override` is its only caller). `modes.js` is wired here, by both guards.
+**Wired-by:** `modes.js` and `override.js` are both wired here: the guards call `modes.decide()` for the allowlist and `override.js`'s `noteOverrideFile` for override-permitted edits (AMENDED at review 2026-07-26: the count-freshness and atomicity findings made the guards direct callers, superseding the original only-caller note). Phase 7 additionally wires `/claudhd:override` to `recordOverride`.
 
 ## Phase 6: The mechanical write vocabulary
 
