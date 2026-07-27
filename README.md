@@ -2,7 +2,7 @@
 
 Focus and drift control for [Claude Code](https://claude.com/claude-code), with a reviewed build pipeline.
 
-ClauDHD keeps track of where you are in a project and enforces the phase boundary while you get there. It is easy to wander off task, and easy to ship a change nobody reviewed. ClauDHD writes your place down as you go, in a few plain Markdown files at the root of your repo, and holds a hard gate around what you can edit while a phase is in flight. When you come back, you read a file instead of reconstructing your own train of thought. When you commit, the docs are already true.
+ClauDHD keeps track of where you are in a project and enforces the phase boundary while you get there. Work drifts: threads stall half-done and changes ship without review. ClauDHD writes your place down as you go, in a few plain Markdown files at the root of your repo, and holds a hard gate around what you can edit while a phase is in flight. Coming back, you read a file instead of reconstructing your own train of thought, and the docs are already true at every commit.
 
 It has zero dependencies and runs entirely on local files plus ordinary git. There is no ClauDHD account or server, and it makes no network calls beyond normal Claude Code usage (or an external model backend you configure yourself for a review role). It uses the Node.js runtime Claude Code already bundles.
 
@@ -110,7 +110,7 @@ The drift check ignores ClauDHD's own files (`NOW.md`, `IDEAS.md`, `SHIPPED.md`,
 
 ## Token cost
 
-The hooks are nearly free. The `Stop` hook is a local script that costs no tokens, and the `SessionStart` brief adds a few hundred tokens once per session. `/claudhd:idea`, `/claudhd:quick <text>`, and idea capture through `/claudhd:triage` run a local script; the model only confirms in a line. `/claudhd:build`, `/claudhd:review`, `/claudhd:design`, and `/claudhd:plan` dispatch to a subagent or an external reviewer CLI (`/claudhd:models` controls which); their cost scales with the work, not with ClauDHD's own bookkeeping. `/claudhd:harvest` reads your past chat transcripts, greps for idea signals rather than reading whole transcripts, and keeps an incremental watermark so routine runs stay small.
+The hooks are nearly free. The `Stop` hook is a local script that costs no tokens, and the `SessionStart` brief adds a few hundred tokens once per session. `/claudhd:idea`, `/claudhd:quick <text>`, and idea capture through `/claudhd:triage` run a local script; the model only confirms in a line. `/claudhd:build`, `/claudhd:review`, `/claudhd:design`, and `/claudhd:plan` dispatch to a subagent or an external reviewer CLI (`/claudhd:models` controls which); their cost scales with the work itself; ClauDHD's bookkeeping adds nothing to it. `/claudhd:harvest` reads your past chat transcripts, greps for idea signals rather than reading whole transcripts, and keeps an incremental watermark so routine runs stay small.
 
 One privacy note on `/claudhd:harvest`: it is the only command that reads your past session transcripts. Every other command only touches files in the repo and the session in front of you. Use `/claudhd:harvest --dry-run` to preview what it would inspect before it writes anything.
 
