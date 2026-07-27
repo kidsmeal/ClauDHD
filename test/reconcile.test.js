@@ -82,6 +82,21 @@ function runGuard(dir, command, sessionId) {
   });
 }
 
+// Phase 5 (B1's computeGate change - see commit-guard.js's isAdopted()) made
+// enforcement and reconcile share `.now/enabled` as an activation signal,
+// where before this file's own `optInNoEnforcement()` fixture relied on
+// enforcement staying off while reconcile ran. The real pipeline's own
+// command shape - a leading `node <sentinel.js path> clear` - already
+// bypasses the gate regardless of enforcement (isSentinelCall() matches on
+// the command's first two tokens only; commit-guard.js's header comment
+// documents this deliberately), and is already exercised end-to-end by the
+// "compound command" test further down. Tests below that need reconcile to
+// see a live (pre-clear) sentinel while still passing the gate under full
+// enforcement use this same real shape instead of a bare `git commit`.
+function compoundClearAndCommit(message) {
+  return `node ${JSON.stringify(SENTINEL_JS)} clear && git add -A && git commit -m ${JSON.stringify(message)}`;
+}
+
 // Phase 2's status is "built" - the REAL normal path: by the time a real
 // commit reaches the guard, the relay has already moved a reviewed phase
 // past "pending" (this repo's own plan uses "built"; see PRECOMMIT_STATUS_RE).
@@ -185,9 +200,9 @@ test("reconcile (via the commit-guard interception point): a final-phase commit 
       },
     });
 
-    const r = runGuard(dir, 'git commit -m "phase 2 done"');
+    const r = runGuard(dir, compoundClearAndCommit("phase 2 done"));
     assert.equal(r.status, 0, r.stderr);
-    assert.equal(r.stdout.trim(), "", "guard is inactive (no .gantry/enabled) - must allow");
+    assert.equal(r.stdout.trim(), "", "the sentinel-call bypass allows the compound through, enforcement notwithstanding");
 
     const plan = read(dir, "PLAN.md");
     assert.match(plan, /## Phase 2: Second\s*\n\*\*Status:\*\* committed \(\d{4}-\d{2}-\d{2}\)/);
@@ -239,7 +254,7 @@ test("markPhaseCommitted also fires from the pipeline template's own pre-commit 
       },
     });
 
-    const r = runGuard(dir, 'git commit -m "phase 2 done, ready-to-commit phrasing"');
+    const r = runGuard(dir, compoundClearAndCommit("phase 2 done, ready-to-commit phrasing"));
     assert.equal(r.status, 0, r.stderr);
 
     const plan = read(dir, "PLAN.md");
@@ -422,7 +437,7 @@ test("a legacy id-less ROADMAP.md is backfilled before the roadmap-item lookup, 
       },
     });
 
-    const r = runGuard(dir, 'git commit -m "phase 2 done, legacy roadmap"');
+    const r = runGuard(dir, compoundClearAndCommit("phase 2 done, legacy roadmap"));
     assert.equal(r.status, 0, r.stderr);
     assert.equal(r.stdout.trim(), "");
 
@@ -495,7 +510,7 @@ test("a legacy id-less ROADMAP.md is backfilled on a NON-final-phase commit (pha
       },
     });
 
-    const r = runGuard(dir, 'git commit -m "phase 1 midway, legacy roadmap"');
+    const r = runGuard(dir, compoundClearAndCommit("phase 1 midway, legacy roadmap"));
     assert.equal(r.status, 0, r.stderr);
 
     const roadmap = read(dir, "ROADMAP.md");

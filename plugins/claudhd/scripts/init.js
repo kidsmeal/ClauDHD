@@ -23,9 +23,13 @@
  * active thread for you to confirm, instead of asking you to name it cold.
  *
  * Plugin-native hook opt-in (folded in from Gantry): PreToolUse enforcement is
- * available but inert until --enable-hooks writes .gantry/enabled. Only
- * relevant when init.js runs inside an installed plugin (CLAUDE_PLUGIN_ROOT is
- * set by the plugin host).
+ * available but inert until --enable-hooks writes .now/enabled - the plan's
+ * B1 activation gate, honored by both guards AND by the commit-boundary
+ * reconcile (see reconcile.js's header comment). Only relevant when init.js
+ * runs inside an installed plugin (CLAUDE_PLUGIN_ROOT is set by the plugin
+ * host). The legacy .gantry/enabled marker (pre-1.0) is still honored by the
+ * guards' own enforcement gating for projects that already have it on disk,
+ * but this script never writes it any more.
  */
 "use strict";
 const { execFileSync, spawnSync } = require("child_process");
@@ -304,11 +308,13 @@ console.log(
 // installed plugin (CLAUDE_PLUGIN_ROOT is set by the plugin host).
 //
 // Default run (no --enable-hooks flag): report that enforcement is available
-// but NOT enabled, and print how to enable it. Do NOT write .gantry/enabled.
+// but NOT enabled, and print how to enable it. Do NOT write .now/enabled.
 //
-// With --enable-hooks flag: write the .gantry/enabled marker so the PreToolUse
-// guards become active. (Gitignoring the transient/local .gantry files is done
-// unconditionally above, not here, since models.json is scaffolded every run.)
+// With --enable-hooks flag: write the .now/enabled marker (B1) so the
+// PreToolUse guards AND the commit-boundary reconcile become active. Lives
+// inside .now/, which init.js's .gitignore step already covers wholesale, so
+// no separate gitignore entry is needed - this is deliberately a per-machine
+// opt-in, not a checked-in team setting.
 if (process.env.CLAUDE_PLUGIN_ROOT) {
   const enableHooks = process.argv.includes("--enable-hooks");
 
@@ -321,19 +327,18 @@ if (process.env.CLAUDE_PLUGIN_ROOT) {
       "  in /claudhd:init (it will run: node \"" + __filename + "\" --enable-hooks)."
     );
   } else {
-    // Explicit opt-in: write the .gantry/enabled marker (empty file).
-    const gantryDir = path.join(ROOT, ".gantry");
-    const markerPath = path.join(gantryDir, "enabled");
+    // Explicit opt-in: write the .now/enabled marker (empty file).
+    const markerPath = path.join(NOW_DIR, "enabled");
     try {
-      fs.mkdirSync(gantryDir, { recursive: true });
+      fs.mkdirSync(NOW_DIR, { recursive: true });
       if (!fs.existsSync(markerPath)) {
         fs.writeFileSync(markerPath, "");
-        console.log("  Created .gantry/enabled (hook opt-in marker).");
+        console.log("  Created .now/enabled (hook opt-in marker).");
       } else {
-        console.log("  .gantry/enabled already present.");
+        console.log("  .now/enabled already present.");
       }
     } catch (e) {
-      console.error("! ClauDHD: could not write .gantry/enabled: " + e.message);
+      console.error("! ClauDHD: could not write .now/enabled: " + e.message);
     }
   }
 }

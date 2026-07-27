@@ -126,7 +126,7 @@ Section 7 locks 15 commands and names what is deleted. It does not account for: 
 
 ## Phase 5: Modes, the guard inversion, and the override
 
-**Status:** pending
+**Status:** committed (PASS on round four; findings trajectory 9 -> 3 -> 1 -> 0 under the severity scale plus the first context-carrying re-reviews, zero relitigation across all rounds)
 **Goal:** The guards read mode from state.json and enforce a deny-by-default per-mode path allowlist; sentinel-absent denies while crash paths still fail open; `/claudhd:override` exists as a loud, recorded escape hatch.
 **Files:**
 - create `plugins/claudhd/scripts/modes.js` (pure: mode + path in, allow/deny out. design and idle allow `*.md` plus `.now/`, `.gantry/`, `.claude/`; build allows the build section's file list plus those same state dirs; everything else denies)

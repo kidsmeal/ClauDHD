@@ -167,25 +167,25 @@ test("gitignore: appends the .gantry/* entries next to a pre-existing .now/ entr
   } finally { cleanup(dir); }
 });
 
-test("with CLAUDE_PLUGIN_ROOT set (default run): does NOT write .gantry/enabled, but still gitignores models.json", () => {
+test("with CLAUDE_PLUGIN_ROOT set (default run): does NOT write .now/enabled, but still gitignores models.json", () => {
   const { dir } = makeRepo();
   try {
     const r = run(dir, "init.js", [], { CLAUDE_PLUGIN_ROOT: "/fake/plugin/root" });
     assert.equal(r.status, 0, r.stderr);
-    assert.ok(!exists(dir, path.join(".gantry", "enabled")), ".gantry/enabled must NOT be created on default run");
+    assert.ok(!exists(dir, path.join(".now", "enabled")), ".now/enabled must NOT be created on default run");
     const gi = read(dir, ".gitignore");
     assert.match(gi, /\.gantry\/models\.json/, "per-machine models.json must be gitignored even on default run");
     assert.match(r.stdout, /enforcement is available but NOT enabled/);
   } finally { cleanup(dir); }
 });
 
-test("with CLAUDE_PLUGIN_ROOT set and --enable-hooks: writes .gantry/enabled", () => {
+test("with CLAUDE_PLUGIN_ROOT set and --enable-hooks: writes .now/enabled (B1's activation gate)", () => {
   const { dir } = makeRepo();
   try {
     const r = run(dir, "init.js", ["--enable-hooks"], { CLAUDE_PLUGIN_ROOT: "/fake/plugin/root" });
     assert.equal(r.status, 0, r.stderr);
-    assert.ok(exists(dir, path.join(".gantry", "enabled")), ".gantry/enabled should be created");
-    assert.match(r.stdout, /Created \.gantry\/enabled/);
+    assert.ok(exists(dir, path.join(".now", "enabled")), ".now/enabled should be created");
+    assert.match(r.stdout, /Created \.now\/enabled/);
   } finally { cleanup(dir); }
 });
 
@@ -282,12 +282,12 @@ test("a freshly-scaffolded ROADMAP.md gets real ids assigned for today's date, n
   } finally { cleanup(dir); }
 });
 
-test("with CLAUDE_PLUGIN_ROOT unset: writes no .gantry/enabled, but still gitignores models.json", () => {
+test("with CLAUDE_PLUGIN_ROOT unset: writes no .now/enabled, but still gitignores models.json", () => {
   const { dir } = makeRepo();
   try {
     const r = run(dir, "init.js", [], { CLAUDE_PLUGIN_ROOT: undefined });
     assert.equal(r.status, 0, r.stderr);
-    assert.ok(!exists(dir, path.join(".gantry", "enabled")), ".gantry/enabled must NOT be created when CLAUDE_PLUGIN_ROOT is unset");
+    assert.ok(!exists(dir, path.join(".now", "enabled")), ".now/enabled must NOT be created when CLAUDE_PLUGIN_ROOT is unset");
     const gi = read(dir, ".gitignore");
     assert.match(gi, /\.gantry\/models\.json/, "models.json must be gitignored even for a manual copy");
   } finally { cleanup(dir); }

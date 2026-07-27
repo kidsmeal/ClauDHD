@@ -50,6 +50,11 @@
  *     dependency) can never produce an uncaught exception here - Node's
  *     default nonzero exit on an uncaught exception would otherwise violate
  *     "always exit 0" before main()'s own outer try/catch ever got a chance.
+ *   - state.js/modes.js (needed only for the mode-aware deny message) are
+ *     required lazily too, deliberately NOT wrapped in their own local
+ *     try/catch: a broken sibling module there throws naturally up to the
+ *     outer try/catch at the bottom of this file, the same "top-level catch"
+ *     safety net file-list-guard.js relies on for the same reason.
  */
 "use strict";
 const fs = require("fs");
@@ -61,10 +66,17 @@ const { resolveRoot, readSentinel, isStale } = require("../sentinel-core.js");
 // Deny output
 // ---------------------------------------------------------------------------
 
-function deny(phase) {
+// Mode-aware (phase 5): names the project's current mode alongside the
+// existing phase/commit-gate reason. describeMode() is modes.js's own
+// normalization (null/unrecognized -> "idle"), reused here so the two
+// guards never label the same mode value differently. This is a message-only
+// change - the commit gate's DECISION still turns solely on sentinel
+// presence/staleness (computeGate(), unchanged).
+function deny(phase, mode) {
+  const { describeMode } = require("../modes.js");
   const reason =
-    "ClauDHD holds the commit gate. phase " + phase + " is mid-build and not yet " +
-    "reviewed. finish /claudhd:review and commit at the gate. " +
+    "ClauDHD holds the commit gate (mode: " + describeMode(mode) + "). phase " + phase +
+    " is mid-build and not yet reviewed. finish /claudhd:review and commit at the gate. " +
     "(to clear: run `node sentinel.js clear`)";
   process.stdout.write(
     JSON.stringify({
@@ -393,18 +405,22 @@ function logReconcileFailure(root, err) {
   }
 }
 
+// B1's activation gate: `.now/enabled` OR the legacy `.gantry/enabled` (both
+// honored for enforcement - see file-list-guard.js's isAdopted(), same rule,
+// duplicated here rather than shared so this hook has no cross-file require
+// beyond its existing sentinel-core.js/state.js/modes.js dependencies).
+function isAdopted(root) {
+  try { fs.accessSync(path.join(root, ".now", "enabled")); return true; } catch { /* fall through */ }
+  try { fs.accessSync(path.join(root, ".gantry", "enabled")); return true; } catch { return false; }
+}
+
 // The exact steps 4-6 fail-open checks, as a pure query rather than a chain of
 // early returns: null means allow (guard inactive, no sentinel, stale, or the
 // command does not trigger it); the sentinel object means deny. Behavior is
 // byte-identical to the pre-phase-4 guard - only the shape changed, so
 // reconcile (below) can be decided before the deny is emitted.
 function computeGate(root, sessionId, command) {
-  const markerPath = path.join(root, ".gantry", "enabled");
-  try {
-    fs.accessSync(markerPath);
-  } catch {
-    return null; // marker absent -> guard inactive
-  }
+  if (!isAdopted(root)) return null; // marker absent -> guard inactive
 
   const sentinel = readSentinel(root);
   if (sentinel === null) return null; // no sentinel -> allow
@@ -464,7 +480,11 @@ function main() {
   }
 
   // 7-8. Deny if the gate says so.
-  if (gate !== null) deny(gate.phase);
+  if (gate !== null) {
+    const { readState } = require("../state.js"); // lazy - see header comment
+    const state = readState(path.join(root, ".now")); // never throws once loaded
+    deny(gate.phase, state && state.mode != null ? state.mode : null);
+  }
 }
 
 try {
