@@ -9,6 +9,18 @@ ClauDHD's own backlog and decision log — kept the way the plugin asks you to k
 ## Next (candidates, not commitments)
 
 - [ ] Worktree fleet view (`/claudhd:fleet`) — list each worktree's active thread + checkpoint age. **Deferred:** only build once worktrees are part of an actual workflow we use.
+- the two-week kill-criteria trial: use it at session starts, tune thresholds from the fire-rate log, ratify or reverse the section-12 amendment
+- [ ] week-two threshold tuning pass from history.jsonl fire rates - done: thresholds re-set from real counts, noisy flags renumbered or retired
+
+## Later
+
+Committed but not soon. Things you know you will do, just not next. Promote to Next when they get close. The entries below arrived with the desktop app when it was folded in under `app/`, and are scoped to it.
+
+- [ ] deploy-behind-main flag (needs per-project opt-in config; unwoven is the motivating case)
+- [ ] ideas-age + roadmap-age flag promotion (state.json now carries the dates; deferred at design to keep v1's flag set small)
+- [ ] roadmap-now vs NOW.md mismatch flag (state.json era)
+- [ ] in-place settings editing (v1 reads config at boot; the file is the editor)
+- [ ] forgotten-branches surfacing from .now/branches/ (only if his mainline habit changes)
 
 ## Shipped
 
