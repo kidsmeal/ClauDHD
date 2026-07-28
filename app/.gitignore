@@ -1,0 +1,13 @@
+
+
+# ClauDHD local session state
+.now/
+.gantry/active-phase.json
+.gantry/models.json
+.gantry/headless-implementer-settings.json
+
+# build artifacts
+node_modules/
+dist/
+src-tauri/target/
+public/dev-fleet.json
