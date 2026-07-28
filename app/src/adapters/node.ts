@@ -3,6 +3,7 @@
 
 import { execFile } from "node:child_process";
 import { readFile, readdir, stat } from "node:fs/promises";
+import { DATA_DIR_NAME } from "../core/migrate.js";
 import type { Clock, DataDir, DirEntry, FileSystem, GitRunner } from "../core/ports.js";
 
 export const nodeFs: FileSystem = {
@@ -60,5 +61,5 @@ export const nodeClock: Clock = {
 
 export function nodeDataDir(): DataDir {
   const base = process.env["APPDATA"] ?? ".";
-  return { path: () => base + "\\object-permanence" };
+  return { path: () => base + "\\" + DATA_DIR_NAME };
 }

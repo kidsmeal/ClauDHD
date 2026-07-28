@@ -4,7 +4,7 @@
 
 use notify::{RecursiveMode, Watcher};
 use serde::Serialize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
 use tauri::{Emitter, Manager};
@@ -68,13 +68,56 @@ fn git_run(repo: String, args: Vec<String>) -> Option<String> {
     Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
-// --- the app's own data folder (%APPDATA%\object-permanence) ---------------
+// --- the app's own data folder (%APPDATA%\claudhd) --------------------------
 // The ONLY writable surface the frontend gets. Names are bare filenames;
 // anything path-shaped is refused, so project files stay unreachable.
+//
+// The folder was %APPDATA%\object-permanence before the app was folded into
+// claudhd as its desktop window. src/core/migrate.ts holds the decision rule
+// and its tests; this mirrors it, the same way idea_append below mirrors
+// claudhd's idea.js contract. It has to run here rather than in the frontend
+// because data_dir() is the chokepoint every store command goes through,
+// including the hidden capture window's, so a frontend-driven migration would
+// race the first store touch.
+
+const DATA_DIR_NAME: &str = "claudhd";
+const LEGACY_DATA_DIR_NAME: &str = "object-permanence";
+const MIGRATED_FILES: [&str; 3] = ["config.json", "history.jsonl", "snapshot.json"];
+
+// One shot, and only ever forward. A claudhd folder that already exists is
+// never touched, so a second run cannot overwrite live state with the stale
+// copy the legacy folder still holds.
+fn should_migrate(legacy_exists: bool, current_exists: bool) -> bool {
+    legacy_exists && !current_exists
+}
+
+// Copy, never move: the legacy folder is left exactly where it was. A file
+// that fails to copy is skipped rather than aborting the rest, so a partial
+// legacy folder still brings over what it has.
+fn migrate_legacy_data_dir(legacy: &Path, current: &Path) {
+    if !should_migrate(legacy.is_dir(), current.exists()) {
+        return;
+    }
+    if std::fs::create_dir_all(current).is_err() {
+        return;
+    }
+    for name in MIGRATED_FILES {
+        let from = legacy.join(name);
+        if from.is_file() {
+            let _ = std::fs::copy(&from, current.join(name));
+        }
+    }
+}
 
 fn data_dir() -> Option<PathBuf> {
     let base = std::env::var_os("APPDATA")?;
-    let dir = PathBuf::from(base).join("object-permanence");
+    let dir = PathBuf::from(&base).join(DATA_DIR_NAME);
+    // Once per process, and before the create_dir_all below can make the
+    // "current folder is absent" test answer false forever.
+    static MIGRATION: std::sync::Once = std::sync::Once::new();
+    MIGRATION.call_once(|| {
+        migrate_legacy_data_dir(&PathBuf::from(&base).join(LEGACY_DATA_DIR_NAME), &dir);
+    });
     std::fs::create_dir_all(&dir).ok()?;
     Some(dir)
 }
@@ -269,7 +312,7 @@ pub fn run() {
             let menu = MenuBuilder::new(app).items(&[&show, &quit]).build()?;
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
-                .tooltip("object permanence: still there")
+                .tooltip("claudhd: still there")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id().as_ref() {
@@ -310,5 +353,5 @@ pub fn run() {
             data_dir_path
         ])
         .run(tauri::generate_context!())
-        .expect("error while running object permanence");
+        .expect("error while running claudhd");
 }

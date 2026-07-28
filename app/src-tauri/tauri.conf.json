@@ -1,8 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Object Permanence",
+  "productName": "claudhd",
+  "mainBinaryName": "claudhd",
   "version": "0.1.0",
-  "identifier": "com.kidsmeal.object-permanence",
+  "identifier": "com.kidsmeal.claudhd",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +13,7 @@
   "app": {
     "windows": [
       {
-        "title": "Object Permanence",
+        "title": "claudhd",
         "width": 980,
         "height": 760,
         "minWidth": 640,

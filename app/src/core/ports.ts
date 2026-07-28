@@ -27,7 +27,7 @@ export interface Clock {
 }
 
 export interface DataDir {
-  // %APPDATA%\object-permanence in the real app, a temp dir in tests.
+  // %APPDATA%\claudhd in the real app, a temp dir in tests.
   path(): string;
 }
 

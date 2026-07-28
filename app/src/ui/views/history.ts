@@ -12,7 +12,7 @@ import { FLEET_NAV } from "./detail.js";
 export function historyHtml(state: UiState, project: string | null): string {
   let body: string;
   if (state.dataMode.startsWith("frozen scan")) {
-    body = `<div class="dim">the fire-rate log lives in %APPDATA%\\object-permanence\\history.jsonl and needs the shell to read; this is the browser fixture mode</div>`;
+    body = `<div class="dim">the fire-rate log lives in %APPDATA%\\claudhd\\history.jsonl and needs the shell to read; this is the browser fixture mode</div>`;
   } else if (state.history == null) {
     body = `<div class="dim">loading history.jsonl</div>`;
   } else {
@@ -58,7 +58,7 @@ export function historyHtml(state: UiState, project: string | null): string {
           ${project != null ? `<button data-nav="${esc(routeHash({ view: "history", project: null }))}">all projects</button>` : ""}
         </span>
       </div>
-      <div class="provenance">append-only jsonl, %APPDATA%\\object-permanence\\history.jsonl · every line carries the evidence it fired on</div>
+      <div class="provenance">append-only jsonl, %APPDATA%\\claudhd\\history.jsonl · every line carries the evidence it fired on</div>
       ${body}
     </div>`;
 }

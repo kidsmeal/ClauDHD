@@ -60,7 +60,7 @@ export function settingsHtml(state: UiState, cfg: Config | null): string {
           <a href="${esc(routeHash({ view: "history", project: null }))}" class="quiet-link">history</a>
         </span>
       </div>
-      <div class="provenance">data mode: ${esc(state.dataMode)} · everything the app owns lives in %APPDATA%\\object-permanence</div>
+      <div class="provenance">data mode: ${esc(state.dataMode)} · everything the app owns lives in %APPDATA%\\claudhd</div>
       ${state.launchError != null ? `<div class="provenance"><span class="scan-error">${esc(state.launchError)}</span></div>` : ""}
       ${body}
     </div>`;
