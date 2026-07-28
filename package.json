@@ -1,9 +1,10 @@
 {
   "name": "claudhd-dev",
   "private": true,
-  "description": "Dev tooling (tests) for the ClauDHD plugin. Not published and not part of the installed plugin, which lives in plugins/claudhd and has zero dependencies.",
+  "description": "Dev tooling (tests) for the ClauDHD plugin. Not published and not part of the installed plugin, which lives in plugins/claudhd and has zero dependencies. `test` is scoped to test/ so it stays the zero-dependency plugin suite; the desktop app under app/ has its own vitest suite, run with `npm run test:app`.",
   "scripts": {
-    "test": "node --test",
+    "test": "node --test \"test/*.test.js\"",
+    "test:app": "cd app && npm test",
     "release": "node tools/release.js"
   }
 }
