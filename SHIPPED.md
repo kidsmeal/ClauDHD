@@ -3,3 +3,6 @@
 Finished work, newest first. Written automatically at the commit boundary; run `/claudhd:audit` to catch up any commit that bypassed the guard. This file records completed work so progress stays visible.
 
 <!-- last-sha: -->
+
+### 2026-07-28
+- seed

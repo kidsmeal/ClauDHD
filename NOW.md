@@ -6,7 +6,14 @@ One active thread at a time. This file is the cursor: what is live, the next phy
 
 _Committed, so it follows your branch: `git checkout` swaps this cursor to that branch's thread._
 
-Last touched: (set this when you edit the file)
+This file is generated (design section 4): the facts below (Mode, Position, from, Counts, Last touched) render from `.now/state.json`, never hand-typed. The Active thread's two lines are the one piece of human prose, prompted at boundaries and persisted as state fields too - so it survives a regeneration without ever being parsed back out of this file.
+
+Mode: (none - idle)
+Position: idle - pick a mode with /claudhd:start or /claudhd:design
+from: (unplanned work)
+Counts: queue 0 · quick fixes 0 · ideas untriaged 0
+
+Last touched: 2026-07-28
 
 ## Active thread (only one)
 
@@ -16,9 +23,9 @@ Next physical action:
 
 - [ ] (one tiny step you can start in under a minute)
 
-Rule: when you finish a step, check it off and write the next single tiny step. Do not start another thread until this one ships or you consciously move it to the Queue.
+Rule: when you finish a step, check it off and write the next single tiny step. Do not start another thread until this one ships or you consciously commit the next one to the roadmap (`/claudhd:roadmap <intent>`) and activate it in its turn (`/claudhd:start <id>`).
 
-Keep this section lean (about 40 lines): a summary, the live state, and the next action, not a running shipped log. When it grows past that, `/claudhd:wrap` migrates the settled parts out (shipped work to SHIPPED.md, parked or future material to ROADMAP.md or IDEAS.md).
+Keep this section lean (about 40 lines): a summary, the live state, and the next action, not a running shipped log. Move settled material out as you go: shipped work to SHIPPED.md, parked or future material to ROADMAP.md or IDEAS.md.
 
 ## Queue (in order, not now)
 
@@ -34,7 +41,7 @@ Small, self-contained chores that need no plan and aren't worth their own thread
 
 ## Idea flow (do not open a new chat)
 
-New idea mid-task: `/claudhd:idea <text>` records it in IDEAS.md so you can keep working. `/claudhd:harvest` backfills ideas from past sessions you never recorded. `/claudhd:triage` clears the inbox. Finished work is recorded in SHIPPED.md via `/claudhd:shipped`.
+New idea mid-task: `/claudhd:idea <text>` records it in IDEAS.md so you can keep working. `/claudhd:harvest` backfills ideas from past sessions you never recorded. `/claudhd:triage` clears the inbox. Finished work lands in SHIPPED.md automatically at the commit boundary.
 
 ## Loose ends
 
@@ -42,4 +49,4 @@ New idea mid-task: `/claudhd:idea <text>` records it in IDEAS.md so you can keep
 
 ## Leaving this file when you stop
 
-Before you walk away, or whenever you switch context, make the "Next physical action" line true and tiny. That one line is what lets you stop mid-thought and lose nothing. The quick way: run `/claudhd:wrap` and it reconciles this file for you - checks off what's done, writes the next action, and closes out loose ends.
+Before you walk away, or whenever you switch context, make the "Next physical action" line true and tiny. That one line is what lets you stop mid-thought and lose nothing. The rest of this file regenerates itself at every commit; only the Active thread's two lines are yours to keep current.

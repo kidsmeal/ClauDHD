@@ -38,7 +38,7 @@ Committed but not soon. Things you know you will do, just not next. Promote to N
 ## Non-goals (decided, not "later" — see README)
 
 - **No cross-repo / multi-repo "workspace" cursor.** A feature that spans repos gets one cursor per repo. A global workspace cursor would mean cross-repo state, a sync layer, and a global index — a second, heavier product. Killed deliberately to keep ClauDHD lightweight and zero-dependency. The per-repo, feature-scoped cursor already covers the common case (you only ever type in one repo at a time). `r-0727-19`
-- **No multi-agent orchestration.** ClauDHD is a continuity / anti-drift tool, not a task runner or workflow harness. `r-0727-20`
+- **No parallel orchestration.** One active thread, phases in sequence: no parallel phases, no agent fleet, no second-opinion review panel. The pipeline's four roles through two gates are in scope; fan-out is not. (Narrowed 2026-07-27 from "no multi-agent orchestration", which the shipped pipeline had already made false; same precedent as the v0.7.0 roadmap non-goal reversal.) `r-0727-20`
 - **One active thread per repo (or per branch).** The single-cursor constraint is the point, not a limitation to engineer around. `r-0727-21`
 
 ## Why this file exists
