@@ -48,6 +48,21 @@ never to retry blindly with the same stale position.
 they address a ROADMAP.md item by its own `r-MMDD-N` id, which is unique and
 never reassigned, so there is nothing for a position to shift out from under.
 
+## Heading-anchored ids: mark(roadmap)/reorder/park refuse block items
+
+`roadmapids.js`'s subsection anchoring can stamp an `r-MMDD-N` id onto a
+`### ` heading line rather than a bullet: that heading IS the item, and it
+absorbs every line beneath it (ordered steps, bullets, prose continuations)
+until the next heading as its body. `mark(file: "roadmap")`, `reorder()`, and
+`park()` each move or edit exactly ONE line by id - applying that single-line
+semantics to a heading-anchored id would tear the heading from its children,
+so all three REFUSE it instead: they throw (writing nothing to any file) with
+an error naming the limitation - *"heading-anchored items move as blocks;
+block operations are not yet supported, edit ROADMAP.md directly in a
+session."* Detection is structural: the id's own line, found the same way
+each verb already locates its id, is a `### ` heading. A bullet-anchored id
+elsewhere in the same file is unaffected.
+
 ## Parsing a captured line: thread names may themselves contain parentheses
 
 A captured IDEAS.md line has the shape `- [<marker>] <date> <time> (while:
@@ -172,7 +187,8 @@ exactly and currently be open; this is the triage "drop" action. For `file:
 "roadmap"`, no `expectedLine` is needed (see "Optimistic concurrency"
 above); the addressed line must be a checkbox item (`- [ ]`/`- [x]`/`- [~]`)
 carrying that id - a plain-bullet Shipped/Non-goals entry has no checkbox to
-flip.
+flip. A heading-anchored id (see "Heading-anchored ids" above) refuses
+instead of acting on the heading line.
 
 Locked the same way as `move()` (ideas.lock for the ideas case,
 `roadmapLockPath` for the roadmap case).
@@ -187,7 +203,8 @@ this one). `position` is clamped to the section's actual item count.
 Stable: only the item lines' CONTENT is permuted across their existing
 physical slots; headings, blank lines, and every other section are
 byte-identical before and after. A no-op call (already at that position)
-changes nothing and returns `{ changed: false }`.
+changes nothing and returns `{ changed: false }`. A heading-anchored id (see
+"Heading-anchored ids" above) refuses instead of reordering the heading line.
 
 Locked on `roadmapLockPath`.
 
@@ -200,7 +217,8 @@ sections. `to` is the target section; the item is found by scanning both
 sections for its id. Reversible: parking an item and then parking it back
 restores its exact original line text (the line itself is never rewritten,
 only relocated). A no-op call (already in the target section) changes
-nothing and returns `{ changed: false }`.
+nothing and returns `{ changed: false }`. A heading-anchored id (see
+"Heading-anchored ids" above) refuses instead of relocating the heading line.
 
 Locked on `roadmapLockPath`.
 

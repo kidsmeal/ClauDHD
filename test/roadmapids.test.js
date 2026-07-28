@@ -287,6 +287,146 @@ test("backfill: a heading that merely starts with 'Now' (e.g. '## Now Playing') 
   assert.equal(new Set(issued).size, 1);
 });
 
+// --- Ordered-list items (1.0.2 fix round) -----------------------------------
+//
+// A real roadmap (bakingapp) uses "1."-style ordered steps as commitments,
+// not just dash bullets. An ordered-list marker directly under a "## "
+// section (no "### " subsection above it) is an item exactly like a dash
+// bullet: same id-append shape, wording byte-preserved, same thematic-break /
+// dash-only-content exclusions.
+
+test("backfill: a '1.'/'2)' ordered-list item directly under a ## section is an item exactly like a dash bullet - id appended, wording byte-preserved", () => {
+  const text = [
+    "## Next",
+    "1. first ordered intent",
+    "2) second ordered intent (paren style)",
+    "- a plain dash bullet too",
+  ].join("\n");
+  const { text: out, issued } = backfill(text, DATE);
+  assert.match(out, /^1\. first ordered intent `r-0725-1`$/m, "wording survives verbatim, id appended the same way as a dash bullet");
+  assert.match(out, /^2\) second ordered intent \(paren style\) `r-0725-2`$/m);
+  assert.match(out, /^- a plain dash bullet too `r-0725-3`$/m);
+  assert.equal(new Set(issued).size, 3);
+});
+
+// --- Subsection anchoring (1.0.2 fix round) ---------------------------------
+//
+// The real roadmap shape that broke 1.0.1's adoption: item sections contain
+// "### " subsection headings as the actual commitments, with "1."-style
+// ordered steps and prose continuation lines under them, plus "### Parked"
+// and "### Dead" subsections holding retired material. Ids must anchor to the
+// "### " heading line, and every line under it (until the next heading) must
+// get NO id of its own - it is absorbed as that item's body.
+
+const REAL_SHAPE_ROADMAP = [
+  "## Committed next work",
+  "",
+  "1. A top-level ordered item directly under the section",
+  "",
+  "### Ship dark mode",
+  "",
+  "1. Add a settings toggle",
+  "   Some prose continuation explaining the toggle.",
+  "2. Wire the theme provider through the app",
+  "",
+  "### Fix the login race",
+  "",
+  "1. Reproduce the race condition",
+  "",
+  "### Parked",
+  "",
+  "- An old idea about theming that never shipped",
+  "",
+  "### Dead",
+  "",
+  "- An abandoned rewrite attempt",
+].join("\n");
+
+test("backfill: real bakingapp-shape roadmap - ids land on exactly the ### commitment headings and the top-level ordered item, children of each ### heading are untouched byte-for-byte, ### Parked/### Dead (heading and children) are untouched", () => {
+  const { text: out, issued, itemSections } = backfill(REAL_SHAPE_ROADMAP, DATE);
+
+  assert.match(out, /^1\. A top-level ordered item directly under the section `r-0725-1`$/m,
+    "an ordered item directly under the ## section (no ### above it) still gets its own id");
+
+  assert.match(out, /^### Ship dark mode `r-0725-2`$/m, "the ### heading itself is the item and gets an id");
+  assert.match(out, /^### Fix the login race `r-0725-3`$/m);
+
+  // Every child line under a ### commitment heading survives byte-identical -
+  // no id, no rewriting.
+  for (const child of [
+    "1. Add a settings toggle",
+    "   Some prose continuation explaining the toggle.",
+    "2. Wire the theme provider through the app",
+    "1. Reproduce the race condition",
+  ]) {
+    assert.ok(out.includes("\n" + child + "\n") || out.endsWith(child), "child line must survive verbatim: " + child);
+    assert.doesNotMatch(out, new RegExp(escapeForRegex(child) + "\\s*`r-"), "child line must never gain an id: " + child);
+  }
+
+  // ### Parked and ### Dead: heading and children alike, untouched.
+  assert.ok(out.includes("### Parked\n"), "### Parked heading survives, id-less");
+  assert.doesNotMatch(out, /### Parked\s*`r-/, "### Parked must never get an id");
+  assert.ok(out.includes("### Dead\n"), "### Dead heading survives, id-less");
+  assert.doesNotMatch(out, /### Dead\s*`r-/, "### Dead must never get an id");
+  assert.ok(out.includes("- An old idea about theming that never shipped"));
+  assert.doesNotMatch(out, /An old idea about theming that never shipped\s*`r-/);
+  assert.ok(out.includes("- An abandoned rewrite attempt"));
+  assert.doesNotMatch(out, /An abandoned rewrite attempt\s*`r-/);
+
+  assert.equal(new Set(issued).size, 3, "exactly three ids issued: the top-level ordered item and the two real ### commitments");
+  assert.deepEqual(itemSections, ["## Committed next work (2 items as ### subsections, ### Parked/### Dead skipped)"],
+    "the section report annotates subsection detail: 2 real ### commitments, Parked/Dead skipped");
+});
+
+function escapeForRegex(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+test("backfill: subsection anchoring is idempotent - a second pass over already-tagged real-shape output changes nothing", () => {
+  const { text: once, issued } = backfill(REAL_SHAPE_ROADMAP, DATE);
+  const { text: twice, issued: issuedTwice } = backfill(once, DATE, issued);
+  assert.equal(twice, once, "a second backfill pass over already-tagged text must not change anything");
+  assert.equal(issuedTwice.length, 3);
+});
+
+test("backfill: '### Parked Features' is NOT the ### Parked exclusion (never-by-prefix, same rule as ## Now) - it IS a real item subsection", () => {
+  const text = [
+    "## Next",
+    "### Parked Features",
+    "1. a real step under a similarly-named heading",
+  ].join("\n");
+  const { text: out, issued } = backfill(text, DATE);
+  assert.match(out, /^### Parked Features `r-0725-1`$/m, "'### Parked Features' is a different heading entirely and must get an id");
+  assert.match(out, /^1\. a real step under a similarly-named heading$/m, "its child is still absorbed (no id) since it IS a real ### subsection");
+  assert.equal(new Set(issued).size, 1);
+});
+
+test("backfill: '### Parked'/'### Dead' exclusion tolerates trailing whitespace, exact match otherwise", () => {
+  const text = [
+    "## Next",
+    "### Parked   ",
+    "- retired stuff",
+    "### Dead",
+    "- more retired stuff",
+  ].join("\n");
+  const { text: out, issued } = backfill(text, DATE);
+  assert.doesNotMatch(out, /### Parked\s*`r-/);
+  assert.doesNotMatch(out, /retired stuff\s*`r-/);
+  assert.equal(new Set(issued).size, 0, "nothing in an all-Parked/Dead section gets an id");
+});
+
+test("backfill: an already-id-tagged ### heading keeps its subsection-absorption behavior on a repeat pass (its children still get no id)", () => {
+  const text = [
+    "## Next",
+    "### Ship dark mode `r-0700-1`",
+    "1. Add a settings toggle",
+  ].join("\n");
+  const { text: out, issued } = backfill(text, DATE);
+  assert.equal((out.match(/r-0700-1/g) || []).length, 1, "the existing id is not duplicated");
+  assert.doesNotMatch(out, /Add a settings toggle\s*`r-/, "the child still gets no id, even when the heading already had one");
+  assert.deepEqual(issued, ["r-0700-1"]);
+});
+
 // --- Durable ledger (fix round 2): backfill folds a caller-supplied ledger --
 
 test("backfill's counter and returned ledger both account for ids in the ledger that are no longer visible in the text", () => {

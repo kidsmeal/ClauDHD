@@ -37,7 +37,9 @@ const ID_RE = /\br-(\d{4})-(\d+)\b/g;
 // silently gave zero ids to a kept roadmap using its own section names, e.g.
 // "## In Progress" / "## Committed next work (in order)" / "## Up Next" /
 // "## Planned Implementation" / "## Existing Backlog"). A "### " subheading
-// does not end a section (matches nowfile.js's convention).
+// does not end a "## " section (matches nowfile.js's convention), but (1.0.2
+// fix round) it IS itself an item within that section, and it absorbs every
+// line beneath it until the next heading - see backfill()'s own comment.
 //
 // `## Now`'s exclusion is matched EXACTLY (heading text only, after
 // headingOf()'s own trim - so trailing whitespace is already tolerated, but
@@ -50,6 +52,14 @@ const ID_RE = /\br-(\d{4})-(\d+)\b/g;
 const ITEM_LINE_RE = /^(\s*-\s*(?:\[[ x~]\]\s*)?)(.*)$/;
 const NOW_SECTION_HEADING = "## Now";
 
+// An ordered-list marker ("1." / "2)") is an item line exactly like a dash
+// bullet (1.0.2 fix round: real roadmaps use "1."-style steps under a
+// subsection commitment, not just dashes). Tried only when ITEM_LINE_RE does
+// not match - a dash bullet's marker can never start with a digit, so the two
+// never compete for the same line - and the same thematic-break /
+// dash-only-content exclusions below still apply to whichever one matched.
+const ORDERED_LINE_RE = /^(\s*\d+[.)]\s+)(.*)$/;
+
 // A thematic break (---, ***, ___, three or more of the same character, no
 // interior spaces) must never be mistaken for a dash bullet: ITEM_LINE_RE's
 // bullet-marker capture is greedy enough that a bare `---` parses as a
@@ -58,9 +68,23 @@ const NOW_SECTION_HEADING = "## Now";
 // ever sees the line.
 const THEMATIC_BREAK_RE = /^\s*([-*_])\1{2,}\s*$/;
 
+// Subsection blocklist (1.0.2 fix round), same never-by-prefix rule as
+// "## Now": exact heading text only, after trim (so "### Parked Features" is
+// NOT excluded - it merely starts with "Parked"). "### Parked"/"### Dead" hold
+// retired material that must never gain an id, itself or any child beneath it.
+const SUBSECTION_BLOCKLIST = new Set(["### Parked", "### Dead"]);
+
 function headingOf(content) {
   const t = content.trim();
   return /^##\s/.test(t) ? t : null;
+}
+
+// A "### " subsection heading. Distinct from headingOf's "## " match above:
+// headingOf's regex requires the THIRD character to be whitespace, which
+// "### " (third character "#") never satisfies, so the two never collide.
+function subHeadingOf(content) {
+  const t = content.trim();
+  return /^###\s/.test(t) ? t : null;
 }
 
 function isItemSectionHeading(heading) {
@@ -146,6 +170,18 @@ function joinLines(lines) {
 // Only ever appends to a line's content (never otherwise touches it), so the
 // byte-for-byte preservation guarantee holds. `issued` in the return value is
 // the caller's next `ledger` argument.
+//
+// Subsection anchoring (1.0.2 fix round): within an item section, a "### "
+// heading is itself an item (it gets an id the same way a bullet does) and
+// ABSORBS every line beneath it - ordered steps, bullets, prose continuations
+// alike - until the next heading, none of which get an id of their own (the
+// real bakingapp-shape roadmap this closes: "### <commitment>" headings carry
+// the actual commitment, with numbered steps and continuation prose as their
+// body). A bullet/ordered line that is NOT under any "### " subsection
+// (directly under the "## " section, before any "### " is seen) is still an
+// item itself, unchanged from before. A blocklisted subsection ("### Parked"/
+// "### Dead") absorbs its children the same way, but the heading itself gets
+// no id either - retired material stays entirely id-less.
 function backfill(text, date, ledger) {
   const prefix = mmdd(date);
   const lines = splitPreservingEol(text);
@@ -153,23 +189,57 @@ function backfill(text, date, ledger) {
   let counter = maxCounterFor(seen, prefix);
 
   let inItemSection = false; // before any heading, or under a non-item one: no ids
-  // Every heading classified as an item section, in encounter order - so a
-  // caller (init.js) can report exactly what it recognized, and warn loudly
+  let subsectionMode = null; // null (top-level of the ## section) | "item" | "blocked"
+  // Every "## " heading classified as an item section, in encounter order - so
+  // a caller (init.js) can report exactly what it recognized, and warn loudly
   // when a file has bullets but zero of them landed inside a recognized
-  // section (the allowlist-vs-blocklist failure mode this fix round closes).
-  const itemSections = [];
+  // section (the allowlist-vs-blocklist failure mode a prior fix round
+  // closed). Annotated with subsection detail when the section actually used
+  // the "### " shape, so a caller's report surfaces it without re-deriving it.
+  const itemSectionEntries = [];
+  let currentSectionEntry = null;
+
   for (const line of lines) {
     const heading = headingOf(line.content);
     if (heading != null) {
       inItemSection = isItemSectionHeading(heading);
-      if (inItemSection) itemSections.push(heading);
+      subsectionMode = null;
+      currentSectionEntry = null;
+      if (inItemSection) {
+        currentSectionEntry = { heading, subsectionItems: 0, skippedSubsections: 0 };
+        itemSectionEntries.push(currentSectionEntry);
+      }
       continue;
     }
+
+    if (inItemSection) {
+      const subheading = subHeadingOf(line.content);
+      if (subheading != null) {
+        if (SUBSECTION_BLOCKLIST.has(subheading)) {
+          subsectionMode = "blocked";
+          if (currentSectionEntry) currentSectionEntry.skippedSubsections += 1;
+          continue;
+        }
+        subsectionMode = "item";
+        if (currentSectionEntry) currentSectionEntry.subsectionItems += 1;
+        if (!ownId(line.content)) {
+          counter += 1;
+          const id = `r-${prefix}-${counter}`;
+          line.content += " `" + id + "`";
+          seen.add(id);
+        }
+        continue;
+      }
+    }
+
     if (!inItemSection) continue;
+    if (subsectionMode) continue; // absorbed ("item") or excluded ("blocked") child line
+
     // A thematic break (---, ***, ___) is a rule, never a dash bullet.
     if (THEMATIC_BREAK_RE.test(line.content)) continue;
 
-    const m = ITEM_LINE_RE.exec(line.content);
+    let m = ITEM_LINE_RE.exec(line.content);
+    if (!m) m = ORDERED_LINE_RE.exec(line.content);
     if (!m || !m[2].trim()) continue;
     // The captured content must hold at least one non-dash/non-space
     // character - a bullet whose "content" is itself only dashes/spaces
@@ -181,6 +251,15 @@ function backfill(text, date, ledger) {
     line.content += " `" + id + "`";
     seen.add(id);
   }
+
+  const itemSections = itemSectionEntries.map((e) => {
+    const parts = [];
+    if (e.subsectionItems > 0) {
+      parts.push(e.subsectionItems + " item" + (e.subsectionItems === 1 ? "" : "s") + " as ### subsections");
+    }
+    if (e.skippedSubsections > 0) parts.push("### Parked/### Dead skipped");
+    return parts.length ? e.heading + " (" + parts.join(", ") + ")" : e.heading;
+  });
 
   return { text: joinLines(lines), issued: Array.from(seen), itemSections };
 }

@@ -499,6 +499,79 @@ test("reorder rejects an id not present in the named section", () => {
   } finally { cleanup(dir); }
 });
 
+// --- heading-anchored refusal (1.0.2 fix round) -----------------------------
+//
+// roadmapids.js's subsection anchoring can stamp an id onto a "### " heading
+// line (the item's whole body is absorbed as its children). mark(file:
+// "roadmap")/reorder()/park() each move or edit ONE line by id, so applying
+// that to a heading-anchored id would tear the heading from its children -
+// all three must refuse (throw, write nothing) instead.
+
+const HEADING_ANCHORED_ROADMAP = [
+  "# ROADMAP",
+  "",
+  "## Next",
+  "",
+  "### Ship the widget `r-0101-1`",
+  "",
+  "1. Step one",
+  "2. Step two",
+  "",
+  "- [ ] a normal single-line item `r-0101-2`",
+  "",
+  "## Later",
+  "",
+].join("\n");
+
+test("mark(file: roadmap) refuses a heading-anchored id, naming the block-operation limitation, and writes nothing", () => {
+  const { dir, git } = makeRepo();
+  try {
+    optIn(dir, git);
+    write(dir, "ROADMAP.md", HEADING_ANCHORED_ROADMAP);
+    assert.throws(
+      () => vocab.mark(dir, { file: "roadmap", key: "r-0101-1", state: "done" }),
+      /heading-anchored items move as blocks; block operations are not yet supported, edit ROADMAP\.md directly in a session/
+    );
+    assert.equal(read(dir, "ROADMAP.md"), HEADING_ANCHORED_ROADMAP, "a refused mark must write nothing");
+  } finally { cleanup(dir); }
+});
+
+test("reorder refuses a heading-anchored id, naming the block-operation limitation, and writes nothing", () => {
+  const { dir, git } = makeRepo();
+  try {
+    optIn(dir, git);
+    write(dir, "ROADMAP.md", HEADING_ANCHORED_ROADMAP);
+    assert.throws(
+      () => vocab.reorder(dir, { section: "Next", id: "r-0101-1", position: 1 }),
+      /heading-anchored items move as blocks; block operations are not yet supported, edit ROADMAP\.md directly in a session/
+    );
+    assert.equal(read(dir, "ROADMAP.md"), HEADING_ANCHORED_ROADMAP, "a refused reorder must write nothing");
+  } finally { cleanup(dir); }
+});
+
+test("park refuses a heading-anchored id, naming the block-operation limitation, and writes nothing", () => {
+  const { dir, git } = makeRepo();
+  try {
+    optIn(dir, git);
+    write(dir, "ROADMAP.md", HEADING_ANCHORED_ROADMAP);
+    assert.throws(
+      () => vocab.park(dir, { id: "r-0101-1", to: "Later" }),
+      /heading-anchored items move as blocks; block operations are not yet supported, edit ROADMAP\.md directly in a session/
+    );
+    assert.equal(read(dir, "ROADMAP.md"), HEADING_ANCHORED_ROADMAP, "a refused park must write nothing");
+  } finally { cleanup(dir); }
+});
+
+test("a normal single-line id in the SAME file (not heading-anchored) is unaffected by the refusal - mark/reorder/park still work", () => {
+  const { dir, git } = makeRepo();
+  try {
+    optIn(dir, git);
+    write(dir, "ROADMAP.md", HEADING_ANCHORED_ROADMAP);
+    vocab.mark(dir, { file: "roadmap", key: "r-0101-2", state: "done" });
+    assert.match(read(dir, "ROADMAP.md"), /- \[x\] a normal single-line item `r-0101-2`/);
+  } finally { cleanup(dir); }
+});
+
 // --- park ------------------------------------------------------------------
 
 test("park moves an item between Next and Later, and is reversible", () => {

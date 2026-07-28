@@ -402,6 +402,48 @@ test("a pre-populated roadmapIds ledger from an earlier run does not mask a CURR
   } finally { cleanup(dir); }
 });
 
+// --- 1.0.2 fix round: real bakingapp-shape roadmap (### subsection commitments) ---
+//
+// roadmapids.js's subsection anchoring (### heading is the item, absorbing
+// its ordered steps/prose as a body) needs no code change in init.js at all:
+// backfill() already returns the annotated section string, and init.js just
+// prints whatever itemSections contains. This test is the real-input check
+// for that path - init.js's own report surfaces the subsection detail.
+
+test("init's recognized-sections report surfaces ### subsection detail for a real bakingapp-shape roadmap, and Parked/Dead are reported as skipped", () => {
+  const { dir } = makeRepo();
+  try {
+    write(dir, "ROADMAP.md", [
+      "# ROADMAP",
+      "## Committed next work",
+      "1. A top-level ordered item directly under the section",
+      "### Ship dark mode",
+      "1. Add a settings toggle",
+      "   Some prose continuation.",
+      "### Fix the login race",
+      "1. Reproduce the race condition",
+      "### Parked",
+      "- An old idea that never shipped",
+      "### Dead",
+      "- An abandoned rewrite attempt",
+    ].join("\n"));
+
+    const r = run(dir, "init.js");
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /roadmap sections recognized:.*## Committed next work \(2 items as ### subsections, ### Parked\/### Dead skipped\)/);
+
+    const roadmap = read(dir, "ROADMAP.md");
+    assert.match(roadmap, /1\. A top-level ordered item directly under the section\s*`r-\d{4}-1`/);
+    assert.match(roadmap, /### Ship dark mode\s*`r-\d{4}-2`/);
+    assert.match(roadmap, /### Fix the login race\s*`r-\d{4}-3`/);
+    assert.doesNotMatch(roadmap, /Add a settings toggle\s*`r-/, "children of a ### commitment must not get an id");
+    assert.doesNotMatch(roadmap, /### Parked\s*`r-/, "### Parked must not get an id");
+    assert.doesNotMatch(roadmap, /### Dead\s*`r-/, "### Dead must not get an id");
+    assert.doesNotMatch(roadmap, /An old idea that never shipped\s*`r-/);
+    assert.doesNotMatch(r.stderr, /WARNING/, "real commitments getting real ids must never trigger the loud warning");
+  } finally { cleanup(dir); }
+});
+
 test("with CLAUDE_PLUGIN_ROOT unset: writes no .now/enabled, but still gitignores models.json", () => {
   const { dir } = makeRepo();
   try {

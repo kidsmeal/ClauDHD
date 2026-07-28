@@ -79,6 +79,15 @@
  * unchanged; only move()'s inlined copy exists, and only because holding
  * one wider critical section is what fix 2 requires.
  *
+ * Heading-anchored refusal (1.0.2 fix round): roadmapids.js's subsection
+ * anchoring can stamp an id onto a "### " heading line, which makes that item
+ * a BLOCK (the heading plus every absorbed child beneath it). mark(file:
+ * "roadmap")/reorder()/park() each move or edit ONE line by id - applying
+ * that single-line semantics to a heading-anchored id would tear the heading
+ * from its children, so all three REFUSE it (throw, write nothing) rather
+ * than silently mangling a multi-line item. Detection: the id's own line is a
+ * "### " heading.
+ *
  * The triage "quick fix" button is deliberately NOT one of these five verbs:
  * B2 (plan blockers) resolved that it keeps writing through quick.js's
  * existing `## Quick fixes` batch, unchanged. See docs/SCRIPT-VOCABULARY.md.
@@ -339,12 +348,31 @@ function markIdea(root, position, expectedLine, marker) {
   return hit;
 }
 
+// Heading-anchored refusal (1.0.2 fix round) - see this file's header
+// comment. Scans every line (not just the checkbox/bullet lines a verb would
+// otherwise look at) for the one carrying `id`'s trailing suffix; if that
+// line is a "### " heading, the item is a block and the calling verb must
+// refuse rather than act on it as a single line.
+const HEADING_LINE_RE = /^###\s/;
+
+function assertNotHeadingAnchored(lines, id, verb) {
+  const idRe = new RegExp("`" + escapeRe(id) + "`\\s*$");
+  const idx = lines.findIndex((l) => idRe.test(l.content));
+  if (idx !== -1 && HEADING_LINE_RE.test(lines[idx].content.trim())) {
+    throw new Error(
+      verb + ": heading-anchored items move as blocks; block operations are not yet " +
+      "supported, edit ROADMAP.md directly in a session"
+    );
+  }
+}
+
 function markRoadmap(root, key, marker) {
   const RM = roadmapPath(root);
   return withLock(roadmapLockPath(nowDirOf(root)), () => {
     if (!fs.existsSync(RM)) throw new Error("mark: no ROADMAP.md at " + RM);
     const raw = fs.readFileSync(RM, "utf8");
     const lines = splitPreservingEol(raw);
+    assertNotHeadingAnchored(lines, key, "mark");
     const idRe = new RegExp("`" + escapeRe(key) + "`\\s*$");
     const idx = lines.findIndex((l) => idRe.test(l.content) && /^\s*-\s*\[[ x~]\]/.test(l.content));
     if (idx === -1) throw new Error("mark: no checkbox item carrying id " + key + " in ROADMAP.md");
@@ -583,6 +611,7 @@ function reorder(root, { section, id, position } = {}) {
     if (!fs.existsSync(RM)) throw new Error("reorder: no ROADMAP.md at " + RM);
     const raw = fs.readFileSync(RM, "utf8");
     const lines = splitPreservingEol(raw);
+    assertNotHeadingAnchored(lines, id, "reorder");
     const bounds = sectionBounds(raw, section);
     if (!bounds) throw new Error(`reorder: ROADMAP.md has no "## ${section}" section`);
     const { start, end } = bounds;
@@ -636,6 +665,7 @@ function park(root, { id, to } = {}) {
   return withLock(roadmapLockPath(nowDir), () => {
     if (!fs.existsSync(RM)) throw new Error("park: no ROADMAP.md at " + RM);
     const text = fs.readFileSync(RM, "utf8");
+    assertNotHeadingAnchored(splitPreservingEol(text), id, "park");
     const idRe = new RegExp("`" + escapeRe(id) + "`\\s*$");
 
     let fromSection = null;
