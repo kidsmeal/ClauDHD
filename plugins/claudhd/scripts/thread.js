@@ -141,7 +141,13 @@ function renderNow(root, state) {
   if (nowText == null) return null;
   if (!state.override) nowText = clearOverrideLine(nowText);
 
-  const cursor = Object.assign({}, cursorFacts(nowText) || {}, { lastTouched: todayDate() });
+  // `state.intent` (already the merged, just-written value - see
+  // writeAndRender()) is threaded through so this cursor's activeThread/
+  // nextAction never re-derive by parsing NOW.md text (see state.js's
+  // cursorFacts() header comment) - even though render() itself already
+  // reads intent directly for display, keeping every live cursor derivation
+  // consistent closes off the same class of stale-derivation bug elsewhere.
+  const cursor = Object.assign({}, cursorFacts(nowText, state.intent) || {}, { lastTouched: todayDate() });
   const ideasText = readOrNull(path.join(root, "IDEAS.md"));
 
   const renderState = {

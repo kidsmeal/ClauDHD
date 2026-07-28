@@ -87,13 +87,25 @@ function sectionBody(text, headingStartsWith) {
   return lines.slice(start + 1, end);
 }
 
-// --- Cursor (from NOW.md) --------------------------------------------------
-function cursorFacts(now) {
+// --- Cursor (from NOW.md, with state.intent as the derivation's root fix) --
+//
+// `intent` (B3's `{ thread, next }`) is the single source of truth for the
+// Active thread's two lines - nowrender.js already renders from it directly,
+// never parsing it back out of NOW.md (see nowrender.js's header comment).
+// cursorFacts() used to violate that same contract on the read side: it
+// re-derived activeThread/nextAction by parsing NOW.md text with nowfile.js's
+// parser, predating the generated shape, instead of trusting the field that
+// was already authoritative. When `intent` carries a thread/next, it wins
+// here too; NOW.md text is parsed for these two fields ONLY as the fallback
+// for a pre-1.0 hand-written file that never went through thread.js (where
+// state.intent was never set, so it stays null).
+function cursorFacts(now, intent) {
   if (now == null) return null;
+  const hasIntent = !!(intent && (intent.thread != null || intent.next != null));
   return {
-    activeThread: capOrNull(activeThread(now)),
+    activeThread: hasIntent ? capOrNull(intent.thread) : capOrNull(activeThread(now)),
     activeThreadLineCount: activeThreadLineCount(now),
-    nextAction: capOrNull(nextAction(now)),
+    nextAction: hasIntent ? capOrNull(intent.next) : capOrNull(nextAction(now)),
     lastTouched: lastTouchedDate(now),
     queueCount: queueCount(now),
     quickFixCount: quickFixCount(now),
@@ -156,14 +168,18 @@ function roadmapFacts(roadmap) {
  *   now/ideas/shipped/roadmap  file contents as strings, or null if absent.
  *   git          { uncommitted, unpushed, lastCommitAt, lastCommitMsg } already
  *                gathered by the caller (null fields where unknown).
+ *   intent       the CURRENT state.intent ({ thread, next }) or null, so the
+ *                Stop hook's own cursor derivation never diverges from the
+ *                single source of truth thread.js's setIntent already wrote
+ *                (see cursorFacts()'s header comment).
  */
-function buildState({ generatedAt, branch, now, ideas, shipped, roadmap, git }) {
+function buildState({ generatedAt, branch, now, ideas, shipped, roadmap, git, intent }) {
   const g = git || {};
   return {
     schemaVersion: SCHEMA_VERSION,
     generatedAt: generatedAt || null,
     branch: branch || null,
-    cursor: cursorFacts(now),
+    cursor: cursorFacts(now, intent),
     ideas: ideasFacts(ideas),
     shipped: shippedFacts(shipped),
     roadmap: roadmapFacts(roadmap),
@@ -300,19 +316,19 @@ function issueRoadmapIds(nowDir, roadmapPath, date) {
     let before;
     try { before = fs.readFileSync(roadmapPath, "utf8"); }
     catch (e) {
-      if (e.code === "ENOENT") return { text: null, changed: false, issued: [] };
+      if (e.code === "ENOENT") return { text: null, changed: false, issued: [], itemSections: [] };
       throw e;
     }
 
     const priorState = readState(nowDir);
     const ledger = (priorState && Array.isArray(priorState.roadmapIds)) ? priorState.roadmapIds : [];
 
-    const { text: after, issued } = roadmapIds.backfill(before, date, ledger);
+    const { text: after, issued, itemSections } = roadmapIds.backfill(before, date, ledger);
     const changed = after !== before;
     if (changed) fs.writeFileSync(roadmapPath, after);
     writeStateAtomic(nowDir, { roadmapIds: issued }, ["roadmapIds"]);
 
-    return { text: after, changed, issued };
+    return { text: after, changed, issued, itemSections };
   });
 }
 

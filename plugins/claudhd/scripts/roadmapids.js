@@ -29,15 +29,34 @@ const ID_RE = /\br-(\d{4})-(\d+)\b/g;
 // defined as not an item list - it is the live cursor's pointer (design
 // section 4: "the roadmap's pointer at what is live"), not a roster of
 // discrete commitments, so its bullet (e.g. "- Nothing in flight.") never
-// gets an id no matter its shape. ## Next / ## Later / ## Shipped /
-// ## Non-goals ARE item lists - every bullet there (checkbox or plain prose,
-// e.g. a Shipped one-liner) gets one. An unrecognized/other heading gets no
-// ids either (conservative default: only a known item section opts in).
-// Matched by heading PREFIX so "## Next (candidates, not commitments)" and
-// "## Non-goals (decided, not \"later\")" still count; a "### " subheading
+// gets an id no matter its shape.
+//
+// BLOCKLIST, not allowlist (1.0.1 fix round): every OTHER `## ` section IS an
+// item list, whatever a real project happens to name it (a hardcoded
+// allowlist of the template's four names - Next/Later/Shipped/Non-goals -
+// silently gave zero ids to a kept roadmap using its own section names, e.g.
+// "## In Progress" / "## Committed next work (in order)" / "## Up Next" /
+// "## Planned Implementation" / "## Existing Backlog"). A "### " subheading
 // does not end a section (matches nowfile.js's convention).
+//
+// `## Now`'s exclusion is matched EXACTLY (heading text only, after
+// headingOf()'s own trim - so trailing whitespace is already tolerated, but
+// nothing else is), never by prefix: a prefix match against "## Now" also
+// swallowed an unrelated real heading like "## Now Playing", wrongly
+// excluding it from ids. Every heading other than the literal "## Now" -
+// including one that merely starts with those characters, and including
+// "## Next (candidates, not commitments)"-style parentheticals on OTHER
+// headings - is an item section.
 const ITEM_LINE_RE = /^(\s*-\s*(?:\[[ x~]\]\s*)?)(.*)$/;
-const ITEM_SECTION_PREFIXES = ["## Next", "## Later", "## Shipped", "## Non-goals"];
+const NOW_SECTION_HEADING = "## Now";
+
+// A thematic break (---, ***, ___, three or more of the same character, no
+// interior spaces) must never be mistaken for a dash bullet: ITEM_LINE_RE's
+// bullet-marker capture is greedy enough that a bare `---` parses as a
+// zero-space dash bullet with `--` content, so a rule separating two real
+// commitments got tagged as the run's only id. Excluded before ITEM_LINE_RE
+// ever sees the line.
+const THEMATIC_BREAK_RE = /^\s*([-*_])\1{2,}\s*$/;
 
 function headingOf(content) {
   const t = content.trim();
@@ -45,7 +64,7 @@ function headingOf(content) {
 }
 
 function isItemSectionHeading(heading) {
-  return ITEM_SECTION_PREFIXES.some((p) => heading.startsWith(p));
+  return heading !== NOW_SECTION_HEADING;
 }
 
 // The exact shape backfill() itself appends: a space, then the id in
@@ -134,16 +153,28 @@ function backfill(text, date, ledger) {
   let counter = maxCounterFor(seen, prefix);
 
   let inItemSection = false; // before any heading, or under a non-item one: no ids
+  // Every heading classified as an item section, in encounter order - so a
+  // caller (init.js) can report exactly what it recognized, and warn loudly
+  // when a file has bullets but zero of them landed inside a recognized
+  // section (the allowlist-vs-blocklist failure mode this fix round closes).
+  const itemSections = [];
   for (const line of lines) {
     const heading = headingOf(line.content);
     if (heading != null) {
       inItemSection = isItemSectionHeading(heading);
+      if (inItemSection) itemSections.push(heading);
       continue;
     }
     if (!inItemSection) continue;
+    // A thematic break (---, ***, ___) is a rule, never a dash bullet.
+    if (THEMATIC_BREAK_RE.test(line.content)) continue;
 
     const m = ITEM_LINE_RE.exec(line.content);
     if (!m || !m[2].trim()) continue;
+    // The captured content must hold at least one non-dash/non-space
+    // character - a bullet whose "content" is itself only dashes/spaces
+    // (e.g. a mis-typed rule) is not a real item either.
+    if (!/[^-\s]/.test(m[2])) continue;
     if (ownId(line.content)) continue;
     counter += 1;
     const id = `r-${prefix}-${counter}`;
@@ -151,7 +182,7 @@ function backfill(text, date, ledger) {
     seen.add(id);
   }
 
-  return { text: joinLines(lines), issued: Array.from(seen) };
+  return { text: joinLines(lines), issued: Array.from(seen), itemSections };
 }
 
 module.exports = { nextId, backfill, idsInText, usedIds, splitPreservingEol, joinLines };

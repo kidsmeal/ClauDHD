@@ -296,8 +296,12 @@ function reconcile(root, message, sessionId, willClearBuild) {
   //    cursor facts are parsed from the OLD NOW.md - the Queue/Quick-fixes/
   //    Loose-ends sections carry forward verbatim, so their counts are
   //    unchanged by this regeneration; lastTouched is stamped to today since
-  //    this write is literally touching the file now.
-  const cursor = Object.assign({}, cursorFacts(nowText) || {}, { lastTouched: date });
+  //    this write is literally touching the file now. `prior.intent` is
+  //    threaded through so activeThread/nextAction come from the single
+  //    source of truth (see state.js's cursorFacts() header comment) rather
+  //    than a re-parse of NOW.md text, which can legitimately lag a set-intent
+  //    call made earlier in the same session.
+  const cursor = Object.assign({}, cursorFacts(nowText, prior.intent) || {}, { lastTouched: date });
   const ideasText = readOrNull(path.join(root, "IDEAS.md"));
   // willClearBuild: render as post-clear (idle build) even though `build`
   // (used above, unconditionally, for the Status line / roadmap move) is
@@ -340,6 +344,7 @@ function reconcile(root, message, sessionId, willClearBuild) {
     ideas: ideasText,
     shipped: readOrNull(path.join(root, "SHIPPED.md")),
     roadmap: readOrNull(path.join(root, "ROADMAP.md")),
+    intent: prior.intent,
     git: {
       uncommitted: dirty.size,
       unpushed,

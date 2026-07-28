@@ -11,7 +11,7 @@
       "name": "claudhd",
       "source": "./plugins/claudhd",
       "description": "A generated NOW cursor, mode-enforced phase pipeline, and reviewed commit gate: idea inbox, roadmap with tap-card triage, design grill and review, phased implementation with a reviewed commit gate, and a commit-boundary reconcile that keeps the docs honest without you remembering to.",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": { "name": "kidsmeal" }
     }
   ]

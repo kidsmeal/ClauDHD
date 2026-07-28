@@ -178,6 +178,115 @@ test("backfill treats an id merely referenced in an item's wording as id-less: i
   assert.match(out, /^- \[ \] follow r-0725-1 `r-0725-2`$/m, "the wording (including the referenced id) survives verbatim; a new id is appended as THIS item's own rendered suffix");
 });
 
+// --- Thematic breaks inside an item section (1.0.1 fix round) -------------
+//
+// ITEM_LINE_RE used to match a bare `---` as a dash bullet with zero-space,
+// two-dash content, so a thematic break landed inside an item section (e.g.
+// separating two commitments) got the run's only id: `--- \`r-0727-1\``.
+
+test("backfill: a bare `---` thematic break inside an item section survives byte-identical and never consumes an id", () => {
+  const text = [
+    "## Next",
+    "",
+    "- [ ] a real committed item",
+    "",
+    "---",
+    "",
+    "- [ ] another real item",
+  ].join("\n");
+  const { text: out, issued } = backfill(text, DATE);
+  assert.ok(out.includes("\n---\n"), "the thematic break line must survive byte-identical, untouched");
+  assert.doesNotMatch(out, /^---\s*`r-/m, "the thematic break itself must never get an id");
+  assert.match(out, /a real committed item\s*`r-0725-1`/);
+  assert.match(out, /another real item\s*`r-0725-2`/);
+  assert.equal(new Set(issued).size, 2, "only the two real items consume an id - the thematic break never does");
+});
+
+test("backfill: longer thematic break variants (----, ***, ___) inside an item section are all excluded", () => {
+  const text = [
+    "## Later",
+    "- [ ] item one",
+    "----",
+    "- [ ] item two",
+    "***",
+    "- [ ] item three",
+    "___",
+  ].join("\n");
+  const { text: out, issued } = backfill(text, DATE);
+  assert.doesNotMatch(out, /^----\s*`r-/m);
+  assert.doesNotMatch(out, /^\*\*\*\s*`r-/m);
+  assert.doesNotMatch(out, /^___\s*`r-/m);
+  assert.match(out, /item one\s*`r-0725-1`/);
+  assert.match(out, /item two\s*`r-0725-2`/);
+  assert.match(out, /item three\s*`r-0725-3`/);
+  assert.equal(new Set(issued).size, 3, "only the three real items consume an id");
+});
+
+test("backfill: a bullet whose content is itself only dashes/spaces (not a proper thematic-break line) still gets no id", () => {
+  const text = "## Next\n- --\n- [ ] real item\n";
+  const { text: out, issued } = backfill(text, DATE);
+  assert.doesNotMatch(out, /^- --\s*`r-/m, "content that is only dashes/spaces must not count as a real item");
+  assert.match(out, /real item\s*`r-0725-1`/);
+  assert.equal(new Set(issued).size, 1);
+});
+
+// --- Section blocklist, not allowlist (1.0.1 fix round) --------------------
+//
+// ITEM_SECTION_PREFIXES used to hardcode the template's four section names,
+// so a real project's own kept section headings (e.g. "## In Progress",
+// "## Committed next work (in order)") got no ids at all, even though they
+// were real commitments. Every `## ` section is now an item section EXCEPT
+// `## Now` (the live cursor's pointer, never a roster of commitments).
+
+test("backfill: an unrecognized real-world section heading (not one of the old template's four) still gets ids - blocklist, not allowlist", () => {
+  const text = [
+    "## In Progress",
+    "- [ ] a kept commitment",
+    "## Committed next work (in order)",
+    "- [ ] another kept commitment",
+    "## Existing Backlog",
+    "- [ ] a backlog item",
+  ].join("\n");
+  const { text: out, issued } = backfill(text, DATE);
+  assert.match(out, /a kept commitment\s*`r-0725-1`/);
+  assert.match(out, /another kept commitment\s*`r-0725-2`/);
+  assert.match(out, /a backlog item\s*`r-0725-3`/);
+  assert.equal(new Set(issued).size, 3);
+});
+
+test("backfill: ## Now is still excluded under the blocklist rule, even among otherwise-unrecognized headings", () => {
+  const text = [
+    "## Now",
+    "- Nothing in flight.",
+    "## Up Next",
+    "- [ ] a real item",
+  ].join("\n");
+  const { text: out, issued } = backfill(text, DATE);
+  assert.ok(out.includes("- Nothing in flight."));
+  assert.doesNotMatch(out, /Nothing in flight\.\s*`r-/, "## Now must never get an id under the blocklist rule");
+  assert.match(out, /a real item\s*`r-0725-1`/);
+  assert.equal(new Set(issued).size, 1);
+});
+
+// 1.0.1 fix round (sol finding 2): the ## Now exclusion was a PREFIX match,
+// so an unrelated real heading that merely starts with those characters -
+// e.g. "## Now Playing" - was wrongly excluded from ids too. It must match
+// the heading EXACTLY ("## Now" only); anything else, however it starts, is
+// an item section.
+test("backfill: a heading that merely starts with 'Now' (e.g. '## Now Playing') is NOT the ## Now exclusion - it IS an item section", () => {
+  const text = [
+    "## Now",
+    "- Nothing in flight.",
+    "## Now Playing",
+    "- [ ] a real item under the similarly-named heading",
+  ].join("\n");
+  const { text: out, issued } = backfill(text, DATE);
+  assert.doesNotMatch(out, /Nothing in flight\.\s*`r-/, "the real ## Now pointer must still never get an id");
+  assert.match(out, /a real item under the similarly-named heading\s*`r-0725-1`/,
+    "## Now Playing is a different heading entirely and must get its item an id");
+  assert.equal(new Set(issued).size, 1);
+});
+
 // --- Durable ledger (fix round 2): backfill folds a caller-supplied ledger --
 
 test("backfill's counter and returned ledger both account for ids in the ledger that are no longer visible in the text", () => {

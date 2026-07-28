@@ -39,10 +39,14 @@ const STALE_MS = 6 * 60 * 60 * 1000;
 //
 // One-shot legacy migration: if the build section is absent AND a legacy
 // .gantry/active-phase.json exists (a project that never re-ran /claudhd:build
-// since upgrading), import it into state.json's build section, delete the
-// legacy file, and return the imported value - so the very read that would
-// otherwise see "no sentinel" still enforces against the phase that was
-// actually in flight. Every read after the first sees state.json only; no
+// since upgrading), and that legacy sentinel is not stale (isStale()'s own
+// rule), import it into state.json's build section, delete the legacy file,
+// and return the imported value - so the very read that would otherwise see
+// "no sentinel" still enforces against the phase that was actually in
+// flight. A STALE legacy sentinel is never imported (the legacy file is
+// still removed) - importing a dead phase with enforcement on would gate
+// every future edit against a build nobody is running. Every read after the
+// first sees state.json only; no
 // code path reads the legacy file again once it is gone.
 function readSentinel(root) {
   const nowDir = path.join(root, ".now");
@@ -65,6 +69,24 @@ function readSentinel(root) {
     return null; // no legacy file, or it is malformed - nothing to import.
   }
   if (legacy == null || typeof legacy !== "object") return null;
+
+  // A stale legacy sentinel must never be imported live: importing a
+  // 26-day-old dead phase into state.json's build section with enforcement on
+  // gates every future edit against a build nobody is running. isStale() is
+  // the SAME rule the guards use; there is no "current session" at import
+  // time, so the session half of its AND is passed as undefined - trivially
+  // true for any real legacy sentinel (its own session field is never
+  // undefined), which leaves the age check as the real gate here. The legacy
+  // file is still removed either way - it is one-shot regardless of outcome.
+  if (isStale(legacy, undefined)) {
+    try { fs.unlinkSync(legacyPath); } catch { /* ignore */ }
+    try {
+      process.stderr.write(
+        "sentinel-core: found stale in-flight build state from " + legacy.started + ", not imported\n"
+      );
+    } catch { /* ignore */ }
+    return null;
+  }
 
   try {
     // Lazy require: state.js requires nowfile.js/lock.js/constants.js only, so

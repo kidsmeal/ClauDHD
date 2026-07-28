@@ -8,6 +8,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { makeRepo, cleanup, run, write, exists, optIn } = require("../tools/helpers.js");
+const thread = require("../plugins/claudhd/scripts/thread.js");
 
 test("happy path: breadcrumb written with active thread name", () => {
   const { dir, git } = makeRepo();
@@ -80,6 +81,71 @@ test("state.json is written alongside the breadcrumb with valid facts", () => {
     assert.equal(state.git.uncommitted, 0, "clean tree, ClauDHD's own files excluded");
     assert.equal(state.git.unpushed, null, "no upstream -> null, not 0");
     assert.equal(state.git.lastCommitMsg, "init claudhd");
+  } finally { cleanup(dir); }
+});
+
+// --- 1.0.1 fix round: cursor derives from state.intent, not a re-parse -----
+//
+// thread.js's setIntent updated state.intent, but cursor.activeThread stayed
+// stale and cursor.nextAction could read null because buildState's cursor
+// derivation re-parsed NOW.md text with a parser predating the generated
+// shape, instead of trusting the field that was already authoritative (the
+// same field nowrender.js renders NOW.md's Active thread lines FROM,
+// never parsing them back out - see nowrender.js's header comment).
+
+test("checkpoint derives cursor.activeThread/nextAction from state.intent directly, not by re-parsing NOW.md, once intent exists", () => {
+  const { dir, git } = makeRepo();
+  try {
+    // A hand-written NOW.md whose Active-thread text does NOT match intent -
+    // exactly the divergence class this fix closes (whatever the reason:  a
+    // failed re-render, an external write, or simply staleness).
+    optIn(dir, git, "old thread text in NOW.md");
+    fs.mkdirSync(path.join(dir, ".now"), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, ".now", "state.json"),
+      JSON.stringify({
+        schemaVersion: 2,
+        intent: { thread: "new thread from intent", next: "new next from intent" },
+      })
+    );
+
+    const r = run(dir, "checkpoint.js");
+    assert.equal(r.status, 0, r.stderr);
+    const state = JSON.parse(fs.readFileSync(path.join(dir, ".now", "state.json"), "utf8"));
+    assert.equal(state.cursor.activeThread, "new thread from intent",
+      "cursor.activeThread must come from state.intent, not the stale NOW.md text");
+    assert.equal(state.cursor.nextAction, "new next from intent",
+      "cursor.nextAction must come from state.intent, not the stale NOW.md text");
+  } finally { cleanup(dir); }
+});
+
+test("checkpoint falls back to parsing NOW.md text for cursor facts on a pre-1.0 project that never set intent", () => {
+  const { dir, git } = makeRepo();
+  try {
+    optIn(dir, git, "the hand-written thread");
+    // No state.json at all yet - a genuinely pre-1.0 project.
+    assert.ok(!exists(dir, path.join(".now", "state.json")));
+
+    const r = run(dir, "checkpoint.js");
+    assert.equal(r.status, 0, r.stderr);
+    const state = JSON.parse(fs.readFileSync(path.join(dir, ".now", "state.json"), "utf8"));
+    assert.equal(state.cursor.activeThread, "the hand-written thread",
+      "with no intent ever set, cursor must still parse NOW.md text as before");
+    assert.equal(state.cursor.nextAction, "step");
+  } finally { cleanup(dir); }
+});
+
+test("end to end: thread.js set-intent, then a checkpoint run, sees the new thread and next action in cursor", () => {
+  const { dir, git } = makeRepo();
+  try {
+    optIn(dir, git, "starting thread");
+    thread.setIntent(dir, "renamed via set-intent", "the tiny next step");
+
+    const r = run(dir, "checkpoint.js");
+    assert.equal(r.status, 0, r.stderr);
+    const state = JSON.parse(fs.readFileSync(path.join(dir, ".now", "state.json"), "utf8"));
+    assert.equal(state.cursor.activeThread, "renamed via set-intent");
+    assert.equal(state.cursor.nextAction, "the tiny next step");
   } finally { cleanup(dir); }
 });
 

@@ -89,6 +89,60 @@ test("readSentinel imports a legacy .gantry/active-phase.json into state.json's 
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+// 1.0.1 fix round: a stale legacy sentinel must never be imported live -
+// importing a 26-day-old dead phase into state.json's build section with
+// enforcement on gates every future edit against a build nobody is running.
+test("readSentinel does NOT import a stale legacy .gantry/active-phase.json (different session, > 6h old): the legacy file is still removed, but no build section is created", () => {
+  const dir = mk();
+  try {
+    const stale = {
+      plan: "docs/plan.md",
+      phase: 4,
+      files: ["src/legacy.js"],
+      allow: ["docs/plan.md"],
+      started: new Date(Date.now() - 26 * 24 * 60 * 60 * 1000).toISOString(), // 26 days ago
+      session: "legacy-session-from-26-days-ago",
+    };
+    write(dir, ".gantry/active-phase.json", JSON.stringify(stale));
+
+    const result = core.readSentinel(dir);
+    assert.equal(result, null, "a stale legacy sentinel must not be imported/returned");
+
+    assert.ok(!fs.existsSync(path.join(dir, ".gantry", "active-phase.json")),
+      "the stale legacy file must still be removed (one-shot regardless of outcome)");
+
+    const statePath = path.join(dir, ".now", "state.json");
+    if (fs.existsSync(statePath)) {
+      const state = JSON.parse(fs.readFileSync(statePath, "utf8"));
+      assert.equal(state.build, undefined, "no build section may be created from a stale legacy import");
+    }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("readSentinel DOES import a fresh (non-stale) legacy .gantry/active-phase.json, same as before this fix", () => {
+  const dir = mk();
+  try {
+    const fresh = {
+      plan: "docs/plan.md",
+      phase: 4,
+      files: ["src/legacy.js"],
+      allow: ["docs/plan.md"],
+      started: new Date().toISOString(),
+      session: "fresh-legacy-session",
+    };
+    write(dir, ".gantry/active-phase.json", JSON.stringify(fresh));
+
+    const result = core.readSentinel(dir);
+    assert.deepEqual(result, fresh, "a fresh legacy sentinel must still import normally");
+
+    assert.ok(!fs.existsSync(path.join(dir, ".gantry", "active-phase.json")),
+      "the legacy file must be removed after a successful import");
+
+    const state = JSON.parse(fs.readFileSync(path.join(dir, ".now", "state.json"), "utf8"));
+    assert.deepEqual(state.build, fresh, "the fresh legacy sentinel is persisted into state.json's build section");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("readSentinel does not import when state.json already carries a build section", () => {
   const dir = mk();
   try {

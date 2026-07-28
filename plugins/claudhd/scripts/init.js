@@ -25,11 +25,16 @@
  * Plugin-native hook opt-in (folded in from Gantry): PreToolUse enforcement is
  * available but inert until --enable-hooks writes .now/enabled - the plan's
  * B1 activation gate, honored by both guards AND by the commit-boundary
- * reconcile (see reconcile.js's header comment). Only relevant when init.js
- * runs inside an installed plugin (CLAUDE_PLUGIN_ROOT is set by the plugin
- * host). The legacy .gantry/enabled marker (pre-1.0) is still honored by the
- * guards' own enforcement gating for projects that already have it on disk,
- * but this script never writes it any more.
+ * reconcile (see reconcile.js's header comment). Handled UNCONDITIONALLY
+ * (1.0.1 fix round): everything this needs (NOW_DIR, __filename) is derived
+ * from __dirname/ROOT, never from CLAUDE_PLUGIN_ROOT. Gating the whole block
+ * on that env var (pre-1.0.1) was a real bug - a Bash invocation of this
+ * script does not inherit it the way the plugin host's own invocation does,
+ * so --enable-hooks parsed by nothing and silently no-opped. CLAUDE_PLUGIN_ROOT
+ * now only tailors the detection-only message's wording. The legacy
+ * .gantry/enabled marker (pre-1.0) is still honored by the guards' own
+ * enforcement gating for projects that already have it on disk, but this
+ * script never writes it any more.
  */
 "use strict";
 const { execFileSync, spawnSync } = require("child_process");
@@ -83,13 +88,46 @@ for (const name of ["NOW.md", "IDEAS.md", "SHIPPED.md", "ROADMAP.md"]) {
 // item, or shrink the ledger. `new Date()` is read exactly once, here, and
 // passed in explicitly - roadmapids.js itself never reads the clock.
 let roadmapIdNote = "no ROADMAP.md to backfill";
+let roadmapSectionsNote = null;
+let roadmapWarning = null;
 const roadmapPath = path.join(ROOT, "ROADMAP.md");
 try {
   if (fs.existsSync(roadmapPath)) {
-    const { changed } = issueRoadmapIds(NOW_DIR, roadmapPath, new Date());
+    const { changed, itemSections, text: backfilledText } = issueRoadmapIds(NOW_DIR, roadmapPath, new Date());
     roadmapIdNote = changed
       ? "backfilled ids onto existing ROADMAP.md items"
       : "every ROADMAP.md item already has an id";
+
+    // Every "## " section is an item section except "## Now" (see
+    // roadmapids.js's blocklist rule) - name exactly which headings this run
+    // recognized, so a real project's own section names (not the template's
+    // four) are visibly counted rather than silently skipped.
+    const distinctSections = Array.from(new Set(itemSections || []));
+    roadmapSectionsNote = distinctSections.length
+      ? distinctSections.join(", ")
+      : "(none found - no '## ' section other than '## Now')";
+
+    // A file with bullet lines that nonetheless carries zero ids, or found
+    // zero recognized item sections, almost certainly means the section-
+    // detection logic missed real commitments - warn loudly rather than
+    // silently reporting a false "backfilled ids" success (the exact failure
+    // mode this fix round closes: twelve real commitments got no ids while
+    // init printed "backfilled ids" and roadmap.count read 0).
+    //
+    // Checked against the CURRENT backfilled file's own content (`backfilledText`,
+    // i.e. issueRoadmapIds()'s returned `text`), never the durable `roadmapIds`
+    // ledger: the ledger accumulates every id ever issued across every past
+    // run, so a project with a healthy prior run's ids already persisted would
+    // have a non-empty ledger even if THIS run's file carries none at all -
+    // masking exactly the failure this warning exists to catch.
+    const hasBulletLines = /^\s*-\s*\S/m.test(fs.readFileSync(roadmapPath, "utf8"));
+    const idsInCurrentFile = ((backfilledText || "").match(/`r-\d{4}-\d+`/g) || []).length;
+    if (hasBulletLines && (distinctSections.length === 0 || idsInCurrentFile === 0)) {
+      roadmapWarning =
+        "! ClauDHD WARNING: ROADMAP.md has bullet lines but " +
+        (distinctSections.length === 0 ? "no recognized item sections were found" : "the file carries zero ids") +
+        " - every '## ' section is an item section except '## Now'; check ROADMAP.md's headings.";
+    }
   }
 } catch (e) {
   roadmapIdNote = "could not backfill ROADMAP.md ids (" + e.message + ")";
@@ -287,9 +325,12 @@ console.log(
   "  Created: " + (created.length ? created.join(", ") : "none (all already present)") + "\n" +
   "  Kept existing: " + (kept.length ? kept.join(", ") : "none") + "\n" +
   "  NOW.md marker: " + markerNote + "\n" +
-  "  ROADMAP.md ids: " + roadmapIdNote + "\n" +
+  "  ROADMAP.md ids: " + roadmapIdNote +
+  (roadmapSectionsNote != null ? "\n  roadmap sections recognized: " + roadmapSectionsNote : "") + "\n" +
   "  .gitignore: " + giNote
 );
+
+if (roadmapWarning) console.error(roadmapWarning);
 
 if (failed.length) {
   console.error("! ClauDHD: could not write " + failed.join("; ") + ".\n" +
@@ -305,8 +346,14 @@ console.log(
   "  Model backends: " + modelsStatus
 );
 
-// Plugin-native hook opt-in: only relevant when init.js is executed inside an
-// installed plugin (CLAUDE_PLUGIN_ROOT is set by the plugin host).
+// Plugin-native hook opt-in: handled UNCONDITIONALLY - everything this needs
+// (NOW_DIR, __filename) is derived from __dirname/ROOT already, never from
+// CLAUDE_PLUGIN_ROOT. Gating the whole block on that env var (pre-1.0.1) was
+// a real bug: a Bash invocation of this script (as opposed to the plugin
+// host's own invocation) does not inherit CLAUDE_PLUGIN_ROOT, so
+// `--enable-hooks` parsed by nothing, wrote no marker, and printed output
+// byte-identical to a plain detection-only run - a silent no-op. The env var
+// now only tailors the wording of the detection-only message below.
 //
 // Default run (no --enable-hooks flag): report that enforcement is available
 // but NOT enabled, and print how to enable it. Do NOT write .now/enabled.
@@ -315,32 +362,35 @@ console.log(
 // PreToolUse guards AND the commit-boundary reconcile become active. Lives
 // inside .now/, which init.js's .gitignore step already covers wholesale, so
 // no separate gitignore entry is needed - this is deliberately a per-machine
-// opt-in, not a checked-in team setting.
-if (process.env.CLAUDE_PLUGIN_ROOT) {
-  const enableHooks = process.argv.includes("--enable-hooks");
+// opt-in, not a checked-in team setting. This must never silently no-op:
+// either the marker ends up on disk (created or already present) or the run
+// fails loudly with a non-zero exit.
+const enableHooks = process.argv.includes("--enable-hooks");
 
-  if (!enableHooks) {
-    // Detection-only report: inform that enforcement is available but inert.
-    console.log(
-      "\n--- Phase enforcement hooks ---\n" +
-      "  This is a plugin install. PreToolUse enforcement is available but NOT enabled.\n" +
-      "  The hooks are inert until you opt in. To enable them, re-run the opt-in step\n" +
-      "  in /claudhd:init (it will run: node \"" + __filename + "\" --enable-hooks)."
-    );
-  } else {
-    // Explicit opt-in: write the .now/enabled marker (empty file).
-    const markerPath = path.join(NOW_DIR, "enabled");
-    try {
-      fs.mkdirSync(NOW_DIR, { recursive: true });
-      if (!fs.existsSync(markerPath)) {
-        fs.writeFileSync(markerPath, "");
-        console.log("  Created .now/enabled (hook opt-in marker).");
-      } else {
-        console.log("  .now/enabled already present.");
-      }
-    } catch (e) {
-      console.error("! ClauDHD: could not write .now/enabled: " + e.message);
+if (!enableHooks) {
+  // Detection-only report: inform that enforcement is available but inert.
+  console.log(
+    "\n--- Phase enforcement hooks ---\n" +
+    "  " + (process.env.CLAUDE_PLUGIN_ROOT ? "This is a plugin install. " : "") +
+    "PreToolUse enforcement is available but NOT enabled.\n" +
+    "  The hooks are inert until you opt in. To enable them, re-run the opt-in step\n" +
+    "  in /claudhd:init (it will run: node \"" + __filename + "\" --enable-hooks)."
+  );
+} else {
+  // Explicit opt-in: write the .now/enabled marker (empty file).
+  const markerPath = path.join(NOW_DIR, "enabled");
+  try {
+    fs.mkdirSync(NOW_DIR, { recursive: true });
+    if (!fs.existsSync(markerPath)) {
+      fs.writeFileSync(markerPath, "");
+      console.log("\n--- Phase enforcement hooks ---\n  Created .now/enabled (hook opt-in marker).");
+    } else {
+      console.log("\n--- Phase enforcement hooks ---\n  .now/enabled already present.");
     }
+  } catch (e) {
+    console.error("! ClauDHD: could not write .now/enabled: " + e.message + "\n" +
+      "  --enable-hooks must never silently no-op; fix the cause and re-run.");
+    process.exit(1);
   }
 }
 

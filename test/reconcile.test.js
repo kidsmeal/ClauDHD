@@ -318,6 +318,35 @@ test("a commit with no active plan still writes the SHIPPED entry (build/from bo
   } finally { cleanup(dir); }
 });
 
+// 1.0.1 fix round (sol finding 1): the commit-boundary reconcile computed its
+// committed cursor facts (both the local `cursor` object it renders NOW.md's
+// Last-touched/Counts lines from, and the buildState() snapshot it persists
+// to state.json) by re-parsing NOW.md text, without threading state.intent
+// through - the same stale-derivation bug bug-5 fixed in checkpoint.js,
+// unfixed here. `intent` (thread.js's setIntent) is the single source of
+// truth for activeThread/nextAction; NOW.md text can legitimately lag it
+// between a set-intent call and the next regeneration.
+test("commit-boundary reconcile derives committed cursor.activeThread/nextAction from state.intent, not by re-parsing (possibly stale) NOW.md text", () => {
+  const { dir, git } = makeRepo();
+  try {
+    // NOW.md's own text still shows the OLD thread - intent already moved on.
+    optInNoEnforcement(dir, git, "old thread text in NOW.md");
+    writeState(dir, {
+      schemaVersion: 2,
+      intent: { thread: "new thread from intent", next: "new next from intent" },
+    });
+
+    const r = runGuard(dir, 'git commit -m "commit while NOW.md text still lags intent"');
+    assert.equal(r.status, 0, r.stderr);
+
+    const state = readState(dir);
+    assert.equal(state.cursor.activeThread, "new thread from intent",
+      "the committed cursor.activeThread must come from state.intent, not the stale NOW.md text");
+    assert.equal(state.cursor.nextAction, "new next from intent",
+      "the committed cursor.nextAction must come from state.intent, not the stale NOW.md text");
+  } finally { cleanup(dir); }
+});
+
 test(".now/state.json is regenerated on every reconcile but is never staged, because .now/ is gitignored", () => {
   const { dir, git } = makeRepo();
   try {

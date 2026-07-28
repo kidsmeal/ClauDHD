@@ -46,13 +46,19 @@ function safeBranch(b) {
 }
 
 const { activeThread } = require("./nowfile.js");
-const { buildState, writeStateAtomic } = require("./state.js");
+const { buildState, writeStateAtomic, readState } = require("./state.js");
 
 // The Stop hook owns exactly the facts buildState() computes - never the
 // build/design sections other writers (sentinel.js, and later the reconcile)
 // own. Naming the keys explicitly, rather than relying on buildState()'s
 // current shape, means a future field added to buildState() can't silently
 // start clobbering someone else's section through this call site.
+//
+// `intent` is deliberately NOT in this list (thread.js's setIntent owns it,
+// same as ever) even though this hook now READS it below to derive `cursor`
+// correctly - reading another writer's key to compute your OWN owned key's
+// value is not the same as writing it, so the single-owner-per-key contract
+// (see state.js's header comment) still holds.
 const STOP_HOOK_OWNED_KEYS = [
   "schemaVersion", "generatedAt", "branch", "cursor", "ideas", "shipped", "roadmap", "git",
 ];
@@ -133,6 +139,15 @@ ${recent}
     const unpushedRaw = git(["rev-list", "--count", "@{u}..HEAD"]);
     const unpushed = /^\d+$/.test(unpushedRaw) ? Number(unpushedRaw) : null;
 
+    // Read the CURRENT state.intent (thread.js's setIntent is the only
+    // writer) so buildState()'s cursor derivation can take activeThread/
+    // nextAction from it directly instead of re-parsing NOW.md text - see
+    // state.js's cursorFacts() header comment. null on a pre-1.0 project
+    // that never called thread.js, or on any read failure; either way
+    // cursorFacts() falls back to its old NOW.md-parsing behavior.
+    const priorState = readState(NOW_DIR);
+    const intent = (priorState && priorState.intent) || null;
+
     const snapshot = buildState({
       generatedAt: new Date().toISOString(),
       branch: (branch && branch !== "unknown" && branch !== "HEAD") ? branch : null,
@@ -140,6 +155,7 @@ ${recent}
       ideas: readOrNull(path.join(ROOT, "IDEAS.md")),
       shipped: readOrNull(path.join(ROOT, "SHIPPED.md")),
       roadmap: readOrNull(path.join(ROOT, "ROADMAP.md")),
+      intent,
       git: {
         uncommitted: dirty.size,
         unpushed,

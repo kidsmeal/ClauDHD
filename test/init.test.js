@@ -8,7 +8,8 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const { makeRepo, cleanup, run, write, read, exists } = require("../tools/helpers.js");
+const { spawnSync } = require("node:child_process");
+const { makeRepo, cleanup, run, write, read, exists, scriptPath } = require("../tools/helpers.js");
 const { render } = require("../plugins/claudhd/scripts/nowrender.js");
 
 test("init scaffolds a fresh NOW.md by rendering render({}), not by copying templates/NOW.md", () => {
@@ -189,6 +190,37 @@ test("with CLAUDE_PLUGIN_ROOT set and --enable-hooks: writes .now/enabled (B1's 
   } finally { cleanup(dir); }
 });
 
+// Fix round (1.0.1): --enable-hooks was gated on CLAUDE_PLUGIN_ROOT, which a
+// Bash invocation of init.js (as opposed to the plugin host's own
+// invocation) never inherits - so the flag parsed by nothing and printed
+// output byte-identical to a plain detection-only run, a silent no-op.
+test("without CLAUDE_PLUGIN_ROOT (the Bash-invocation shape) and --enable-hooks: still writes .now/enabled, never a silent no-op", () => {
+  const { dir } = makeRepo();
+  try {
+    const env = { ...process.env, CLAUDE_PROJECT_DIR: dir };
+    delete env.CLAUDE_PLUGIN_ROOT;
+    delete env.CLAUDHD_PROJECT_DIR;
+    const res = spawnSync(process.execPath, [scriptPath("init.js"), "--enable-hooks"], { encoding: "utf8", env });
+    assert.equal(res.status, 0, res.stderr);
+    assert.ok(exists(dir, path.join(".now", "enabled")),
+      ".now/enabled must be created even when CLAUDE_PLUGIN_ROOT is absent from env");
+    assert.match(res.stdout, /Created \.now\/enabled|already present/);
+  } finally { cleanup(dir); }
+});
+
+test("without CLAUDE_PLUGIN_ROOT and no --enable-hooks: default run still reports enforcement available but not enabled", () => {
+  const { dir } = makeRepo();
+  try {
+    const env = { ...process.env, CLAUDE_PROJECT_DIR: dir };
+    delete env.CLAUDE_PLUGIN_ROOT;
+    delete env.CLAUDHD_PROJECT_DIR;
+    const res = spawnSync(process.execPath, [scriptPath("init.js")], { encoding: "utf8", env });
+    assert.equal(res.status, 0, res.stderr);
+    assert.ok(!exists(dir, path.join(".now", "enabled")), ".now/enabled must NOT be created on a default run");
+    assert.match(res.stdout, /enforcement is available but NOT enabled/);
+  } finally { cleanup(dir); }
+});
+
 // ---------------------------------------------------------------------------
 // Phase 3: roadmap id backfill (design section 4).
 // ---------------------------------------------------------------------------
@@ -279,6 +311,94 @@ test("a freshly-scaffolded ROADMAP.md gets real ids assigned for today's date, n
     const idsForToday = (roadmap.match(new RegExp("`r-" + mmdd + "-\\d+`", "g")) || []).length;
     assert.ok(idsForToday >= 4, "every placeholder item (Next/Later/Shipped/Non-goals) should get a real, current-date id");
     assert.doesNotMatch(roadmap, /r-0801-/, "no hardcoded sample id from the template should ever appear");
+  } finally { cleanup(dir); }
+});
+
+// --- 1.0.1 fix round: section blocklist, not allowlist ---------------------
+//
+// A real project's own kept roadmap section names (not the template's four)
+// must still get ids, and init.js must name exactly which sections it
+// recognized, and warn loudly if it recognized none despite real bullets.
+
+test("a real-world ROADMAP.md with its own section names (not the template's four) gets ids backfilled onto every section, and init reports which sections it recognized", () => {
+  const { dir } = makeRepo();
+  try {
+    write(dir, "ROADMAP.md", [
+      "# ROADMAP",
+      "## Now",
+      "- Nothing in flight.",
+      "## In Progress",
+      "- [ ] a kept commitment",
+      "## Committed next work (in order)",
+      "- [ ] another kept commitment",
+      "## Up Next",
+      "- [ ] a queued item",
+      "## Planned Implementation",
+      "- [ ] a planned item",
+      "## Existing Backlog",
+      "- [ ] a backlog item",
+    ].join("\n"));
+
+    const r = run(dir, "init.js");
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /backfilled ids/i);
+    assert.match(r.stdout, /roadmap sections recognized:.*In Progress/);
+    assert.match(r.stdout, /roadmap sections recognized:.*Committed next work/);
+    assert.doesNotMatch(r.stdout, /roadmap sections recognized:.*## Now/, "## Now must never be reported as a recognized item section");
+
+    const roadmap = read(dir, "ROADMAP.md");
+    assert.match(roadmap, /a kept commitment\s*`r-\d{4}-1`/);
+    assert.match(roadmap, /another kept commitment\s*`r-\d{4}-2`/);
+    assert.match(roadmap, /a queued item\s*`r-\d{4}-3`/);
+    assert.match(roadmap, /a planned item\s*`r-\d{4}-4`/);
+    assert.match(roadmap, /a backlog item\s*`r-\d{4}-5`/);
+    assert.doesNotMatch(r.stderr, /WARNING/, "real commitments getting real ids must never trigger the loud warning");
+  } finally { cleanup(dir); }
+});
+
+test("a ROADMAP.md with bullets but no recognized item section (everything under ## Now) makes init warn loudly, not silently report success", () => {
+  const { dir } = makeRepo();
+  try {
+    write(dir, "ROADMAP.md", [
+      "# ROADMAP",
+      "## Now",
+      "- a bullet that never gets an id, since ## Now is never an item section",
+    ].join("\n"));
+
+    const r = run(dir, "init.js");
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stderr, /WARNING/, "init must warn loudly, not silently, when bullets exist but no item section was found");
+    assert.match(r.stderr, /no recognized item sections were found/i);
+  } finally { cleanup(dir); }
+});
+
+// Sol review finding 3 (1.0.1 fix round): the zero-ids warning must key off
+// the CURRENT backfilled file's own content, never the durable roadmapIds
+// ledger - a healthy prior run's ids already persisted in the ledger must
+// not mask a later run whose own file carries none.
+test("a pre-populated roadmapIds ledger from an earlier run does not mask a CURRENT ROADMAP.md whose bullets carry no ids", () => {
+  const { dir } = makeRepo();
+  try {
+    fs.mkdirSync(path.join(dir, ".now"), { recursive: true });
+    fs.writeFileSync(path.join(dir, ".now", "state.json"), JSON.stringify({
+      schemaVersion: 2,
+      roadmapIds: ["r-0101-1", "r-0101-2", "r-0101-3"],
+    }));
+    // A real item section (## Next is recognized), but both bullets are
+    // dash-only content - never a real item per the 1.0.1 thematic-break
+    // fix, so this run's own file ends up with genuinely zero ids, even
+    // though the ledger above already has three from an earlier run.
+    write(dir, "ROADMAP.md", [
+      "# ROADMAP",
+      "## Next",
+      "- --",
+      "- - -",
+    ].join("\n"));
+
+    const r = run(dir, "init.js");
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stderr, /WARNING/, "a pre-populated ledger must not mask a current file that carries zero ids");
+    assert.match(r.stderr, /the file carries zero ids/i);
   } finally { cleanup(dir); }
 });
 
