@@ -910,6 +910,122 @@ test("file-list-guard: fail-open (exit 0) when the resolved root genuinely does 
   }
 });
 
+// ---------------------------------------------------------------------------
+// Per-file root resolution (closes the enforcement gap the live test found):
+// the guard now walks UP from the edited file's own directory to the nearest
+// adopted ancestor, using THAT as the root, rather than trusting only the
+// session's env-pinned root.
+// ---------------------------------------------------------------------------
+
+test("file-list-guard PER-FILE ROOT: an edit inside a scratch adopted repo is guarded even when the session's env pins a DIFFERENT (unadopted) root - the exact live-test scenario", () => {
+  const sessionRoot = mk(); // env points here - unadopted, entirely unrelated
+  const scratchRepo = mk(); // the repo the file actually lives in - adopted
+  try {
+    writeNowEnabled(scratchRepo); // walkForRoot matches on .now/enabled alone
+    writeSentinel(scratchRepo, { files: ["src/allowed.js"], allow: [] });
+
+    const absPath = path.join(scratchRepo, "src", "unlisted.js");
+    const r = spawnSync(process.execPath, [GUARD], {
+      encoding: "utf8",
+      input: JSON.stringify(editPayload(scratchRepo, absPath)),
+      // env pins sessionRoot, NOT scratchRepo - the guard must still find
+      // scratchRepo by walking up from the edited file's own directory.
+      env: { ...process.env, GANTRY_PROJECT_DIR: sessionRoot },
+    });
+    assert.equal(r.status, 0, r.stderr);
+    const deny = parseDeny(r.stdout);
+    assert.ok(deny !== null,
+      "the edit must be denied against the scratch repo's OWN sentinel, even though env pins a different root; got: " + r.stdout);
+  } finally {
+    fs.rmSync(sessionRoot, { recursive: true, force: true });
+    fs.rmSync(scratchRepo, { recursive: true, force: true });
+  }
+});
+
+test("file-list-guard PER-FILE ROOT: an edit in a directory with no adopted ancestor stays unguarded, even though the walk runs", () => {
+  const sessionRoot = mk(); // also unadopted - the fallback finds nothing either
+  const unadoptedDir = mk();
+  try {
+    const absPath = path.join(unadoptedDir, "src", "whatever.js");
+    const r = spawnSync(process.execPath, [GUARD], {
+      encoding: "utf8",
+      input: JSON.stringify(editPayload(unadoptedDir, absPath)),
+      env: { ...process.env, GANTRY_PROJECT_DIR: sessionRoot },
+    });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stdout.trim(), "", "no adopted ancestor anywhere -> the edit must stay unguarded; stdout: " + r.stdout);
+  } finally {
+    fs.rmSync(sessionRoot, { recursive: true, force: true });
+    fs.rmSync(unadoptedDir, { recursive: true, force: true });
+  }
+});
+
+test("file-list-guard PER-FILE ROOT: nested adoption - an edit inside an adopted subdirectory of an adopted repo enforces against the NEAREST (inner) sentinel, not the outer repo's", () => {
+  const outer = mk();
+  try {
+    writeEnabled(outer);
+    writeSentinel(outer, { files: ["outer/allowed.js"], allow: [] });
+
+    const inner = path.join(outer, "vendor", "adopted-subrepo");
+    fs.mkdirSync(inner, { recursive: true });
+    write(inner, ".now/enabled", "");
+    write(inner, ".now/state.json", JSON.stringify({
+      schemaVersion: 2,
+      build: {
+        plan: "inner-plan.md", phase: 1,
+        files: ["inner/allowed.js"], allow: [],
+        started: new Date().toISOString(), session: "inner-session",
+      },
+    }));
+
+    // A file allowed by the INNER sentinel but not the outer one: only
+    // resolving to the inner (nearest) root permits this.
+    const absPath = path.join(inner, "inner", "allowed.js");
+    const r = runGuard(outer, editPayload(inner, absPath));
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stdout.trim(), "",
+      "the inner sentinel's own files list must permit this edit; stdout: " + r.stdout);
+
+    // A file that is only in the OUTER sentinel's scope must still deny,
+    // proving the outer sentinel is NOT the one being consulted here.
+    const outerOnlyPath = path.join(inner, "outer", "allowed.js");
+    const r2 = runGuard(outer, editPayload(inner, outerOnlyPath));
+    assert.equal(r2.status, 0, r2.stderr);
+    const deny = parseDeny(r2.stdout);
+    assert.ok(deny !== null,
+      "a path only the OUTER sentinel allows must still deny under the inner (nearest) root; got: " + r2.stdout);
+  } finally { fs.rmSync(outer, { recursive: true, force: true }); }
+});
+
+test("file-list-guard PER-FILE ROOT: a forced internal walk failure fails open, even though the env root's mode would otherwise deny", () => {
+  const envRoot = mk(); // adopted, idle mode - would deny a source-shaped path under mode-inversion
+  const scratchRepo = mk(); // where the edited file actually lives; the walk crashes here
+  try {
+    writeEnabled(envRoot);
+    writeStateNoSentinel(envRoot, { mode: "idle" });
+
+    // Force a genuine internal walk failure: a legacy marker paired with a
+    // NOW.md that is a DIRECTORY, not a file - readFileSync throws EISDIR
+    // mid-walk (root.js's walkForRoot returns WALK_FAILED for this, not null).
+    fs.mkdirSync(path.join(scratchRepo, ".gantry"), { recursive: true });
+    fs.writeFileSync(path.join(scratchRepo, ".gantry", "enabled"), "");
+    fs.mkdirSync(path.join(scratchRepo, "NOW.md"));
+
+    const absPath = path.join(scratchRepo, "src", "file.js");
+    const r = spawnSync(process.execPath, [GUARD], {
+      encoding: "utf8",
+      input: JSON.stringify(editPayload(scratchRepo, absPath)),
+      env: { ...process.env, GANTRY_PROJECT_DIR: envRoot },
+    });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stdout.trim(), "",
+      "a genuine walk failure must fail open, never fall back to denying under the env root's mode; stdout: " + r.stdout);
+  } finally {
+    fs.rmSync(envRoot, { recursive: true, force: true });
+    fs.rmSync(scratchRepo, { recursive: true, force: true });
+  }
+});
+
 // --- exit code is always 0 (even on deny, and even on the new inverted deny) ---
 
 test("file-list-guard: exit code is always 0 even when producing deny JSON (sentinel present)", () => {

@@ -141,6 +141,21 @@ test("implementer.md verification step carries the real-input rule", () => {
   assert.ok(/fixture.only/i.test(text) || text.includes("fixture-only"), "implementer.md must state fixture-only is insufficient for real-input code");
 });
 
+// implementer.md and phase-reviewer.md must both name the same core rubric
+// labels so the two prompts cannot silently drift apart - checking only
+// implementer.md would let the REVIEWER's side drift freely (e.g. a future
+// rename/removal of one of these checks in phase-reviewer.md would pass this
+// test even though the two prompts now disagree about what "passing" means).
+test("implementer.md and phase-reviewer.md both name the same rubric core checks (plan adherence, test discipline, reachability, conventions)", () => {
+  const implementerText = fs.readFileSync(path.join(PLUGIN, "agents", "implementer.md"), "utf8");
+  const reviewerText = fs.readFileSync(path.join(PLUGIN, "agents", "phase-reviewer.md"), "utf8");
+  const CORE_CHECKS = [/Plan adherence/, /Test discipline/, /Reachability/, /Conventions/];
+  for (const label of CORE_CHECKS) {
+    assert.match(implementerText, label, "implementer.md must name the " + label + " check");
+    assert.match(reviewerText, label, "phase-reviewer.md must name the " + label + " check");
+  }
+});
+
 // --- Re-review context: the orchestrator docs must carry the mechanism, with
 // the 5-FAIL-round valve, not gantry's 2-cycle cap. ---
 

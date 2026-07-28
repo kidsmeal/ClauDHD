@@ -75,6 +75,100 @@ test("sentinel-core.js's resolveRoot IS root.js's resolver (re-exported, not rei
     "the guards must resolve root through the exact same function root.js exports");
 });
 
+// --- walkForRoot: per-file root resolution (closes the enforcement gap where
+// a session's env root differs from the repo the edited file actually lives
+// in) ---
+
+function writeNowEnabled(dir) {
+  fs.mkdirSync(path.join(dir, ".now"), { recursive: true });
+  fs.writeFileSync(path.join(dir, ".now", "enabled"), "");
+}
+function writeLegacyEnabled(dir) {
+  fs.mkdirSync(path.join(dir, ".gantry"), { recursive: true });
+  fs.writeFileSync(path.join(dir, ".gantry", "enabled"), "");
+}
+function writeMarkedNow(dir) {
+  fs.writeFileSync(path.join(dir, "NOW.md"), "# NOW\n<!-- claudhd: opt-in marker -->\n");
+}
+
+test("walkForRoot: finds the nearest ancestor carrying .now/enabled, starting several levels deep", () => {
+  const dir = mk();
+  try {
+    writeNowEnabled(dir);
+    const deep = path.join(dir, "src", "nested", "deeper");
+    fs.mkdirSync(deep, { recursive: true });
+    const found = resolveRoot.walkForRoot(deep);
+    assert.equal(found, dir);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("walkForRoot: an ancestor's .gantry/enabled counts ONLY when paired with a claudhd-marked NOW.md at that same level", () => {
+  const dir = mk();
+  try {
+    writeLegacyEnabled(dir);
+    writeMarkedNow(dir);
+    const deep = path.join(dir, "src");
+    fs.mkdirSync(deep, { recursive: true });
+    const found = resolveRoot.walkForRoot(deep);
+    assert.equal(found, dir);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("walkForRoot: a bare .gantry/enabled with NO claudhd-marked NOW.md at that level does not match", () => {
+  const dir = mk();
+  try {
+    writeLegacyEnabled(dir);
+    // No NOW.md at all - the pairing requirement must not match.
+    const found = resolveRoot.walkForRoot(dir);
+    assert.equal(found, null);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("walkForRoot: returns null (fails open) when no ancestor up to the filesystem root carries a marker", () => {
+  const dir = mk();
+  try {
+    const deep = path.join(dir, "unadopted", "src");
+    fs.mkdirSync(deep, { recursive: true });
+    const found = resolveRoot.walkForRoot(deep);
+    assert.equal(found, null);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("walkForRoot: nested adoption picks the NEAREST marker, not the outer repo's", () => {
+  const outer = mk();
+  try {
+    writeNowEnabled(outer);
+    const inner = path.join(outer, "vendor", "adopted-subrepo");
+    fs.mkdirSync(inner, { recursive: true });
+    writeNowEnabled(inner);
+    const deep = path.join(inner, "src");
+    fs.mkdirSync(deep, { recursive: true });
+    const found = resolveRoot.walkForRoot(deep);
+    assert.equal(found, inner, "the nearest (inner) adopted ancestor must win over the outer repo");
+  } finally { fs.rmSync(outer, { recursive: true, force: true }); }
+});
+
+// --- WALK_FAILED: a genuine internal error, distinct from a clean "no
+// adopted ancestor" result. Callers must never conflate the two: `null`
+// falls back to the env root; `WALK_FAILED` must fail open outright. ---
+
+test("walkForRoot: an unresolvable start path (not a string) returns WALK_FAILED, not null, and never throws", () => {
+  assert.doesNotThrow(() => resolveRoot.walkForRoot(undefined));
+  assert.equal(resolveRoot.walkForRoot(undefined), resolveRoot.WALK_FAILED);
+  assert.notEqual(resolveRoot.WALK_FAILED, null, "WALK_FAILED must be a distinct value from null");
+});
+
+test("walkForRoot: a legacy marker paired with an unreadable NOW.md (a directory, not a file) mid-walk returns WALK_FAILED, not null", () => {
+  const dir = mk();
+  try {
+    writeLegacyEnabled(dir);
+    fs.mkdirSync(path.join(dir, "NOW.md")); // NOW.md as a directory -> readFileSync throws EISDIR
+    const found = resolveRoot.walkForRoot(dir);
+    assert.equal(found, resolveRoot.WALK_FAILED,
+      "a real internal error during the walk must not be reported as a clean 'no ancestor' result");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 // --- cross-check: a state writer (checkpoint.js) and a guard (file-list-guard.js)
 // resolve the SAME root from the SAME env, so a guard can never enforce against
 // a different repo than the one the writer just updated. ---

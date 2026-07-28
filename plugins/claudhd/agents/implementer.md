@@ -33,6 +33,14 @@ When the caller passes reviewer findings (Required fixes or Fix-now notes) along
 3. No new scope, no cleanup beyond the findings, no reinterpreting the phase. If a finding cannot be fixed without a design decision the plan never made, stop and report it as a blocker instead of improvising.
 4. Re-run the phase's verification, then report in the same format below, listing each finding as fixed / blocked with one line of evidence.
 
+## Build to pass this: what the phase-reviewer checks
+Before you report done, the phase-reviewer grades your diff against these. Build to pass them the first time, not to fix them after a FAIL:
+- **Plan adherence**: every file the plan's Files list names gets touched, or its absence is justified; nothing outside that list gets touched (a test the phase's Verification names is the one exception - it counts as in-plan even if the Files list omits it); the plan's named verification exists.
+- **Conventions**: the project's naming, structure, typing/annotation, event, and asset rules, obeyed exactly; none of its documented anti-patterns; no hand-edited generated/cache files.
+- **Test discipline**: tests-first, added or changed alongside the code, never just the code; nothing disabled, skipped, or deleted to make a test pass; the named verification command genuinely passes when run for real; where the phase consumes real project data/config/content, the real artifact gets exercised, not fixtures alone.
+- **Reachability**: every new exported function, command, event, or user-facing capability needs either a live non-test caller in the diff or an explicit wiring note (`Wired-by: phase N` / `Wired-by: deferred` / `Wired-by: none (...)`) - an uncalled capability with neither is silent dead code.
+- **Docs staleness awareness**: if the diff moves, renames, deletes, or adds a real module/path, expect the reviewer to check whether the project's standing docs (map, glossary, conventions, CLAUDE.md) still reference the old shape - this never fails the review, but naming the stale reference yourself saves a round.
+
 ## Output
 A short report:
 - Phase implemented (number + name).

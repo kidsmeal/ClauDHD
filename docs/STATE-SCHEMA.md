@@ -164,6 +164,10 @@ build phase. Otherwise, the plan-backed shape (`sentinel.js write`):
   allow: string[],     // paths always allowed regardless of files[] (plan itself, audit docs, ROADMAP.md)
   started: string,     // ISO 8601 timestamp
   session: string,     // the session id that started this phase
+  originalFiles: string[], // files[] as first parsed for this phase, frozen -
+                            // a same-plan+phase re-write (fix-relay) carries
+                            // this forward unchanged even as files[] widens
+                            // via add-files; see .now/review-log.jsonl below
 }
 ```
 
@@ -190,6 +194,9 @@ or phase number to parse Files from:
                        // build-mode allowlist has no generic *.md allowance
   started: string,
   session: string,
+  originalFiles: string[], // == files[] at write-files time; write-files never
+                            // widens across calls the way write's fix-relay
+                            // path does, so this is always a fresh copy
 }
 ```
 
@@ -197,6 +204,65 @@ or phase number to parse Files from:
 is `null`, so a quick sentinel never tries to flip a nonexistent phase's
 status; `moveRoadmapItemToShipped` is likewise never reached for it (that
 path is gated on `build.plan` truthiness too).
+
+## `.now/review-log.jsonl` - the persistent review-round log
+
+Not part of `state.json` - a separate, append-only, newline-delimited JSON
+file. `.now/` is gitignored, so this log never rides a commit either; it is
+a local record of what review rounds actually happened, since `build`'s
+rounds (via `.gantry/review-round.json`) die with the phase the moment it
+clears - before this log existed, a phase's review history left no trace at
+all once the phase closed.
+
+Written by `sentinel.js` only, immediately before it destroys a phase's
+recorded rounds: in `clear` (unconditionally, whenever a sentinel was
+active - even one with zero recorded rounds, since the scope record itself
+is worth keeping), and in `write`/`write-files` whenever they discard
+another phase's rounds (a `write` for a different plan/phase; a `write-files`
+call, which always overwrites whatever sentinel preceded it). Appended with
+a single `fs.appendFileSync` call - no lock, no temp+rename: an append-only
+line write does not need the merge-preserving discipline `state.json` does,
+and this file is never read by anything that would notice a race. A write
+failure (disk full, `.now/` unwritable, ...) is reported to stderr and
+swallowed - logging can never block a phase from clearing.
+
+**Orphaned round data:** `clear` can be reached with a round file present but
+no readable sentinel (e.g. `state.json`'s `build` section was reset out from
+under an in-flight review by something other than `sentinel.js`). Rather than
+destroying that round data with no trace at all, `clear` falls back to a
+closing record built from the round file's OWN `plan`/`phase` fields (it
+always carries them) with `started: null` and `originalFiles`/`finalFiles`
+both `[]` - the scope fields are genuinely unknown in this case, but the
+round history itself is not lost.
+
+One line per closed phase:
+
+```
+{
+  plan: string | null,      // the closed phase's plan path (null for a quick sentinel)
+  phase: number | "quick",  // the closed phase's number
+  rounds: [                 // every round.js record-round call recorded for
+                             // this phase, verbatim, in order (empty array
+                             // if none were ever recorded)
+    { round: number, verdict: string, fixes: string, recorded: string }
+  ],
+  started: string | null,   // the closed sentinel's `started` timestamp
+  cleared: string,          // ISO 8601 timestamp of this log line itself
+  originalFiles: string[],  // the phase's build.files list as FIRST written
+                             // (falls back to finalFiles for a closing phase
+                             // whose original sentinel is unavailable)
+  finalFiles: string[],     // build.files at clear/replace time - compare
+                             // against originalFiles to see add-files widening
+  changedFiles: string[],   // `git status --porcelain -z` at clear/replace
+                             // time, repo-relative POSIX paths, VERBATIM (the
+                             // -z form disables git's quoting/escaping of
+                             // special characters), renames resolved to their
+                             // new path - the actual diff, independent of
+                             // what the plan scoped or the reviewer saw;
+                             // empty array (never a failure) if git is
+                             // unavailable or the directory is not a repo
+}
+```
 
 ### `design` (object, or `null`)
 

@@ -146,8 +146,21 @@ function main() {
     return;
   }
 
-  // 3. Resolve project root.
-  const root = resolveRoot(process.env);
+  // 3. Resolve project root: prefer the nearest adopted ancestor of the
+  // edited file itself (root.js's walkForRoot) over the session's env-pinned
+  // root, so an edit inside a DIFFERENT adopted repo than the one the
+  // session's env vars point at is still enforced against its own repo, not
+  // silently invisible to the guard. A CLEAN "no adopted ancestor" result
+  // (null) falls back to the env-resolved root - unchanged behavior for
+  // every session rooted at (or above) the repo it is actually editing. A
+  // genuine internal walk failure (WALK_FAILED) is NEVER treated the same
+  // way: trusting the env root's mode/sentinel when the walk itself could
+  // not be trusted risks denying (or allowing) against the wrong repo's
+  // rules, so this fails open outright instead.
+  const envRoot = resolveRoot(process.env);
+  const walkedRoot = resolveRoot.walkForRoot(path.dirname(filePath));
+  if (walkedRoot === resolveRoot.WALK_FAILED) return;
+  const root = walkedRoot || envRoot;
 
   // 4. Check the activation marker (B1). Absent -> guard inactive, fail open;
   // a project with neither marker is entirely unaffected by anything below.

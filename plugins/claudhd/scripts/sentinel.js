@@ -59,7 +59,15 @@
  * The review-round file shares the sentinel's lifecycle: `write` for a
  * DIFFERENT plan/phase removes it (a fresh phase starts with no prior
  * rounds; a re-write for the SAME plan+phase - the /claudhd:build fix-relay
- * path - keeps it), and `clear` always removes it.
+ * path - keeps it), `write-files` removes it unconditionally (it always
+ * overwrites whatever sentinel preceded it), and `clear` always removes it.
+ * In every one of those removal cases, the closing phase is first appended
+ * as one JSON line to `.now/review-log.jsonl` (plan, phase, every recorded
+ * round, started/cleared timestamps, and the original-vs-final files list
+ * plus the actual git-status changed files) - see docs/STATE-SCHEMA.md for
+ * the line shape. `.now/` is gitignored; this log is local-only, append-only,
+ * and never blocks the phase lifecycle command that triggered it: a logging
+ * failure is reported to stderr and swallowed.
  *
  * The sentinel is ONLY written/removed by this script (invoked over Bash by the
  * orchestrator). It is never written or removed via a tool op (Edit/Write/rm),
@@ -77,6 +85,7 @@
 "use strict";
 const fs = require("fs");
 const path = require("path");
+const { execSync } = require("child_process");
 
 const { resolveRoot, normalize, readSentinel, isStale } = require("./sentinel-core.js");
 const { writeStateAtomic } = require("./state.js");
@@ -84,6 +93,7 @@ const { writeStateAtomic } = require("./state.js");
 const ROOT = resolveRoot(process.env);
 const NOW_DIR = path.join(ROOT, ".now");
 const ROUND_PATH = path.join(ROOT, ".gantry", "review-round.json");
+const REVIEW_LOG_PATH = path.join(NOW_DIR, "review-log.jsonl");
 
 // ---------------------------------------------------------------------------
 // Plan parsing
@@ -265,6 +275,74 @@ function _clearRoundFile() {
 }
 
 // ---------------------------------------------------------------------------
+// Review log (.now/review-log.jsonl) - the persistent record review rounds
+// used to leave no trace of once their phase closed. See docs/STATE-SCHEMA.md
+// for the line shape.
+// ---------------------------------------------------------------------------
+
+// The actual changed-file list from `git status --porcelain -z`, repo-relative
+// POSIX paths, renames resolved to their NEW path. The NUL-delimited `-z` form
+// is required, not the newline form: git quotes/escapes special characters
+// (spaces, non-ASCII, quotes, ...) in the plain porcelain output, which would
+// corrupt a path round-tripped through this log; `-z` disables that quoting
+// entirely and emits paths verbatim. It also changes the field ORDER for a
+// rename/copy record: `XY NEWPATH\0OLDPATH\0` (new path first), unlike the
+// human-readable `XY OLDPATH -> NEWPATH` arrow form - the loop below reads
+// the first field as the (new) path and, for a rename/copy status (R or C in
+// either status column), consumes and discards the second (old) field.
+// Best-effort: git absent, not a repo, or any error yields an empty array
+// rather than blocking the log.
+function _gitStatusFiles() {
+  try {
+    const raw = execSync("git status --porcelain -z", { cwd: ROOT, encoding: "utf8" });
+    const tokens = raw.split("\0");
+    if (tokens.length && tokens[tokens.length - 1] === "") tokens.pop(); // trailing split artifact
+
+    const files = [];
+    for (let i = 0; i < tokens.length; i++) {
+      const entry = tokens[i];
+      if (entry.length < 3) continue; // defensive: malformed/short record
+      const xy = entry.slice(0, 2);
+      files.push(entry.slice(3).replace(/\\/g, "/"));
+      if (xy.includes("R") || xy.includes("C")) i++; // skip the paired old-path field
+    }
+    return files;
+  } catch {
+    return [];
+  }
+}
+
+// Append one closed-phase line to .now/review-log.jsonl before a phase's
+// recorded rounds are destroyed. `closing` names the phase being closed
+// (plan, phase, started, files, originalFiles - the sentinel object, or a
+// best-effort stand-in when the exact sentinel is unavailable); `round` is
+// the parsed .gantry/review-round.json contents, or null when no rounds were
+// ever recorded for this phase.
+//
+// Never blocks the caller: any failure (disk full, .now/ unwritable, a
+// directory sitting where the file should be, ...) is logged to stderr and
+// swallowed, so a logging problem can never stop a phase from clearing.
+function _appendReviewLog(closing, round) {
+  try {
+    const line = JSON.stringify({
+      plan: closing.plan,
+      phase: closing.phase,
+      rounds: round && Array.isArray(round.rounds) ? round.rounds : [],
+      started: closing.started || null,
+      cleared: new Date().toISOString(),
+      originalFiles: Array.isArray(closing.originalFiles) ? closing.originalFiles
+        : (Array.isArray(closing.files) ? closing.files : []),
+      finalFiles: Array.isArray(closing.files) ? closing.files : [],
+      changedFiles: _gitStatusFiles(),
+    }) + "\n";
+    fs.mkdirSync(NOW_DIR, { recursive: true });
+    fs.appendFileSync(REVIEW_LOG_PATH, line, "utf8");
+  } catch (e) {
+    process.stderr.write("sentinel.js: could not append .now/review-log.jsonl: " + e.message + "\n");
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Subcommands
 // ---------------------------------------------------------------------------
 
@@ -330,12 +408,22 @@ function cmdWrite(args) {
   // is a fresh start and its widening does not carry over.
   let existing = null;
   try { existing = readSentinel(ROOT); } catch { existing = null; }
-  if (existing && existing.plan === planRel && existing.phase === phaseNumber &&
-      Array.isArray(existing.files)) {
+  const sameSentinelPhase = existing && existing.plan === planRel && existing.phase === phaseNumber;
+  if (sameSentinelPhase && Array.isArray(existing.files)) {
     for (const p of existing.files) {
       if (typeof p === "string" && !files.includes(p)) files.push(p);
     }
   }
+
+  // originalFiles freezes the phase's Files list as first parsed - a re-write
+  // for the SAME plan+phase (the fix-relay path) carries the ORIGINAL forward
+  // unchanged rather than re-stamping it from the current (possibly widened)
+  // parse, so the review log can later show add-files widening as a diff
+  // against a stable baseline. A fresh phase's original IS this write's parse.
+  const originalFiles = sameSentinelPhase
+    ? (Array.isArray(existing.originalFiles) ? existing.originalFiles.slice()
+        : (Array.isArray(existing.files) ? existing.files.slice() : files.slice()))
+    : files.slice();
 
   const sentinel = {
     plan: planRel,
@@ -344,6 +432,7 @@ function cmdWrite(args) {
     allow,
     started: new Date().toISOString(),
     session,
+    originalFiles,
   };
 
   try {
@@ -357,9 +446,14 @@ function cmdWrite(args) {
   // fresh phase must start with no prior-round context. Same plan+phase is
   // the /claudhd:build fix-relay path re-running write mid-review-loop; its
   // rounds are live and must survive, or the re-review loses exactly the
-  // context this file exists to carry.
+  // context this file exists to carry. Before discarding another phase's
+  // rounds, log the phase they belonged to - see docs/STATE-SCHEMA.md.
   const round = _readRoundFile();
   if (round && (round.plan !== planRel || round.phase !== phaseNumber)) {
+    const closing = (existing && existing.plan === round.plan && existing.phase === round.phase)
+      ? existing
+      : { plan: round.plan, phase: round.phase, started: null, files: [], originalFiles: [] };
+    _appendReviewLog(closing, round);
     _clearRoundFile();
   }
 
@@ -407,7 +501,21 @@ function cmdWriteFiles(args) {
     allow: ["NOW.md"],
     started: new Date().toISOString(),
     session,
+    originalFiles: files.slice(),
   };
+
+  // write-files always overwrites whatever sentinel preceded it (the active-
+  // phase refusal above already ruled out clobbering a live one) - so any
+  // round file still on disk belongs to a phase that is about to be
+  // replaced. Log it, exactly like write's cross-phase case, before it dies.
+  const round = _readRoundFile();
+  if (round) {
+    const closing = (existing && existing.plan === round.plan && existing.phase === round.phase)
+      ? existing
+      : { plan: round.plan, phase: round.phase, started: null, files: [], originalFiles: [] };
+    _appendReviewLog(closing, round);
+    _clearRoundFile();
+  }
 
   try {
     writeStateAtomic(NOW_DIR, { build: sentinel }, ["build"]);
@@ -426,6 +534,26 @@ function cmdClear() {
   // stranded on disk.
   let current;
   try { current = readSentinel(ROOT); } catch { current = null; }
+
+  // The phase is closing either way: log it (rounds, scope diff) BEFORE any
+  // of that is destroyed - a phase with no rounds still gets a scope record,
+  // since the log's job is "what happened to this phase", not just "what did
+  // the reviewer say".
+  const round = _readRoundFile();
+  if (current != null) {
+    _appendReviewLog(current, round);
+  } else if (round != null) {
+    // Orphaned round data: the sentinel is gone or unreadable (e.g. state.json
+    // was reset out from under an in-flight review) but a round file still
+    // exists. The round file itself carries plan/phase, so use those as a
+    // fallback closing record rather than silently destroying the rounds with
+    // no trace at all - the scope fields are simply unknown in this case.
+    _appendReviewLog(
+      { plan: round.plan, phase: round.phase, started: null, files: [], originalFiles: [] },
+      round
+    );
+  }
+
   // The phase is closing either way: any recorded review rounds die with it.
   _clearRoundFile();
   if (current == null) return; // no-op for an already-absent sentinel - exit 0 silently.

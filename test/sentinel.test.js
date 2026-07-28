@@ -2,7 +2,7 @@
 /* Tests for sentinel.js - write / clear / add-files subcommands. */
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { spawnSync } = require("node:child_process");
+const { spawnSync, execSync } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -734,5 +734,247 @@ test("clear: removes the round file along with the sentinel", () => {
     assert.equal(r.status, 0, r.stderr);
     assert.ok(!sentinelExists(dir), "sentinel must be cleared");
     assert.ok(!roundsExist(dir), "recorded rounds die with the phase");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// --- persistent review-round log (.now/review-log.jsonl) ---
+
+function readReviewLogLines(dir) {
+  const p = path.join(dir, ".now", "review-log.jsonl");
+  const text = fs.readFileSync(p, "utf8");
+  return text.split("\n").filter(Boolean).map((l) => JSON.parse(l));
+}
+function reviewLogExists(dir) {
+  return fs.existsSync(path.join(dir, ".now", "review-log.jsonl"));
+}
+
+test("clear: appends a review-log line with the recorded rounds intact", () => {
+  const dir = mk();
+  try {
+    const planPath = writePlan(dir);
+    run(dir, ["write", planPath, "2"]);
+    runIn(dir, ["record-round", planPath, "2", "FAIL"], "round one fixes");
+    runIn(dir, ["record-round", planPath, "2", "PASS-WITH-NOTES"], "round two fixes");
+    const r = run(dir, ["clear"]);
+    assert.equal(r.status, 0, r.stderr);
+
+    const lines = readReviewLogLines(dir);
+    assert.equal(lines.length, 1, "clear must append exactly one line");
+    const entry = lines[0];
+    assert.equal(entry.plan, "docs/plan.md");
+    assert.equal(entry.phase, 2);
+    assert.equal(entry.rounds.length, 2, "both recorded rounds must be carried verbatim");
+    assert.equal(entry.rounds[0].verdict, "FAIL");
+    assert.match(entry.rounds[0].fixes, /round one fixes/);
+    assert.equal(entry.rounds[1].verdict, "PASS-WITH-NOTES");
+    assert.match(entry.rounds[1].fixes, /round two fixes/);
+    assert.ok(entry.started, "started must be carried from the sentinel");
+    assert.ok(entry.cleared, "cleared must be stamped");
+    assert.deepEqual(entry.originalFiles, ["src/foo.js", "src/bar.js"]);
+    assert.deepEqual(entry.finalFiles, ["src/foo.js", "src/bar.js"]);
+    assert.ok(Array.isArray(entry.changedFiles), "changedFiles must be an array");
+    // The exact values changedFiles carries for a real git repo are asserted
+    // by the dedicated git-backed test below, not repeated here.
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("clear: changedFiles carries the EXACT real `git status --porcelain -z` result at clear time, not just an array shape", () => {
+  const dir = mk();
+  try {
+    execSync("git init -q", { cwd: dir });
+    execSync('git config user.email "t@t.example"', { cwd: dir });
+    execSync('git config user.name "Test"', { cwd: dir });
+
+    const planPath = writePlan(dir);
+    write(dir, "committed.js", "// base\n");
+    write(dir, ".gitignore", ".now/\n.gantry/\n");
+    execSync("git add -A", { cwd: dir });
+    execSync('git commit -q -m base', { cwd: dir });
+
+    run(dir, ["write", planPath, "2"]); // creates .now/state.json - gitignored, must not appear below
+
+    // Real, deliberate changes after the base commit: one tracked-file edit,
+    // one brand-new untracked file.
+    fs.writeFileSync(path.join(dir, "committed.js"), "// changed\n");
+    write(dir, "feature.js", "// new\n");
+
+    const r = run(dir, ["clear"]);
+    assert.equal(r.status, 0, r.stderr);
+
+    const lines = readReviewLogLines(dir);
+    const entry = lines[lines.length - 1];
+    assert.deepEqual(
+      entry.changedFiles.slice().sort(),
+      ["committed.js", "feature.js"].sort(),
+      "changedFiles must be the exact real git-status paths, no more, no less; got: " + JSON.stringify(entry.changedFiles)
+    );
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("clear: changedFiles preserves a special-character filename VERBATIM (spaces and parentheses) - the -z form must never quote/escape it", () => {
+  const dir = mk();
+  try {
+    execSync("git init -q", { cwd: dir });
+    execSync('git config user.email "t@t.example"', { cwd: dir });
+    execSync('git config user.name "Test"', { cwd: dir });
+
+    const planPath = writePlan(dir);
+    write(dir, ".gitignore", ".now/\n.gantry/\n");
+    execSync("git add -A", { cwd: dir });
+    execSync('git commit -q -m base', { cwd: dir });
+
+    run(dir, ["write", planPath, "2"]);
+
+    // A real untracked file whose name would be quoted/escaped by plain
+    // `git status --porcelain` (no -z): spaces and parentheses. Safe across
+    // Windows/POSIX filesystems, unlike embedded quotes or non-ASCII bytes.
+    const specialName = "weird file (v2).js";
+    write(dir, specialName, "// special\n");
+
+    const r = run(dir, ["clear"]);
+    assert.equal(r.status, 0, r.stderr);
+
+    const lines = readReviewLogLines(dir);
+    const entry = lines[lines.length - 1];
+    assert.deepEqual(
+      entry.changedFiles, [specialName],
+      "the special-character filename must land in changedFiles byte-for-byte, with no quoting artifacts; got: " + JSON.stringify(entry.changedFiles)
+    );
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("clear: originalFiles stays frozen across an add-files widening, while finalFiles reflects the widened list", () => {
+  const dir = mk();
+  try {
+    const planPath = writePlan(dir);
+    run(dir, ["write", planPath, "2"]);
+    run(dir, ["add-files", "reviewer/cited.js"]);
+
+    const r = run(dir, ["clear"]);
+    assert.equal(r.status, 0, r.stderr);
+
+    const lines = readReviewLogLines(dir);
+    const entry = lines[lines.length - 1];
+    assert.deepEqual(entry.originalFiles, ["src/foo.js", "src/bar.js"],
+      "originalFiles must stay frozen at the phase's first-parsed scope, unaffected by the later add-files widening");
+    assert.deepEqual(entry.finalFiles, ["src/foo.js", "src/bar.js", "reviewer/cited.js"],
+      "finalFiles must reflect the add-files widening");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("clear: with no rounds recorded still appends a scope record line", () => {
+  const dir = mk();
+  try {
+    const planPath = writePlan(dir);
+    run(dir, ["write", planPath, "2"]);
+    // no record-round call at all
+    const r = run(dir, ["clear"]);
+    assert.equal(r.status, 0, r.stderr);
+
+    const lines = readReviewLogLines(dir);
+    assert.equal(lines.length, 1);
+    assert.equal(lines[0].phase, 2);
+    assert.deepEqual(lines[0].rounds, [], "no rounds were recorded, so rounds must be an empty array");
+    assert.deepEqual(lines[0].originalFiles, ["src/foo.js", "src/bar.js"]);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("clear: an ORPHANED round file (no readable sentinel) still gets logged, using the round file's own plan/phase, before it is destroyed", () => {
+  const dir = mk();
+  try {
+    const planPath = writePlan(dir);
+    run(dir, ["write", planPath, "2"]);
+    runIn(dir, ["record-round", planPath, "2", "FAIL"], "orphaned round fixes");
+    assert.ok(roundsExist(dir), "sanity: the round file must exist before the sentinel is wiped");
+
+    // Simulate the sentinel becoming unreadable/absent out from under the
+    // round file: reset state.json's build section to null directly,
+    // leaving .gantry/review-round.json untouched.
+    const stateJsonPath = path.join(dir, ".now", "state.json");
+    const state = JSON.parse(fs.readFileSync(stateJsonPath, "utf8"));
+    state.build = null;
+    fs.writeFileSync(stateJsonPath, JSON.stringify(state, null, 2));
+    assert.ok(!sentinelExists(dir), "sanity: readSentinel must now see no active sentinel");
+
+    const r = run(dir, ["clear"]);
+    assert.equal(r.status, 0, r.stderr);
+
+    const lines = readReviewLogLines(dir);
+    assert.equal(lines.length, 1, "the orphaned round data must still produce exactly one log line");
+    assert.equal(lines[0].plan, "docs/plan.md", "plan must come from the round file's own field");
+    assert.equal(lines[0].phase, 2, "phase must come from the round file's own field");
+    assert.equal(lines[0].rounds.length, 1);
+    assert.match(lines[0].rounds[0].fixes, /orphaned round fixes/);
+    assert.ok(!roundsExist(dir), "the orphaned round file must still be removed");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("clear: a log-write failure does not block the clear", () => {
+  const dir = mk();
+  try {
+    const planPath = writePlan(dir);
+    run(dir, ["write", planPath, "2"]);
+    // Sabotage the log path itself: a directory sitting where the file must
+    // go makes appendFileSync throw (EISDIR), simulating a write failure.
+    fs.mkdirSync(path.join(dir, ".now", "review-log.jsonl"));
+
+    const r = run(dir, ["clear"]);
+    assert.equal(r.status, 0, "clear must still succeed even when the log append fails\nstderr: " + r.stderr);
+    assert.ok(!sentinelExists(dir), "the sentinel must still be cleared despite the logging failure");
+    assert.ok(!roundsExist(dir), "recorded rounds must still die with the phase despite the logging failure");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("clear: no sentinel present logs nothing (no phase was actually closing)", () => {
+  const dir = mk();
+  try {
+    const r = run(dir, ["clear"]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(!reviewLogExists(dir), "clear on an absent sentinel has no phase to log");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("write: a re-write for a DIFFERENT phase logs the discarded phase's rounds before removing them", () => {
+  const dir = mk();
+  try {
+    const planPath = writePlan(dir);
+    run(dir, ["write", planPath, "2"]);
+    runIn(dir, ["record-round", planPath, "2", "FAIL"], "phase two fixes");
+
+    const r = run(dir, ["write", planPath, "3"]);
+    assert.equal(r.status, 0, r.stderr);
+
+    const lines = readReviewLogLines(dir);
+    assert.equal(lines.length, 1);
+    assert.equal(lines[0].plan, "docs/plan.md");
+    assert.equal(lines[0].phase, 2, "the CLOSED phase (2), not the newly-opened one (3), is what gets logged");
+    assert.equal(lines[0].rounds.length, 1);
+    assert.match(lines[0].rounds[0].fixes, /phase two fixes/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("write-files: logs a stale phase's recorded rounds to review-log.jsonl before clearing them", () => {
+  const dir = mk();
+  try {
+    const planPath = writePlan(dir);
+    run(dir, ["write", planPath, "2"], { GANTRY_SESSION_ID: "stale-session" });
+    runIn(dir, ["record-round", planPath, "2", "FAIL"], "stale phase fixes");
+
+    // Backdate `started` so the sentinel reads as stale (write-files' own
+    // non-blocking rule), the same technique the existing stale test uses.
+    const stateJsonPath = path.join(dir, ".now", "state.json");
+    const state = JSON.parse(fs.readFileSync(stateJsonPath, "utf8"));
+    state.build.started = new Date(Date.now() - 7 * 3600 * 1000).toISOString();
+    fs.writeFileSync(stateJsonPath, JSON.stringify(state, null, 2));
+
+    const r = run(dir, ["write-files", "quick/fix.js"], { GANTRY_SESSION_ID: "current-session" });
+    assert.equal(r.status, 0, r.stderr);
+
+    const lines = readReviewLogLines(dir);
+    assert.equal(lines.length, 1);
+    assert.equal(lines[0].plan, "docs/plan.md");
+    assert.equal(lines[0].phase, 2);
+    assert.match(lines[0].rounds[0].fixes, /stale phase fixes/);
+    assert.ok(!roundsExist(dir), "the stale phase's round file must be cleared, not left orphaned");
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
