@@ -8,20 +8,20 @@ _Committed, so it follows your branch: `git checkout` swaps this cursor to that 
 
 This file is generated (design section 4): the facts below (Mode, Position, from, Counts, Last touched) render from `.now/state.json`, never hand-typed. The Active thread's two lines are the one piece of human prose, prompted at boundaries and persisted as state fields too - so it survives a regeneration without ever being parsed back out of this file.
 
-Mode: (none - idle)
-Position: idle - pick a mode with /claudhd:start or /claudhd:design
-from: (unplanned work)
-Counts: queue 0 · quick fixes 0 · ideas untriaged 0
+Mode: build
+Position: (no plan yet)
+from: r-0727-4
+Counts: queue 0 · quick fixes 0 · ideas untriaged 3
 
-Last touched: 2026-07-28
+Last touched: 2026-07-29
 
 ## Active thread (only one)
 
-**(name your current focus here)**
+**rework app/ to the 1.0 contracts (Object Permanence v2)**
 
 Next physical action:
 
-- [ ] (one tiny step you can start in under a minute)
+- [ ] run /claudhd:plan on app/design/object_permanence_v2_reviewed.md
 
 Rule: when you finish a step, check it off and write the next single tiny step. Do not start another thread until this one ships or you consciously commit the next one to the roadmap (`/claudhd:roadmap <intent>`) and activate it in its turn (`/claudhd:start <id>`).
 

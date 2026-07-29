@@ -39,6 +39,17 @@ are easy to retire. Curate with `/gantry:verify`.
 
 **Close when:** one installed run passes both checks; retire this item.
 
+### 3. Does the `claude` CLI submit a slash command passed as an argument
+
+**Why:** Object Permanence v2's dispatch (`design/object_permanence_v2_reviewed.md` section 6) opens a session with the command already submitted. Whether `claude "/claudhd:start r-0727-4"` actually submits that as the first prompt, versus starting an empty session, is unverified. Both branches are specified in the design, so this picks which one ships; it is not a design decision.
+
+**Code checks already done:** none. This gates the dispatch phase and must be answered before that phase starts.
+
+**Manual check:**
+- in a terminal at any ClauDHD project, run `claude "/claudhd:version"`. observe whether the session opens with that command already run, or opens idle with nothing submitted.
+
+**Close when:** the answer is recorded here and the design's section 6 branch is selected. If it does not submit, dispatch ships as a terminal-only launch plus a clipboard copy button, and the `clipboard_write` courier command enters scope.
+
 ---
 
 ## Closed / stale items

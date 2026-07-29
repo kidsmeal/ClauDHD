@@ -11,7 +11,8 @@ ClauDHD's own backlog and decision log — kept the way the plugin asks you to k
 - [ ] Worktree fleet view (`/claudhd:fleet`) — list each worktree's active thread + checkpoint age. **Deferred:** only build once worktrees are part of an actual workflow we use. `r-0727-1`
 - the two-week kill-criteria trial: use it at session starts, tune thresholds from the fire-rate log, ratify or reverse the section-12 amendment `r-0727-2`
 - [ ] week-two threshold tuning pass from history.jsonl fire rates - done: thresholds re-set from real counts, noisy flags renumbered or retired `r-0727-3`
-- [ ] rework app/ to the 1.0 contracts: consume docs/STATE-SCHEMA.md and docs/SCRIPT-VOCABULARY.md, add the next-up dispatch panel, the cross-project pipeline view, and in-app taps through the plugin's script vocabulary; runs through /claudhd:start -> design -> plan -> build `r-0727-4`
+- [ ] sweep the 1.0 command surface against what actually writes state: every job a dropped command used to own (wrap's "make the next action true", regroup, shipped) either has a current home or is a gap, and every generated file that still accepts a silently-discarded hand edit is denied with a message naming its real write path - done: a table of job -> owning command -> writer script with the gaps named, plus the two known cases fixed (/claudhd:now <text> sets the next action, modes.js denies NOW.md edits). Three instances found so far: review FAIL on an already-committed phase, wrap's job unhomed, NOW.md edits regenerated away. `r-0729-1`
+- [ ] rework app/ to the 1.0 contracts (Object Permanence v2): read schema v2 state.json per docs/STATE-SCHEMA.md instead of hard-failing on schemaVersion !== 1, route every write through vocab.js's five verbs, and add the next-up dispatch panel and cross-project pipeline view `r-0727-4`
 
 ## Later
 
