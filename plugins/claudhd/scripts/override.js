@@ -138,13 +138,20 @@ function clearOverrideLine(text) {
 // ends first so it survives the carry-forward. Best-effort and silent on
 // failure (no NOW.md yet, or a write error): the override's real record is
 // state.json's `override` key, never this rendered mirror.
+//
+// When `state.override` is falsy (clearOverride() just removed it - 1.0.4
+// fix, item 2a), strip any stale "unguarded session ..." line instead of
+// splicing one back in for a record that no longer exists (spliceOverrideLine
+// with no real session would otherwise render a bogus "unknown" line).
 function renderNow(root, state) {
   const nowMdPath = path.join(root, "NOW.md");
   const oldNowText = readOrNull(nowMdPath);
   if (oldNowText == null) return null;
 
-  const rec = state.override || {};
-  const withOverrideLine = spliceOverrideLine(oldNowText, rec.session, Array.isArray(rec.files) ? rec.files.length : 0);
+  const rec = state.override || null;
+  const withOverrideLine = rec
+    ? spliceOverrideLine(oldNowText, rec.session, Array.isArray(rec.files) ? rec.files.length : 0)
+    : clearOverrideLine(oldNowText);
 
   const cursor = Object.assign({}, cursorFacts(withOverrideLine) || {}, { lastTouched: todayDate() });
   const ideasText = readOrNull(path.join(root, "IDEAS.md"));
@@ -216,11 +223,54 @@ function noteOverrideFile(root, sessionId, relPath) {
   });
 }
 
-module.exports = { recordOverride, noteOverrideFile, clearOverrideLine, OVERRIDE_OWNED_KEYS };
+// The explicit escape hatch's own clear (1.0.4 fix, item 2a): removes
+// state.json's `override` key via the merge-preserving writer and strips the
+// rendered "unguarded session ..." line out of NOW.md's Loose ends section,
+// the same two steps thread.js's enterDesign()/enterBuild()/setDesignDoc()/
+// auditDesign() already perform on a mode transition - this is the same
+// clear, reachable directly (`/claudhd:override --clear`) rather than only as
+// a side effect of entering a new mode. Locked (override.lock) against
+// recordOverride()/noteOverrideFile() so a racing guard-permitted edit can
+// never write back an override this call just removed. Idempotent: a call
+// with no active override still re-renders (a no-op render, nothing to
+// strip) and returns false rather than throwing.
+function clearOverride(root) {
+  const nowDir = path.join(root, ".now");
+  const lockPath = path.join(nowDir, "override.lock");
+  return withLock(lockPath, () => {
+    const prior = readState(nowDir);
+    const hadOverride = !!(prior && prior.override);
+    const merged = writeStateAtomic(nowDir, { override: undefined }, OVERRIDE_OWNED_KEYS);
+    renderNow(root, merged);
+    return hadOverride;
+  });
+}
+
+module.exports = { recordOverride, noteOverrideFile, clearOverride, clearOverrideLine, OVERRIDE_OWNED_KEYS };
 
 function runCli() {
   const ROOT = require("./root.js")(process.env);
-  const sessionArg = process.argv[2];
+  const argv = process.argv.slice(2);
+
+  // --clear (1.0.4 fix, item 2a): a dedicated flag, not a bare positional
+  // argument, so it can never collide with the existing session-id positional
+  // below (any other string there is a real session id).
+  if (argv[0] === "--clear" || argv[0] === "clear") {
+    try {
+      const hadOverride = clearOverride(ROOT);
+      console.log(
+        hadOverride
+          ? "override.js: cleared the active override."
+          : "override.js: no active override to clear."
+      );
+    } catch (e) {
+      console.error("override.js: could not clear override: " + e.message);
+      process.exit(1);
+    }
+    return;
+  }
+
+  const sessionArg = argv[0];
   const sessionId = sessionArg ||
     process.env.GANTRY_SESSION_ID ||
     process.env.CLAUDE_CODE_SESSION_ID ||

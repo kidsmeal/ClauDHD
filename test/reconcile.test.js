@@ -6,10 +6,25 @@
  */
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { spawnSync } = require("node:child_process");
+const { spawnSync, execFileSync } = require("node:child_process");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const { makeRepo, cleanup, write, read, exists } = require("../tools/helpers.js");
+
+// Same as makeRepo() (tools/helpers.js), but at a CALLER-CHOSEN directory -
+// needed for the quoted-`-C`-value-with-a-space regression below, since
+// makeRepo()'s own mkdtemp prefix never contains a space.
+function makeRepoAt(dir) {
+  fs.mkdirSync(dir, { recursive: true });
+  const git = (args) => execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" }).trim();
+  git(["init", "-q", "-b", "main"]);
+  git(["config", "user.email", "test@example.com"]);
+  git(["config", "user.name", "Test"]);
+  git(["config", "commit.gpgsign", "false"]);
+  git(["config", "core.autocrlf", "false"]);
+  return { dir, git };
+}
 
 const GUARD = path.join(__dirname, "..", "plugins", "claudhd", "scripts", "hooks", "commit-guard.js");
 const SENTINEL_JS = path.join(__dirname, "..", "plugins", "claudhd", "scripts", "sentinel.js");
@@ -747,4 +762,144 @@ test("a sentinel-clear-then-commit compound command renders NOW.md as post-clear
     // ran) and state.json (after the clear ran for real) both read as idle.
     assert.doesNotMatch(read(dir, "NOW.md"), /phase 2 of/i, "still idle after the real clear - nothing re-rendered it stale");
   } finally { cleanup(dir); }
+});
+
+// ---------------------------------------------------------------------------
+// 1.0.4 S1 fix: cross-repo root resolution. reconcile.js must key off the
+// repo the intercepted commit ACTUALLY runs in, never the session's
+// env-pinned root - reproducing the live-test finding exactly (a commit
+// executed via `cd <scratch> && git commit` got reconciled into an unrelated
+// adopted repo's SHIPPED.md/NOW.md).
+// ---------------------------------------------------------------------------
+
+test("S1: `cd <scratchRepo> && git commit` reconciles the SCRATCH repo, leaving the env-pinned root's SHIPPED.md/NOW.md byte-untouched (the exact live-test scenario)", () => {
+  const env = makeRepo(); // the session's env-pinned root - a DIFFERENT adopted repo
+  const scratch = makeRepo(); // where the commit ACTUALLY runs
+  try {
+    optInNoEnforcement(env.dir, env.git, "env thread");
+    optInNoEnforcement(scratch.dir, scratch.git, "scratch thread");
+    const envNowBefore = read(env.dir, "NOW.md");
+
+    write(scratch.dir, "feature.txt", "some code\n");
+    scratch.git(["add", "feature.txt"]);
+
+    // Single-quoted: the path may contain backslashes on Windows.
+    const command = "cd '" + scratch.dir + "' && git commit -m \"scratch commit\"";
+    const r = runGuard(env.dir, command);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stdout.trim(), "", "no active sentinel in either repo - the commit is allowed through");
+
+    assert.match(read(scratch.dir, "SHIPPED.md"), /scratch commit/, "the SCRATCH repo must be the one reconciled");
+
+    assert.ok(!exists(env.dir, "SHIPPED.md"), "the env-pinned root must NEVER get a SHIPPED.md entry for a commit that ran elsewhere");
+    assert.equal(read(env.dir, "NOW.md"), envNowBefore, "the env-pinned root's NOW.md must be byte-untouched");
+    assert.ok(!exists(env.dir, path.join(".now", "state.json")), "the env-pinned root's state.json must never be regenerated for someone else's commit");
+  } finally { cleanup(env.dir); cleanup(scratch.dir); }
+});
+
+test("S1: `git -C <scratchRepo> commit` reconciles the SCRATCH repo the same way the cd-chain form does", () => {
+  const env = makeRepo();
+  const scratch = makeRepo();
+  try {
+    optInNoEnforcement(env.dir, env.git, "env thread");
+    optInNoEnforcement(scratch.dir, scratch.git, "scratch thread");
+    const envNowBefore = read(env.dir, "NOW.md");
+
+    write(scratch.dir, "feature.txt", "some code\n");
+    scratch.git(["add", "feature.txt"]);
+
+    const command = "git -C " + JSON.stringify(scratch.dir) + ' commit -m "scratch commit via -C"';
+    const r = runGuard(env.dir, command);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stdout.trim(), "");
+
+    assert.match(read(scratch.dir, "SHIPPED.md"), /scratch commit via -C/);
+    assert.ok(!exists(env.dir, "SHIPPED.md"), "git -C must resolve root the same way the cd-chain form does");
+    assert.equal(read(env.dir, "NOW.md"), envNowBefore, "the env-pinned root's NOW.md must be byte-untouched");
+  } finally { cleanup(env.dir); cleanup(scratch.dir); }
+});
+
+test("S1 sol fix: `git -C \"path with spaces\" commit` reconciles the SCRATCH repo, leaving the env-pinned root byte-untouched", () => {
+  const env = makeRepo();
+  const scratchParent = fs.mkdtempSync(path.join(os.tmpdir(), "claudhd-recon-quoted-"));
+  const scratch = makeRepoAt(path.join(scratchParent, "scratch repo with spaces"));
+  try {
+    optInNoEnforcement(env.dir, env.git, "env thread");
+    optInNoEnforcement(scratch.dir, scratch.git, "scratch thread");
+    const envNowBefore = read(env.dir, "NOW.md");
+
+    write(scratch.dir, "feature.txt", "some code\n");
+    scratch.git(["add", "feature.txt"]);
+
+    // A quoted -C VALUE containing a space - before the sol fix, gitSubcommand()'s
+    // naive whitespace split shifted every token after the quoted value out of
+    // place, so this form was never even recognized as `git ... commit` at all
+    // (never denied, never reconciled).
+    const command = "git -C " + JSON.stringify(scratch.dir) + ' commit -m "scratch commit, quoted -C with a space"';
+    const r = runGuard(env.dir, command);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stdout.trim(), "");
+
+    assert.match(read(scratch.dir, "SHIPPED.md"), /scratch commit, quoted -C with a space/,
+      "the scratch repo must be reconciled even with a quoted, space-containing -C value");
+    assert.ok(!exists(env.dir, "SHIPPED.md"), "the env-pinned root must never get a SHIPPED.md entry for this commit");
+    assert.equal(read(env.dir, "NOW.md"), envNowBefore, "the env-pinned root's NOW.md must be byte-untouched");
+  } finally { cleanup(env.dir); fs.rmSync(scratchParent, { recursive: true, force: true }); }
+});
+
+test("S1: an UNADOPTED scratch directory stays entirely inert - no reconcile anywhere, even though the env-pinned root IS adopted", () => {
+  const env = makeRepo(); // adopted, active sentinel - would deny/reconcile if wrongly consulted
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "claudhd-recon-unadopted-")); // no markers at all, not even a git repo
+  try {
+    optInNoEnforcement(env.dir, env.git, "env thread");
+    writeState(env.dir, {
+      schemaVersion: 2,
+      build: {
+        plan: "PLAN.md", phase: 1, files: ["a.js"], allow: [],
+        started: new Date().toISOString(), session: "session-1",
+      },
+    });
+    const envNowBefore = read(env.dir, "NOW.md");
+
+    const command = "cd " + JSON.stringify(scratch) + ' && git commit -m "should stay inert"';
+    const r = runGuard(env.dir, command);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stdout.trim(), "",
+      "an unadopted scratch dir must leave the guard entirely inert, never falling back to the env-pinned root's sentinel/reconcile");
+
+    assert.equal(read(env.dir, "NOW.md"), envNowBefore, "the env-pinned root's NOW.md must be byte-untouched");
+    assert.ok(!exists(env.dir, "SHIPPED.md"), "the env-pinned root must never be reconciled for a commit that ran in an unadopted directory");
+    assert.ok(!exists(scratch, "SHIPPED.md"), "the unadopted scratch dir gets no reconcile either");
+  } finally { cleanup(env.dir); fs.rmSync(scratch, { recursive: true, force: true }); }
+});
+
+test("S1: a genuine internal walk failure at the effective directory fails open - no deny, no reconcile - even though the env-pinned root would otherwise both", () => {
+  const env = makeRepo(); // adopted, active sentinel - would deny/reconcile if wrongly consulted
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "claudhd-recon-walkfail-")); // the walk itself will crash here
+  try {
+    optInNoEnforcement(env.dir, env.git, "env thread");
+    writeState(env.dir, {
+      schemaVersion: 2,
+      build: {
+        plan: "PLAN.md", phase: 1, files: ["a.js"], allow: [],
+        started: new Date().toISOString(), session: "session-1",
+      },
+    });
+    const envNowBefore = read(env.dir, "NOW.md");
+
+    // A legacy marker paired with a NOW.md that is a DIRECTORY, not a file -
+    // readFileSync throws EISDIR mid-walk (root.js's walkForRoot returns
+    // WALK_FAILED for this, never null).
+    fs.mkdirSync(path.join(scratch, ".gantry"), { recursive: true });
+    fs.writeFileSync(path.join(scratch, ".gantry", "enabled"), "");
+    fs.mkdirSync(path.join(scratch, "NOW.md"));
+
+    const command = "cd " + JSON.stringify(scratch) + ' && git commit -m "should fail open"';
+    const r = runGuard(env.dir, command);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stdout.trim(), "", "a genuine walk failure must fail open, never fall back to the env-pinned root");
+
+    assert.equal(read(env.dir, "NOW.md"), envNowBefore, "the env-pinned root's NOW.md must be byte-untouched");
+    assert.ok(!exists(env.dir, "SHIPPED.md"), "the env-pinned root must never be reconciled when the walk itself failed");
+  } finally { cleanup(env.dir); fs.rmSync(scratch, { recursive: true, force: true }); }
 });

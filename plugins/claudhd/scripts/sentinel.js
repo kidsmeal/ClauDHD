@@ -76,7 +76,8 @@
  * commit/push, so a `node sentinel.js` Bash call passes both guards untouched.
  *
  * Every write goes through state.js's merge-preserving, locked writeStateAtomic,
- * naming `build` as the only key this script owns, so a Stop hook checkpoint
+ * naming `build` (and, in write/write-files, `override` for the entering-a-scope
+ * clear) as the keys this script owns, so a Stop hook checkpoint
  * racing a sentinel write can never clobber the other's section.
  *
  * Path normalization reuses sentinel-core.js so the write side and read side
@@ -89,11 +90,27 @@ const { execSync } = require("child_process");
 
 const { resolveRoot, normalize, readSentinel, isStale } = require("./sentinel-core.js");
 const { writeStateAtomic } = require("./state.js");
+const { withLock } = require("./lock.js");
 
 const ROOT = resolveRoot(process.env);
 const NOW_DIR = path.join(ROOT, ".now");
 const ROUND_PATH = path.join(ROOT, ".gantry", "review-round.json");
 const REVIEW_LOG_PATH = path.join(NOW_DIR, "review-log.jsonl");
+
+// Sol review fix: the SAME override.lock override.js's recordOverride()/
+// noteOverrideFile() hold across their own read-modify-write of `override`.
+// Established order (see override.js/thread.js): the domain lock is acquired
+// OUTSIDE, then writeStateAtomic() acquires stateLockPath() TRANSIENTLY,
+// INSIDE that critical section - the two compose without self-deadlocking
+// because they are different lock directories. write()/write-files() below
+// touch `override` (clearing it as part of establishing a new scope - 1.0.4
+// fix, item 2b), so they must join that SAME critical section: without it, a
+// recordOverride()/noteOverrideFile() read-modify-write racing this write's
+// own read-modify-write could interleave and either resurrect an override
+// this call just cleared, or silently drop one recordOverride() just wrote.
+function overrideLockPath() {
+  return path.join(NOW_DIR, "override.lock");
+}
 
 // ---------------------------------------------------------------------------
 // Plan parsing
@@ -436,7 +453,19 @@ function cmdWrite(args) {
   };
 
   try {
-    writeStateAtomic(NOW_DIR, { build: sentinel }, ["build"]);
+    // Also clears any recorded override (1.0.4 fix, item 2b): establishing a
+    // new build phase's scope ends the emergency, same as thread.js's
+    // enterBuild()/enterDesign()/auditDesign() already do on a mode
+    // transition - an override recorded under a PRIOR scope (or no scope at
+    // all) must never keep permitting out-of-list edits once a fresh sentinel
+    // is in force. Composed into this SAME atomic write (not a separate call)
+    // so the two can never observe a half-applied state. Sol review fix:
+    // held under override.lock (see overrideLockPath()'s comment above) so
+    // this can never interleave with override.js's own read-modify-write of
+    // that same key.
+    withLock(overrideLockPath(), () => {
+      writeStateAtomic(NOW_DIR, { build: sentinel, override: undefined }, ["build", "override"]);
+    });
   } catch (e) {
     console.error("sentinel.js write: cannot write sentinel: " + e.message);
     process.exit(1);
@@ -518,7 +547,13 @@ function cmdWriteFiles(args) {
   }
 
   try {
-    writeStateAtomic(NOW_DIR, { build: sentinel }, ["build"]);
+    // Also clears any recorded override (1.0.4 fix, item 2b) - see cmdWrite's
+    // own comment above; the quick lane establishes a fresh scope exactly
+    // like a plan-backed phase does, and a prior override must not survive
+    // into it. Held under override.lock, same as cmdWrite.
+    withLock(overrideLockPath(), () => {
+      writeStateAtomic(NOW_DIR, { build: sentinel, override: undefined }, ["build", "override"]);
+    });
   } catch (e) {
     console.error("sentinel.js write-files: cannot write sentinel: " + e.message);
     process.exit(1);

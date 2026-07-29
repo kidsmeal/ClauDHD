@@ -197,3 +197,81 @@ test("override.js CLI: an explicit argv session id records the override", () => 
     assert.equal(state.override.session, "cli-session-42");
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+// --- clearOverride (1.0.4 fix, item 2a: the override has no clear) ---
+
+test("override.js: clearOverride removes state.json's `override` key and strips the rendered line out of NOW.md", () => {
+  const dir = mk();
+  try {
+    writeRealNow(dir);
+    override.recordOverride(dir, "session-1");
+    override.noteOverrideFile(dir, "session-1", "src/a.js");
+    assert.match(fs.readFileSync(path.join(dir, "NOW.md"), "utf8"), /unguarded session/i);
+
+    const hadOverride = override.clearOverride(dir);
+    assert.equal(hadOverride, true, "an active override was present and reported as cleared");
+
+    const state = readState(path.join(dir, ".now"));
+    assert.ok(!state.override, "override key must be gone (falsy), not merely emptied");
+    assert.doesNotMatch(fs.readFileSync(path.join(dir, "NOW.md"), "utf8"), /unguarded session/i,
+      "the rendered Loose-ends line must disappear once the override is cleared");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("override.js: clearOverride never clobbers other state.json keys", () => {
+  const dir = mk();
+  try {
+    writeRealNow(dir);
+    writeStateAtomic(path.join(dir, ".now"), { mode: "build", schemaVersion: 2 }, ["mode"]);
+    override.recordOverride(dir, "session-1");
+    override.clearOverride(dir);
+    const state = readState(path.join(dir, ".now"));
+    assert.equal(state.mode, "build", "an unrelated owned key must survive the clear");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("override.js: clearOverride when no override is active is a no-op - returns false, writes no override key", () => {
+  const dir = mk();
+  try {
+    writeRealNow(dir);
+    writeStateAtomic(path.join(dir, ".now"), { mode: "design", schemaVersion: 2 }, ["mode"]);
+    const hadOverride = override.clearOverride(dir);
+    assert.equal(hadOverride, false, "nothing was active, so nothing was cleared");
+    const state = readState(path.join(dir, ".now"));
+    assert.ok(!state.override);
+    assert.equal(state.mode, "design", "an unrelated owned key must survive the no-op clear");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("override.js CLI: --clear removes an active override", () => {
+  const { spawnSync } = require("node:child_process");
+  const dir = mk();
+  try {
+    writeRealNow(dir);
+    override.recordOverride(dir, "session-cli-1");
+    const SCRIPT = path.join(__dirname, "..", "plugins", "claudhd", "scripts", "override.js");
+    const r = spawnSync(process.execPath, [SCRIPT, "--clear"], {
+      encoding: "utf8",
+      env: { ...process.env, GANTRY_PROJECT_DIR: dir },
+    });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /cleared the active override/i);
+    const state = readState(path.join(dir, ".now"));
+    assert.ok(!state.override);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("override.js CLI: --clear when no override is active exits 0 and says so, without requiring a session id", () => {
+  const { spawnSync } = require("node:child_process");
+  const dir = mk();
+  try {
+    writeRealNow(dir);
+    const SCRIPT = path.join(__dirname, "..", "plugins", "claudhd", "scripts", "override.js");
+    const r = spawnSync(process.execPath, [SCRIPT, "--clear"], {
+      encoding: "utf8",
+      env: { ...process.env, GANTRY_PROJECT_DIR: dir, GANTRY_SESSION_ID: "", CLAUDE_CODE_SESSION_ID: "" },
+    });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /no active override to clear/i);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});

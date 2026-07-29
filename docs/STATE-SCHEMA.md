@@ -50,8 +50,8 @@ Every current writer, its owned keys, and the lock it uses:
 |---|---|---|
 | `checkpoint.js` (Stop hook) | `schemaVersion, generatedAt, branch, cursor, ideas, shipped, roadmap, git` | `stateLockPath` (inside `writeStateAtomic`) |
 | `reconcile.js` (commit boundary) | same facts-only set as checkpoint.js | `stateLockPath` |
-| `sentinel.js` (`write`/`clear`/`add-files`) | `build` | `stateLockPath` |
-| `override.js` (`recordOverride`/`noteOverrideFile`) | `override` | `override.lock`, then `stateLockPath` inside the write |
+| `sentinel.js` (`write`/`clear`/`add-files`/`write-files`, of which `write` and `write-files` also CLEAR `override` - establishing a new scope ends the emergency, same as `thread.js` below; `clear`/`add-files` do not touch `override`) | `build` (plus `override` on `write`/`write-files`) | `clear`/`add-files`: `stateLockPath` only. `write`/`write-files`: `override.lock` (the SAME lock `override.js` holds below), then `stateLockPath` inside the write - matching `override.js`'s own established order, since these two calls touch `override` and must serialize against `recordOverride()`/`noteOverrideFile()`'s read-modify-write of that exact key, not just race it at the file level (sol review fix: without this, an unfixed `write`/`write-files` call could interleave inside `noteOverrideFile()`'s own read-modify-write and resurrect an override it had just cleared - see `test/sentinel.test.js`'s RACE test) |
+| `override.js` (`recordOverride`/`noteOverrideFile`/`clearOverride`) | `override` | `override.lock`, then `stateLockPath` inside the write |
 | `thread.js` (`enterDesign`/`enterBuild`/`setDesignDoc`/`auditDesign`, which also CLEAR `override`; `setIntent`/`addDecision`/`resolveDecision`/`clearMode` do not touch `override`) | `mode`, `from`, `intent`, `design`, `override` | `design.lock` (only for the `design`-mutating calls), then `stateLockPath` inside the write |
 | `state.js`'s `issueRoadmapIds()` (called by `init.js`, `reconcile.js`) | `roadmapIds` | `roadmapLockPath`, then `stateLockPath` inside the write |
 | `vocab.js` (`move`) | `roadmapIds` (the identical read-ledger/backfill/persist-ledger transaction, composed inline under `move()`'s own already-held `roadmapLockPath` instead of calling `issueRoadmapIds()` - see `docs/SCRIPT-VOCABULARY.md`'s cross-verb stability note) | `roadmapLockPath`, then `stateLockPath` inside the write |
@@ -348,6 +348,21 @@ override either way). The rendered "unguarded session ..." line in NOW.md's
 `## Loose ends` section is stripped at the same time (`override.js`'s
 `clearOverrideLine()`), so the board never shows a permit that no longer
 applies.
+
+1.0.4 fix (item 2): the override previously had no way to be cleared on its
+own, and survived unchanged into a scope established by `sentinel.js`
+(`write`/`write-files`), which never cleared it - an override recorded before
+a build phase (or the quick lane) started kept permitting out-of-scope edits
+under that phase's own sentinel. Two fixes: `override.js` gains
+`clearOverride(root)` (and `/claudhd:override --clear`), which removes this
+key and strips the rendered line, the same two steps as the mode-transition
+clears above, reachable directly rather than only as their side effect.
+`sentinel.js`'s `write` and `write-files` now also clear `override` as part of
+writing the new `build` sentinel (same atomic write, see the writer table
+above) - establishing ANY scoped state ends the emergency, matching
+`enterBuild()`/`enterDesign()`/`auditDesign()`'s own rule. `clear` and
+`add-files` do not touch it: clearing a sentinel exits a scope rather than
+entering one, and `add-files` only widens an already-active phase's scope.
 
 ```
 {

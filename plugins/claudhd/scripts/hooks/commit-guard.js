@@ -36,6 +36,28 @@
  * `build` - the phase IS completing in this commit; only the RENDER is
  * adjusted, not the completion logic.
  *
+ * Cross-repo root resolution (1.0.4 fix, S1): a `git commit`/`push` this hook
+ * intercepts does not necessarily run in the session's env-pinned root - a
+ * leading `cd <dir> &&`/`;` chain, or the commit invocation's own `-C <dir>`
+ * global option, can point it at an entirely different directory. Both the
+ * deny decision AND the reconcile must be judged against the repo the commit
+ * ACTUALLY runs in, never the env root, or a commit made in a scratch repo
+ * gets reconciled into an unrelated adopted project's SHIPPED.md/NOW.md (the
+ * live-test finding). effectiveCommandDir() recovers that directory from the
+ * command string itself (composing a cd-chain with a -C on the same
+ * invocation, mirroring GIT_GLOBAL_OPTS_WITH_ARG's own option-skipping),
+ * falling back to the hook payload's own `cwd` field, then the env root, when
+ * neither is present. root.js's walkForRoot(effectiveDir) - the SAME walk
+ * file-list-guard.js uses - then resolves the nearest ADOPTED ancestor from
+ * there; that walked root is what both computeGate() and reconcile() key off
+ * from this point on, never the env root. `null` (no adopted ancestor found
+ * anywhere up from the effective directory) leaves this hook entirely inert
+ * for that commit - no deny, no reconcile, exactly like an unadopted project
+ * - deliberately NOT falling back to the env root the way file-list-guard.js
+ * does, since that fallback is exactly the cross-repo corruption this fix
+ * closes. `WALK_FAILED` (a genuine internal error during the walk) fails
+ * open outright, same as every other unresolvable-state path in this file.
+ *
  * Hard invariants:
  *   - Always exits 0, on every path including denies and errors.
  *   - Fails OPEN on ANY error: malformed stdin, missing fields, absent
@@ -121,13 +143,21 @@ const GIT_GLOBAL_OPTS_WITH_ARG = new Set([
 //   git commit ...
 //   git push ...
 //   git -C <path> commit ...
+//   git -C "path with spaces" commit ...
 //   git -c key=value commit ...
 //   git --git-dir <path> --work-tree <path> commit ...
+// Sol review fix: tokenized via tokenizeCommand() (quote-aware), not a naive
+// whitespace split - a quoted `-C "path with spaces"` value used to split
+// into multiple tokens, which shifted every following token (including the
+// subcommand itself) out of place and made a perfectly ordinary quoted `git
+// -C "..." commit` invocation invisible to isGitCommitOrPush()/isGitCommit()
+// entirely (never denied, never reconciled). tokenizeCommand() is declared
+// later in this file as a function declaration, so it is fully hoisted here.
 function gitSubcommand(segment) {
   // Must start with "git" (possibly with leading whitespace already stripped).
   // Allow: git [flags] [subcommand]
   // Strip any leading "git" then optional flags then check the subcommand.
-  const tokens = segment.split(/\s+/);
+  const tokens = tokenizeCommand(segment);
   if (tokens.length === 0) return null;
   if (tokens[0] !== "git") return null;
 
@@ -277,6 +307,67 @@ function tokenizeCommand(command) {
   return tokens;
 }
 
+// ---------------------------------------------------------------------------
+// Cross-repo root resolution (1.0.4 fix, S1) - see this file's header comment.
+// ---------------------------------------------------------------------------
+
+// The LAST `cd <dir>` segment seen while scanning `command` left to right,
+// stopping as soon as a git commit/push segment is reached (a leading
+// `cd <dir> &&`/`;` prefix chain - every `cd` AFTER the target invocation is
+// irrelevant, since it never runs before the commit/push does). tokenizeCommand
+// is used per-segment (the same quote-aware tokenizeCommand() gitSubcommand() uses)
+// so a quoted path with spaces (`cd "my dir"`) still yields one token.
+// Returns null when no `cd` segment precedes the target invocation.
+function leadingCdDir(command) {
+  const segments = splitSegments(command);
+  let cdDir = null;
+  for (const seg of segments) {
+    if (seg.startsWith('"') || seg.startsWith("'")) continue;
+    const tokens = tokenizeCommand(seg);
+    if (tokens[0] === "cd" && tokens.length > 1) { cdDir = tokens[1]; continue; }
+    if (isGitCommitOrPush(seg)) break;
+  }
+  return cdDir;
+}
+
+// The `-C <path>` value on the FIRST git commit/push segment in `command`,
+// composing with the same GIT_GLOBAL_OPTS_WITH_ARG consumption gitSubcommand()
+// uses so a chained global option before -C is never mis-skipped. Returns
+// null when that segment carries no -C (or no such segment exists at all).
+function commitDashCDir(command) {
+  const segments = splitSegments(command);
+  for (const seg of segments) {
+    if (seg.startsWith('"') || seg.startsWith("'")) continue;
+    if (!isGitCommitOrPush(seg)) continue;
+    const tokens = tokenizeCommand(seg);
+    let i = 1;
+    while (i < tokens.length) {
+      const t = tokens[i];
+      if (!t.startsWith("-")) break;
+      if (t === "-C" && i + 1 < tokens.length) return tokens[i + 1];
+      i++;
+      if (GIT_GLOBAL_OPTS_WITH_ARG.has(t) && i < tokens.length) i++;
+    }
+    return null; // found the target segment but it carries no -C
+  }
+  return null; // no commit/push segment in this command at all
+}
+
+// The directory a git commit/push segment found in `command` ACTUALLY runs
+// in: the cd-chain (if any), resolved against `payloadCwd` (falling back to
+// `envRoot` only when the payload carries no cwd at all), then the target
+// invocation's own -C (if any), resolved against THAT - matching the order a
+// real shell would apply them. Pure string/path composition; the only
+// filesystem access is the walk the caller performs on the result.
+function effectiveCommandDir(command, payloadCwd, envRoot) {
+  let dir = payloadCwd || envRoot;
+  const cdDir = leadingCdDir(command);
+  if (cdDir != null) dir = path.isAbsolute(cdDir) ? cdDir : path.resolve(dir, cdDir);
+  const dashC = commitDashCDir(command);
+  if (dashC != null) dir = path.isAbsolute(dashC) ? dashC : path.resolve(dir, dashC);
+  return dir;
+}
+
 // Find the token index right after the FIRST `git [global-options] commit`
 // invocation in an already-tokenized stream, mirroring gitSubcommand()'s
 // exact global-option consumption (round four) so the two never drift apart.
@@ -405,23 +496,20 @@ function logReconcileFailure(root, err) {
   }
 }
 
-// B1's activation gate: `.now/enabled` OR the legacy `.gantry/enabled` (both
-// honored for enforcement - see file-list-guard.js's isAdopted(), same rule,
-// duplicated here rather than shared so this hook has no cross-file require
-// beyond its existing sentinel-core.js/state.js/modes.js dependencies).
-function isAdopted(root) {
-  try { fs.accessSync(path.join(root, ".now", "enabled")); return true; } catch { /* fall through */ }
-  try { fs.accessSync(path.join(root, ".gantry", "enabled")); return true; } catch { return false; }
-}
-
+// B1's activation gate is now folded into root resolution itself (1.0.4 fix,
+// S1): `root` here has already passed through root.js's walkForRoot(), which
+// only ever returns a directory carrying `.now/enabled` or a paired legacy
+// `.gantry/enabled` - see this file's header comment and main()'s own walk
+// step. A separate marker re-check here would be redundant (root's adoption
+// is already guaranteed by the caller), so this function no longer performs
+// one.
+//
 // The exact steps 4-6 fail-open checks, as a pure query rather than a chain of
-// early returns: null means allow (guard inactive, no sentinel, stale, or the
-// command does not trigger it); the sentinel object means deny. Behavior is
-// byte-identical to the pre-phase-4 guard - only the shape changed, so
+// early returns: null means allow (no sentinel, stale, or the command does
+// not trigger it); the sentinel object means deny. Behavior is byte-identical
+// to the pre-phase-4 guard for every adopted root - only the shape changed, so
 // reconcile (below) can be decided before the deny is emitted.
 function computeGate(root, sessionId, command) {
-  if (!isAdopted(root)) return null; // marker absent -> guard inactive
-
   const sentinel = readSentinel(root);
   if (sentinel === null) return null; // no sentinel -> allow
 
@@ -456,8 +544,24 @@ function main() {
   const command = toolInput.command;
   if (command == null || typeof command !== "string") return; // missing command -> fail open
 
-  // 3. Resolve project root.
-  const root = resolveRoot(process.env);
+  // Nothing below (the walk, the gate, the reconcile) is reachable unless the
+  // command is either a candidate deny (commandTriggersGuard) or a candidate
+  // reconcile (isCommitCommand) - skip the filesystem walk entirely for every
+  // OTHER Bash call this hook also intercepts (git status, npm test, ...).
+  if (!commandTriggersGuard(command) && !isCommitCommand(command)) return;
+
+  // 3. Resolve the EFFECTIVE directory the commit/push runs in (1.0.4 fix,
+  // S1 - see header comment), then walk UP from there to the nearest adopted
+  // ancestor. `WALK_FAILED` fails open outright; `null` (no adopted ancestor)
+  // leaves this hook entirely inert for the command - never falling back to
+  // the env root, which is exactly the cross-repo corruption this fix closes.
+  const envRoot = resolveRoot(process.env);
+  const payloadCwd = typeof payload.cwd === "string" && payload.cwd !== "" ? payload.cwd : null;
+  const effectiveDir = effectiveCommandDir(command, payloadCwd, envRoot);
+  const walkedRoot = resolveRoot.walkForRoot(effectiveDir);
+  if (walkedRoot === resolveRoot.WALK_FAILED) return;
+  if (walkedRoot === null) return;
+  const root = walkedRoot;
 
   // 4-6 (steps renumbered from the pre-phase-4 guard, see computeGate()).
   const gate = computeGate(root, sessionId, command);

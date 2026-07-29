@@ -36,8 +36,17 @@ function writeSentinel(dir, overrides, extra) {
 // The guards' OWN enforcement marker (commit-guard.js's computeGate()). NOT
 // a reconcile signal - reconcile.js's adoption gate checks `.now/enabled`
 // specifically (see writeReconcileEnabled below), never this file.
+//
+// Since 1.0.4's S1 fix, commit-guard.js resolves root through root.js's
+// walkForRoot() - the same walk file-list-guard.js uses - which honors the
+// legacy `.gantry/enabled` marker ONLY when paired with a claudhd-marked
+// NOW.md at that SAME level (root.js's own stricter pairing rule, needed so
+// a bare legacy marker never falsely counts as adoption mid-walk). writeNow()
+// satisfies that pairing so this helper keeps testing "the guard enforces via
+// the legacy marker", not "no adopted ancestor was found at all".
 function writeEnabled(dir) {
   write(dir, ".gantry/enabled", "");
+  writeNow(dir);
 }
 
 // reconcile.js's own adoption gate (phase 4, restricted in a later fix round
@@ -463,5 +472,124 @@ test("commit-guard: fail-open (exit 0) via the TOP-LEVEL catch, when a required 
   } finally {
     fs.rmSync(scratch, { recursive: true, force: true });
     fs.rmSync(repoDir, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 1.0.4 S1 fix: cross-repo root resolution. A `git commit`/`push` that runs
+// in a DIFFERENT directory than the session's env-pinned root (via a leading
+// `cd` chain, or the commit's own `-C`) must be judged against the repo it
+// ACTUALLY runs in, never the env root - see commit-guard.js's header
+// comment. These mirror the live-test scenario exactly.
+// ---------------------------------------------------------------------------
+
+test("S1: `cd <scratch> && git commit` (quoted path with a space) is judged against the SCRATCH repo's own sentinel, not the env root's", () => {
+  const sessionRoot = mk(); // env root - adopted, but carries NO sentinel
+  const scratchParent = mk();
+  const scratchDir = path.join(scratchParent, "scratch repo with spaces"); // deliberately has a space
+  fs.mkdirSync(scratchDir, { recursive: true });
+  try {
+    writeEnabled(sessionRoot); // adopted, no active sentinel -> would ALLOW if consulted
+    writeEnabled(scratchDir); // adopted AND carries an active sentinel -> must DENY
+    writeSentinel(scratchDir, {});
+
+    // Single-quoted (not double): the path may contain backslashes on
+    // Windows, and this file's tokenizeCommand() honors backslash-escapes
+    // only inside a DOUBLE-quoted span (matching real shell quoting rules),
+    // so a single-quoted path round-trips backslashes literally.
+    const command = "cd '" + scratchDir + "' && git commit -m \"scratch commit\"";
+    const r = runGuard(sessionRoot, bashPayload(sessionRoot, command));
+    assert.equal(r.status, 0, r.stderr);
+    const deny = parseDeny(r.stdout);
+    assert.ok(deny !== null,
+      "must deny against the scratch repo's active sentinel, even though env root has none; got: " + r.stdout);
+  } finally {
+    fs.rmSync(sessionRoot, { recursive: true, force: true });
+    fs.rmSync(scratchParent, { recursive: true, force: true });
+  }
+});
+
+test("S1: `git -C <scratch> commit` form resolves the same way as the cd-chain form", () => {
+  const sessionRoot = mk();
+  const scratchDir = mk();
+  try {
+    writeEnabled(sessionRoot); // adopted, no active sentinel
+    writeEnabled(scratchDir); // adopted, active sentinel
+    writeSentinel(scratchDir, {});
+
+    const command = "git -C " + JSON.stringify(scratchDir) + " commit -m x";
+    const r = runGuard(sessionRoot, bashPayload(sessionRoot, command));
+    assert.equal(r.status, 0, r.stderr);
+    const deny = parseDeny(r.stdout);
+    assert.ok(deny !== null,
+      "git -C must resolve root the same way the cd-chain form does; got: " + r.stdout);
+  } finally {
+    fs.rmSync(sessionRoot, { recursive: true, force: true });
+    fs.rmSync(scratchDir, { recursive: true, force: true });
+  }
+});
+
+test("S1 sol fix: `git -C \"path with spaces\" commit` (quoted -C value containing a space) is still recognized as a commit and resolved to the scratch repo", () => {
+  const sessionRoot = mk(); // adopted, no active sentinel
+  const scratchParent = mk();
+  const scratchDir = path.join(scratchParent, "scratch repo with spaces");
+  fs.mkdirSync(scratchDir, { recursive: true });
+  try {
+    writeEnabled(sessionRoot);
+    writeEnabled(scratchDir);
+    writeSentinel(scratchDir, {});
+
+    const command = "git -C " + JSON.stringify(scratchDir) + " commit -m x";
+    const r = runGuard(sessionRoot, bashPayload(sessionRoot, command));
+    assert.equal(r.status, 0, r.stderr);
+    const deny = parseDeny(r.stdout);
+    assert.ok(deny !== null,
+      "a quoted -C value with a space must still be recognized as `git ... commit` and resolved against the scratch repo; got: " + r.stdout);
+  } finally {
+    fs.rmSync(sessionRoot, { recursive: true, force: true });
+    fs.rmSync(scratchParent, { recursive: true, force: true });
+  }
+});
+
+test("S1: an UNADOPTED scratch directory stays entirely inert, even though the env root IS adopted with an active sentinel", () => {
+  const sessionRoot = mk(); // adopted, active sentinel - would deny if it were consulted
+  const scratchDir = mk(); // no markers at all
+  try {
+    writeEnabled(sessionRoot);
+    writeSentinel(sessionRoot, {});
+
+    const command = "cd " + JSON.stringify(scratchDir) + " && git commit -m x";
+    const r = runGuard(sessionRoot, bashPayload(sessionRoot, command));
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stdout.trim(), "",
+      "an unadopted scratch dir must leave the guard entirely inert, never falling back to the env root's sentinel; got: " + r.stdout);
+  } finally {
+    fs.rmSync(sessionRoot, { recursive: true, force: true });
+    fs.rmSync(scratchDir, { recursive: true, force: true });
+  }
+});
+
+test("S1: a genuine internal walk failure at the effective directory fails open, even though the env root would otherwise deny", () => {
+  const sessionRoot = mk(); // adopted, active sentinel - would deny if consulted
+  const scratchDir = mk(); // where the walk itself will crash
+  try {
+    writeEnabled(sessionRoot);
+    writeSentinel(sessionRoot, {});
+
+    // Force a genuine internal walk failure: a legacy marker paired with a
+    // NOW.md that is a DIRECTORY, not a file - readFileSync throws EISDIR
+    // mid-walk (root.js's walkForRoot returns WALK_FAILED for this).
+    fs.mkdirSync(path.join(scratchDir, ".gantry"), { recursive: true });
+    fs.writeFileSync(path.join(scratchDir, ".gantry", "enabled"), "");
+    fs.mkdirSync(path.join(scratchDir, "NOW.md"));
+
+    const command = "cd " + JSON.stringify(scratchDir) + " && git commit -m x";
+    const r = runGuard(sessionRoot, bashPayload(sessionRoot, command));
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stdout.trim(), "",
+      "a genuine walk failure must fail open, never fall back to the env root's sentinel; got: " + r.stdout);
+  } finally {
+    fs.rmSync(sessionRoot, { recursive: true, force: true });
+    fs.rmSync(scratchDir, { recursive: true, force: true });
   }
 });

@@ -2,12 +2,16 @@
 /* Tests for sentinel.js - write / clear / add-files subcommands. */
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { spawnSync, execSync } = require("node:child_process");
+const { spawn, spawnSync, execSync } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { runAsync } = require("../tools/helpers.js");
 
 const SENTINEL_SCRIPT = path.join(__dirname, "..", "plugins", "claudhd", "scripts", "sentinel.js");
+const FILE_LIST_GUARD = path.join(__dirname, "..", "plugins", "claudhd", "scripts", "hooks", "file-list-guard.js");
+const HOLD_LOCK = path.join(__dirname, "..", "tools", "hold-lock.js");
+const override = require("../plugins/claudhd/scripts/override.js");
 
 // A minimal plan fixture with two phases, used across most tests.
 // Phase 2 has two Files entries; phase 3 has one.
@@ -976,5 +980,162 @@ test("write-files: logs a stale phase's recorded rounds to review-log.jsonl befo
     assert.equal(lines[0].phase, 2);
     assert.match(lines[0].rounds[0].fixes, /stale phase fixes/);
     assert.ok(!roundsExist(dir), "the stale phase's round file must be cleared, not left orphaned");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// ---------------------------------------------------------------------------
+// 1.0.4 fix, item 2b: an override recorded under a prior (or no) scope must
+// not survive into a freshly-established scope - reproducing the live
+// test's row-4b confound exactly, driven through the real hooks/scripts, not
+// a hand-edited state.json.
+// ---------------------------------------------------------------------------
+
+function runFileListGuard(dir, filePath, sessionId) {
+  const payload = {
+    session_id: sessionId,
+    cwd: dir,
+    hook_event_name: "PreToolUse",
+    tool_name: "Edit",
+    tool_input: { file_path: filePath },
+  };
+  return spawnSync(process.execPath, [FILE_LIST_GUARD], {
+    encoding: "utf8",
+    input: JSON.stringify(payload),
+    env: { ...process.env, GANTRY_PROJECT_DIR: dir },
+  });
+}
+
+function adoptForFileListGuard(dir) {
+  fs.mkdirSync(path.join(dir, ".now"), { recursive: true });
+  fs.writeFileSync(path.join(dir, ".now", "enabled"), "");
+  write(dir, "NOW.md", "# NOW\n<!-- claudhd: opt-in marker -->\n\n## Loose ends\n\n(none yet)\n");
+}
+
+test("ROW-4B: write-files clears a recorded override - the edit it used to permit now denies under the fresh sentinel", () => {
+  const dir = mk();
+  try {
+    adoptForFileListGuard(dir);
+    const sessionId = "session-row4b";
+    const outOfScopeFile = path.join(dir, "src", "unrelated.js");
+
+    // 1. Record a real override (no sentinel exists yet - unguarded mode).
+    override.recordOverride(dir, sessionId);
+
+    // 2. The override permits the out-of-scope edit, exactly as designed.
+    const before = runFileListGuard(dir, outOfScopeFile, sessionId);
+    assert.equal(before.status, 0, before.stderr);
+    assert.equal(before.stdout.trim(), "", "the override must permit the edit before any scope is established");
+
+    // 3. Establish a fresh scope via write-files - must clear the override,
+    //    with no hand-editing of state.json.
+    const w = run(dir, ["write-files", "src/scoped.js"], { GANTRY_SESSION_ID: sessionId });
+    assert.equal(w.status, 0, "write-files should exit 0\nstdout: " + w.stdout + "\nstderr: " + w.stderr);
+    const state = JSON.parse(fs.readFileSync(path.join(dir, ".now", "state.json"), "utf8"));
+    assert.ok(!state.override, "write-files must clear the override key");
+
+    // 4. The SAME previously-permitted out-of-scope edit must now deny.
+    const after = runFileListGuard(dir, outOfScopeFile, sessionId);
+    assert.equal(after.status, 0, after.stderr);
+    const deny = JSON.parse(after.stdout.trim());
+    assert.equal(deny.hookSpecificOutput.permissionDecision, "deny",
+      "the override must not survive into the fresh write-files scope; got: " + after.stdout);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("ROW-4B: write (plan-backed) also clears a recorded override", () => {
+  const dir = mk();
+  try {
+    adoptForFileListGuard(dir);
+    const planPath = writePlan(dir);
+    const sessionId = "session-row4b-plan";
+    const outOfScopeFile = path.join(dir, "totally", "unrelated.js");
+
+    override.recordOverride(dir, sessionId);
+    const before = runFileListGuard(dir, outOfScopeFile, sessionId);
+    assert.equal(before.stdout.trim(), "", "the override must permit the edit before any scope is established");
+
+    const w = run(dir, ["write", planPath, "2"], { GANTRY_SESSION_ID: sessionId });
+    assert.equal(w.status, 0, w.stderr);
+    const state = JSON.parse(fs.readFileSync(path.join(dir, ".now", "state.json"), "utf8"));
+    assert.ok(!state.override, "write must clear the override key");
+
+    const after = runFileListGuard(dir, outOfScopeFile, sessionId);
+    const deny = JSON.parse(after.stdout.trim());
+    assert.equal(deny.hookSpecificOutput.permissionDecision, "deny",
+      "the override must not survive into the fresh plan-backed scope; got: " + after.stdout);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// ---------------------------------------------------------------------------
+// Sol review fix: write/write-files must serialize their override clear
+// through the SAME override.lock override.js's own recordOverride()/
+// noteOverrideFile() hold, or the two read-modify-write cycles can interleave
+// (noteOverrideFile reads the override BEFORE write-files clears it, then
+// writes its update back AFTER the clear - resurrecting a record write-files
+// already removed). Reuses the hold-lock.js pattern from
+// test/state-concurrency.test.js, but holds `stateLockPath` specifically, NOT
+// override.lock: without the fix, write-files's writeStateAtomic() call
+// never touches override.lock at all, so holding override.lock alone lets an
+// unfixed write-files complete unimpeded (proven empirically while building
+// this test - holding override.lock never reproduced the bug). Holding the
+// state lock instead forces BOTH real operations to have already done their
+// own pre-write work (noteOverrideFile's read-and-decide; write-files'
+// sentinel-object construction) before either can land its writeStateAtomic
+// call, which is the exact window the resurrection bug needs. With the fix
+// applied, write-files cannot even REACH the state lock until it first
+// acquires override.lock - which noteOverrideFile already holds for its
+// entire read-decide-write span - so the race is resolved before either
+// commits, and the result is deterministically never a resurrection.
+// ---------------------------------------------------------------------------
+
+function holdLock(lockDir, id, holdMs, logFile) {
+  return new Promise((resolve, reject) => {
+    const c = spawn(process.execPath, [HOLD_LOCK, lockDir, id, String(holdMs), logFile]);
+    let stderr = "";
+    c.stderr.on("data", (d) => (stderr += d));
+    c.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`hold-lock failed: ${stderr}`))));
+  });
+}
+
+test("RACE (sol fix): noteOverrideFile racing sentinel.js write-files never resurrects the override write-files clears - both serialize on override.lock", async () => {
+  const dir = mk();
+  try {
+    adoptForFileListGuard(dir);
+    const sessionId = "session-race";
+
+    // A real, pre-existing active override with one accumulated file - both
+    // real calls below (never hand-edited state.json).
+    override.recordOverride(dir, sessionId);
+    override.noteOverrideFile(dir, sessionId, "a.js");
+
+    const stateLockDir = path.join(dir, ".now", "state.lock");
+    const logFile = path.join(dir, "lock-events.log");
+    fs.writeFileSync(logFile, "");
+
+    // Hold the state lock (see the section comment above for why THIS lock,
+    // not override.lock) for a fixed window, then fire the two real
+    // operations while it is held - both must queue behind it.
+    const holdMs = 300;
+    const holdPromise = holdLock(stateLockDir, "HOLDER", holdMs, logFile);
+    await new Promise((r) => setTimeout(r, 50));
+
+    // The real sentinel.js write-files subprocess - establishes a fresh
+    // scope, which must clear `override` under override.lock (the fix).
+    const sentinelJob = runAsync(dir, "sentinel.js", ["write-files", "src/scoped.js"], { GANTRY_SESSION_ID: sessionId });
+
+    // The real, in-process noteOverrideFile call - synchronous and
+    // lock-blocking (withLock's Atomics.wait busy-poll), so it genuinely
+    // contends for the state lock against the subprocess above rather than
+    // merely running before or after it by construction-order luck.
+    const noteJob = Promise.resolve(override.noteOverrideFile(dir, sessionId, "b.js"));
+
+    const [, sentinelResult] = await Promise.all([holdPromise, sentinelJob, noteJob]);
+    assert.equal(sentinelResult.status, 0, "sentinel.js write-files should exit 0\n" + sentinelResult.stderr);
+
+    const state = JSON.parse(fs.readFileSync(path.join(dir, ".now", "state.json"), "utf8"));
+    assert.ok(!state.override,
+      "the override must never be resurrected after write-files clears it, regardless of race order; got: " + JSON.stringify(state.override));
+    assert.ok(state.build, "the fresh write-files sentinel must still be in force");
+    assert.deepEqual(state.build.files, ["src/scoped.js"]);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
