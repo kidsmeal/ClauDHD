@@ -17,6 +17,6 @@ The output above is from the quick-fixes lane in `NOW.md` (the `## Quick fixes` 
   3. Work the batch top to bottom. For each item, make the change. If one turns out to need a decision, a test, touches shared state, spans more than a file, or fails its check (i.e. it breaks a hard limit above), stop: kick it back out with `/claudhd:idea <it>` for triage and remove it from the batch. Never let a quick fix quietly grow into real work. If a later item needs a file outside the sentinel you wrote in step 2, widen it first: `node ${CLAUDE_PLUGIN_ROOT}/scripts/sentinel.js add-files <path>`.
   4. Check off each cleared item in `NOW.md`, then restore the original active thread and next action as the focus.
   5. Clear the sentinel: `node ${CLAUDE_PLUGIN_ROOT}/scripts/sentinel.js clear`. This also closes the commit gate this pass opened.
-  6. If I keep clearing quick fixes while the active thread has not moved, say so plainly; that is drift wearing a productive disguise.
+  6. If I keep clearing quick fixes while the active thread has not moved, say so plainly: the active thread has not moved.
 
 Do not commit for me. The active thread has right of way: quick fixes are cleared between threads or while the active thread is blocked, never interleaved mid-thread.

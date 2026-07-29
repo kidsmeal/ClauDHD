@@ -14,9 +14,7 @@ Once I confirm, set the cursor through the state writer, not a hand-edit, so NOW
 
 ## Enable enforcement (explicit opt-in, do not skip past this)
 
-**This is the part that makes the phase boundary mechanical instead of a promise; ask, plainly, do not assume the answer.** Without it, ClauDHD's mode rules ("stay in the phase", "no commit mid-build") are prompt-level only. With it, two PreToolUse hooks enforce them in the moment: an edit outside the active mode's allowlist is blocked, and a `git commit`/`git push` outside the commit gate is blocked, opt-in and fail-open so a bad hook can never brick the repo.
-
-Ask me directly: **"Enable ClauDHD's enforcement hooks for this project?"**
+Ask me directly, do not assume the answer: **"Enable ClauDHD's enforcement hooks for this project? (blocks out-of-phase edits and mid-build commits; opt-in, fail-open)"**
 
 - If I say yes: run `node "${CLAUDE_PLUGIN_ROOT}/scripts/init.js" --enable-hooks`. This writes `.now/enabled`, the marker both guards AND the commit-boundary reconcile gate on. A project without this marker (or the legacy `.gantry/enabled`) is entirely inert; nothing below fires in it.
 - If I say no or do not answer: do nothing further here. The hooks stay inert, and the pipeline commands below still work at prompt level, just without the mechanical guard.

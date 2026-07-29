@@ -302,6 +302,40 @@ test("no command md, README, or plugin description uses an em dash", () => {
   assert.deepEqual(offenders, [], "em dash found in: " + offenders.join(", "));
 });
 
+test("build.md, review.md, and SKILL.md all carry the full-report closing line", () => {
+  for (const rel of ["plugins/claudhd/commands/build.md", "plugins/claudhd/commands/review.md", "plugins/claudhd/skills/pipeline/SKILL.md"]) {
+    const text = fs.readFileSync(path.join(REPO, rel), "utf8");
+    assert.match(text, /full report available if you want it/, rel + " must carry the full-report closing line");
+    assert.match(text, /needs you:/, rel + " must carry the needs-you relay shape");
+  }
+});
+
+test("build.md and SKILL.md carry the needs-you relay shape and never a verbatim-relay-to-user instruction (1.0.5 command-prose pass)", () => {
+  const buildText = fs.readFileSync(path.join(PLUGIN, "commands", "build.md"), "utf8");
+  const skillText = fs.readFileSync(path.join(PLUGIN, "skills", "pipeline", "SKILL.md"), "utf8");
+
+  assert.match(buildText, /needs you:/, "build.md must carry the \"needs you:\" relay block");
+  assert.match(skillText, /needs you:/, "SKILL.md must carry the \"needs you:\" relay block");
+
+  // The implementer's/reviewer's report stays machine-facing; only a "relay
+  // ... verbatim" instruction aimed at the USER-facing report is banned here.
+  // Fixes-to-implementer verbatim instructions (a different mechanism) are
+  // untouched and still required by the tests above.
+  const RELAY_TO_USER_VERBATIM = /relay (its |the )?(full )?report verbatim|relay the verdict[^.]*verbatim/i;
+  assert.doesNotMatch(buildText, RELAY_TO_USER_VERBATIM, "build.md must not instruct relaying the implementer's report verbatim to the user");
+  assert.doesNotMatch(skillText, RELAY_TO_USER_VERBATIM, "SKILL.md must not instruct relaying a report or verdict verbatim to the user");
+});
+
+test("override.md's output instruction is single-line-shaped, and drops the moralizing paragraph (1.0.5 command-prose pass)", () => {
+  const text = fs.readFileSync(path.join(PLUGIN, "commands", "override.md"), "utf8");
+  assert.match(text, /Report to me in one line, nothing else/, "override.md must instruct a single-line report to the user");
+  assert.match(text, /override recorded for this session; out-of-scope edits are permitted and counted in NOW\.md/,
+    "override.md must state the exact recorded-session line");
+  assert.match(text, /override cleared/, "override.md must state the exact cleared line");
+  assert.doesNotMatch(text, /not a way to skip review/i, "override.md must not carry the moralizing paragraph");
+  assert.doesNotMatch(text, /relay the line above to me verbatim/i, "override.md must not instruct a verbatim relay of the mechanism explanation");
+});
+
 test("start.md and roadmap.md name /claudhd:init (or a commit) as the id-less-item remedy, never /claudhd:audit (sol round-seven finding 2)", () => {
   const startText = fs.readFileSync(path.join(PLUGIN, "commands", "start.md"), "utf8");
   const roadmapText = fs.readFileSync(path.join(PLUGIN, "commands", "roadmap.md"), "utf8");

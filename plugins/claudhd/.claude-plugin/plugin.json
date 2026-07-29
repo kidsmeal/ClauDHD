@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "claudhd",
   "displayName": "ClauDHD",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "A generated NOW cursor, mode-enforced phase pipeline, and reviewed commit gate for Claude Code: idea inbox, roadmap with tap-card triage, design grill and review, phased implementation with a reviewed commit gate, and a commit-boundary reconcile that keeps the docs honest without you remembering to.",
   "author": {
     "name": "kidsmeal",

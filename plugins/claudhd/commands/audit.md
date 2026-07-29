@@ -29,4 +29,4 @@ Keep entries terse and update the file's "Last updated" line.
 
 ## Report
 
-Report both halves together: how many audit plans landed in each bucket, the top 1-3 "Needs Reconciliation" items the next session should resolve, and what you added, updated, or marked closeable in the verification queue. Do not perform the manual checks yourself; this command curates both queues, the human (or a preview/device run) closes the items. Do not change any plan or code file.
+Report in three lines: the bucket counts (audit plans landed in each of Trust First / Needs Reconciliation / Likely Shipped); the top 1-3 "Needs Reconciliation" items the next session should resolve; what changed in the verification queue (added, updated, marked closeable). Do not perform the manual checks yourself; this command curates both queues, the human (or a preview/device run) closes the items. Do not change any plan or code file.
