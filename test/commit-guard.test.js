@@ -249,6 +249,104 @@ test("commit-guard: allows node sentinel.js write call (orchestrator plumbing mu
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+// The gate command must be recognized wherever the clear sits, not only as the
+// command's very first token. isSentinelCall() requires tokens[0] === "node",
+// so before commandClearsSentinelBeforeCommit() was added to the deny path any
+// prefix ahead of the clear denied the one command review.md prescribes. A
+// leading `cd <root> &&` is the shape that actually bit: the orchestrator's own
+// habit of anchoring the working directory turned the documented gate command
+// into a deny whose message sent the reader off to re-run a review that had
+// already passed.
+function sentinelJsPath() {
+  return path.join(__dirname, "..", "plugins", "claudhd", "scripts", "sentinel.js");
+}
+
+for (const [label, prefix] of [
+  ["cd prefix", "cd /some/root && "],
+  ["env assignment prefix", "FOO=bar "],
+  ["set -e prefix", "set -e && "],
+]) {
+  test(`commit-guard: allows the gate command behind a ${label}`, () => {
+    const dir = mk();
+    try {
+      writeEnabled(dir);
+      writeSentinel(dir, {});
+      const command =
+        prefix + "node " + sentinelJsPath() + " clear && git add -A && git commit -m msg";
+      const r = runGuard(dir, bashPayload(dir, command));
+      assert.equal(r.status, 0, "exit code must be 0\nstderr: " + r.stderr);
+      assert.equal(
+        parseDeny(r.stdout),
+        null,
+        "the gate command must not be denied behind a " + label + "; got: " + r.stdout
+      );
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+}
+
+// isSentinelClearSegment() tokenizes quote-aware, so a script path containing a
+// space still lands `clear` in the position the check reads. A naive whitespace
+// split shifted it and made an ordinary quoted gate command deny.
+test("commit-guard: allows the gate command with a quoted path containing a space", () => {
+  const dir = mk();
+  try {
+    writeEnabled(dir);
+    writeSentinel(dir, {});
+    const spaced = "C:/some dir/scripts/sentinel.js";
+    const command =
+      'node "' + spaced + '" clear && git add -A && git commit -m msg';
+    const r = runGuard(dir, bashPayload(dir, command));
+    assert.equal(r.status, 0, "exit code must be 0\nstderr: " + r.stderr);
+    assert.equal(
+      parseDeny(r.stdout),
+      null,
+      "a quoted sentinel path with a space must still be recognized; got: " + r.stdout
+    );
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// The order-aware half of the same rule: a clear that lands AFTER the commit
+// has not taken the documented route, so it must still deny.
+test("commit-guard: denies when the sentinel clear follows the commit", () => {
+  const dir = mk();
+  try {
+    writeEnabled(dir);
+    writeSentinel(dir, {});
+    const command =
+      "git commit -m msg && node " + sentinelJsPath() + " clear";
+    const r = runGuard(dir, bashPayload(dir, command));
+    assert.equal(r.status, 0, "exit code must be 0\nstderr: " + r.stderr);
+    const deny = parseDeny(r.stdout);
+    assert.ok(deny !== null, "a trailing clear must still deny; got: " + r.stdout);
+    assert.equal(deny.hookSpecificOutput.permissionDecision, "deny");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// The deny message must not assert review state this hook cannot read, and must
+// not pair a cleared mode with "mid-build" the way the old wording did.
+test("commit-guard: deny message reports the live sentinel, not a review verdict", () => {
+  const dir = mk();
+  try {
+    writeEnabled(dir);
+    writeSentinel(dir, {});
+    const r = runGuard(dir, bashPayload(dir, "git commit -m x"));
+    const deny = parseDeny(r.stdout);
+    assert.ok(deny !== null, "should deny; got: " + r.stdout);
+    const reason = deny.hookSpecificOutput.permissionDecisionReason;
+    assert.match(reason, /sentinel is still live/);
+    assert.doesNotMatch(
+      reason,
+      /not yet reviewed/,
+      "the guard does not read review state and must not claim a phase is unreviewed"
+    );
+    assert.doesNotMatch(
+      reason,
+      /mid-build/,
+      "mid-build contradicts a cleared mode value in the same sentence"
+    );
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 // --- fail-open cases ---
 
 test("commit-guard: fail-open when enabled marker is absent", () => {

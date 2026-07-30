@@ -5,6 +5,7 @@ Finished work, newest first. Written automatically at the commit boundary; run `
 <!-- last-sha: -->
 
 ### 2026-07-30
+- fix: commit-guard recognizes the gate command behind any prefix
 - feat: state.js read --json, the plugin-owned read path for schema v2
 
 ### 2026-07-28

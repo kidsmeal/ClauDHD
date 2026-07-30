@@ -11,7 +11,7 @@ This file is generated (design section 4): the facts below (Mode, Position, from
 Mode: (none - idle)
 Position: idle - pick a mode with /claudhd:start or /claudhd:design
 from: r-0727-4
-Counts: queue 0 · quick fixes 0 · ideas untriaged 4
+Counts: queue 0 · quick fixes 0 · ideas untriaged 5
 
 Last touched: 2026-07-30
 

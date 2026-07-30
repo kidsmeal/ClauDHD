@@ -96,10 +96,19 @@ const { resolveRoot, readSentinel, isStale } = require("../sentinel-core.js");
 // presence/staleness (computeGate(), unchanged).
 function deny(phase, mode) {
   const { describeMode } = require("../modes.js");
+  // States the fact it can actually establish - a live sentinel - and never
+  // asserts review state, which this hook does not read. The old wording
+  // ("phase N is mid-build and not yet reviewed") claimed both, and printed
+  // "mode: idle" alongside "mid-build" in the same sentence when the mode
+  // field had been cleared while a sentinel was still live. It also sent a
+  // reader who had ALREADY passed review looking for a review to run.
   const reason =
-    "ClauDHD holds the commit gate (mode: " + describeMode(mode) + "). phase " + phase +
-    " is mid-build and not yet reviewed. finish /claudhd:review and commit at the gate. " +
-    "(to clear: run `node sentinel.js clear`)";
+    "ClauDHD holds the commit gate: phase " + phase + "'s sentinel is still live " +
+    "(mode: " + describeMode(mode) + "). If this phase has passed /claudhd:review, " +
+    "commit at the gate by clearing in the SAME command: " +
+    "`node <path>/sentinel.js clear && git add <files> && git commit -m \"...\"` " +
+    "(a leading `cd` or other prefix is fine). If it has not been reviewed, run " +
+    "/claudhd:review first. To abandon the phase outright: `node sentinel.js clear`.";
   process.stdout.write(
     JSON.stringify({
       hookSpecificOutput: {
@@ -209,7 +218,24 @@ function isSentinelCall(command) {
 function commandTriggersGuard(command) {
   // Exception: sentinel.js calls must always pass through (whole-command check,
   // not per-segment, because the sentinel.js node call is the entire command).
+  // Kept alongside the order-aware check below because it is what covers a
+  // sentinel.js call whose own ARGUMENTS mention a git commit (record-round
+  // with a fixes body on stdin, say) - a case the per-segment scan would
+  // otherwise read as a real commit.
   if (isSentinelCall(command.trim())) return false;
+
+  // Exception: the documented gate command, recognized wherever the clear
+  // sits rather than only as the command's very first token. isSentinelCall()
+  // above requires tokens[0] === "node", so ANY prefix before the clear (a
+  // leading `cd <root> &&`, an env assignment, `set -e &&`) silently defeated
+  // it and denied the one command review.md tells the orchestrator to run.
+  // commandClearsSentinelBeforeCommit() is per-segment and order-aware, and
+  // is already the reconcile side's own test for this exact shape, so the
+  // deny path and the reconcile path now agree on what the gate command is.
+  // No new bypass: clearing the sentinel is the escape hatch this guard's own
+  // deny message hands out, so a command that clears before committing has
+  // taken the documented route by definition.
+  if (commandClearsSentinelBeforeCommit(command)) return false;
 
   const segments = splitSegments(command);
   for (const seg of segments) {
@@ -241,13 +267,21 @@ function isCommitCommand(command) {
 
 // Return true if a single segment is specifically a `node <sentinel.js path>
 // clear` invocation - not `write` or `add-files`, which do not null `build`.
+// Leading `VAR=value` assignments are a normal shell prefix on any command, so
+// they are skipped before `node` is expected. Tokenized with tokenizeCommand()
+// rather than a naive whitespace split, for the same reason gitSubcommand()
+// was changed to: a quoted script path containing a space split into multiple
+// tokens and shifted `clear` out of position, making an ordinary quoted gate
+// command invisible to this check.
 function isSentinelClearSegment(segment) {
-  const tokens = segment.trim().split(/\s+/);
-  if (tokens.length < 3) return false;
-  if (tokens[0] !== "node") return false;
-  const unquoted = tokens[1].replace(/^["']|["']$/g, "");
+  const tokens = tokenizeCommand(segment.trim());
+  let i = 0;
+  while (i < tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[i])) i++;
+  if (tokens.length - i < 3) return false;
+  if (tokens[i] !== "node") return false;
+  const unquoted = tokens[i + 1].replace(/^["']|["']$/g, "");
   if (!unquoted.endsWith("sentinel.js")) return false;
-  return tokens[2] === "clear";
+  return tokens[i + 2] === "clear";
 }
 
 // Return true if the command carries a sentinel-clear invocation BEFORE its
