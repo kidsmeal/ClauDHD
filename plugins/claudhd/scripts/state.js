@@ -226,6 +226,54 @@ function readState(nowDir) {
   }
 }
 
+// Read <nowDir>/state.json ONCE and classify it into the six-status result
+// { status, state?, reason?, version? }, keeping the failure detail
+// readState() deliberately collapses to null. Duplicates readState()'s field
+// normalization inline rather than delegating to it, so this function's one
+// fs.readFileSync/JSON.parse pair is the only read - never a second pass
+// (e.g. calling readState() first, then re-reading on failure) to explain a
+// failure readState() already collapsed to null. Never throws.
+function readStateResult(nowDir) {
+  const filePath = path.join(nowDir, "state.json");
+  let raw;
+  try {
+    raw = fs.readFileSync(filePath, "utf8");
+  } catch (e) {
+    if (e && e.code === "ENOENT") return { status: "absent" };
+    return { status: "unreadable", reason: (e && e.code) || (e && e.message) || "unknown read failure" };
+  }
+
+  let obj;
+  try {
+    obj = JSON.parse(raw);
+  } catch (e) {
+    return { status: "malformed", reason: "invalid JSON: " + e.message };
+  }
+
+  if (obj === null || typeof obj !== "object" || Array.isArray(obj)) {
+    const kind = Array.isArray(obj) ? "array" : obj === null ? "null" : typeof obj;
+    return { status: "malformed", reason: "state.json must be a JSON object, got " + kind };
+  }
+
+  const normalized = {
+    ...obj,
+    mode: obj.mode != null ? obj.mode : null,
+    from: obj.from != null ? obj.from : null,
+    build: obj.build != null ? obj.build : null,
+    design: obj.design != null ? obj.design : null,
+    intent: obj.intent != null ? obj.intent : null,
+    roadmapIds: obj.roadmapIds != null ? obj.roadmapIds : null,
+  };
+
+  const sv = obj.schemaVersion;
+  if (sv === undefined || sv === 1) return { status: "v1", state: normalized };
+  if (sv === 2) return { status: "v2", state: normalized };
+  if (Number.isInteger(sv) && sv > 2) {
+    return { status: "future", reason: "schemaVersion " + sv + " is newer than this reader supports (max known: 2)", version: sv };
+  }
+  return { status: "malformed", reason: "schemaVersion must be absent, 1, or an integer above 1; got " + JSON.stringify(sv) };
+}
+
 // Merge-preserving write to <nowDir>/state.json, serialized by stateLockPath's
 // lock so two writers can never observe or clobber each other's half of the
 // file. `ownedKeys` names exactly the top-level keys this call is allowed to
@@ -337,6 +385,7 @@ module.exports = {
   buildState,
   writeStateAtomic,
   readState,
+  readStateResult,
   stateLockPath,
   roadmapLockPath,
   issueRoadmapIds,
@@ -346,3 +395,37 @@ module.exports = {
   shippedFacts,
   roadmapFacts,
 };
+
+// ---------------------------------------------------------------------------
+// CLI - `read --json <project-root>`. Exits zero for every one of
+// readStateResult()'s six statuses, since a data status is not an error;
+// non-zero is reserved for a genuine usage error.
+// ---------------------------------------------------------------------------
+
+function runCli() {
+  const [, , cmd, ...rest] = process.argv;
+
+  switch (cmd) {
+    case "read": {
+      const jsonIdx = rest.indexOf("--json");
+      const projectRoot = jsonIdx !== -1 ? rest[jsonIdx + 1] : undefined;
+      if (jsonIdx === -1 || !projectRoot) {
+        console.error("state.js: usage: state.js read --json <project-root>");
+        process.exitCode = 1;
+        return;
+      }
+      const nowDir = path.join(projectRoot, ".now");
+      console.log(JSON.stringify(readStateResult(nowDir)));
+      return;
+    }
+    default:
+      console.error(
+        "state.js: unknown subcommand: " + cmd + "\n" +
+        "Usage:\n" +
+        "  state.js read --json <project-root>\n"
+      );
+      process.exitCode = 1;
+  }
+}
+
+if (require.main === module) runCli();

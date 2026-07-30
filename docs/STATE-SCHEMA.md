@@ -28,6 +28,51 @@ Call `readState(nowDir)` (`plugins/claudhd/scripts/state.js`). Never read
 - Every other top-level key in the file (including one a future writer adds
   that this doc does not yet know about) passes through unchanged.
 
+### `readStateResult(nowDir)` - the six-status result (phase 1, additive)
+
+`readState()`'s null-or-state contract collapses every failure - absent,
+unreadable, malformed - to the same `null`, which is correct for its silent
+hook/guard callers but not enough for a consumer that needs to know WHY there
+is no usable state (an external watcher, the desktop app's read path).
+`readStateResult(nowDir)` sits alongside `readState()` rather than replacing
+it: it reads `<nowDir>/state.json` once and returns
+
+```
+{ status, state?, reason?, version? }
+```
+
+`status` is a closed six-value enum:
+
+| status | meaning | carries |
+|---|---|---|
+| `absent` | no file at that path (`ENOENT`) | - |
+| `unreadable` | the path exists but could not be read as a file (a directory there, a permission failure, ...) - distinguished from `absent` by the filesystem error code, never guessed | `reason` |
+| `malformed` | the bytes are not valid JSON, or the parsed value is not a plain JSON object (a top-level array is malformed, not a valid object), or `schemaVersion` is present but is not a supported number (a string like `"2"`, a non-integer like `2.5`, or anything below 1) | `reason` |
+| `v1` | `schemaVersion` is absent or the number `1` | `state` |
+| `v2` | `schemaVersion` is the number `2` | `state` |
+| `future` | `schemaVersion` is an integer greater than `2` | `reason`, `version` |
+
+`unreadable`, `malformed`, and `future` are the three failure statuses and
+always carry a `reason` string; `future` additionally carries `version`, the
+raw `schemaVersion` value found, so a caller can name it rather than guess.
+`v1` and `v2` carry `state`, normalized with the same six-field rule
+`readState()` applies (`mode`/`from`/`build`/`design`/`intent`/`roadmapIds`
+default to `null` when absent). `readStateResult()` never throws, and reads
+the file exactly once - it does not call `readState()` and re-read to work
+out why a read failed.
+
+### `state.js read --json <project-root>` - the CLI consumer
+
+`plugins/claudhd/scripts/state.js` run directly (`require.main === module`)
+exposes `readStateResult()` as a subcommand: `state.js read --json
+<project-root>` resolves `<project-root>/.now`, calls `readStateResult()`,
+and prints the result as exactly one JSON object on stdout. All six statuses
+exit `0` - a data status (including `absent`, `unreadable`, `malformed`, and
+`future`) is not an error, since the caller asked "what is this project's
+state" and got a real answer either way. Non-zero exit is reserved for a
+genuine CLI usage error: a missing `--json`/`<project-root>` argument, or an
+unrecognized subcommand.
+
 ## Writing the file
 
 Call `writeStateAtomic(nowDir, patch, ownedKeys)`. Never call

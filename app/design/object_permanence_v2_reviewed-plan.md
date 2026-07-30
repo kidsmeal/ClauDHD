@@ -35,7 +35,7 @@ Section 10 ratified drag-reorder on 2026-07-25 ("structural edits in-app (drag-r
 
 ## Phase 1: Plugin read endpoint
 
-**Status:** review failed
+**Status:** committed
 **Goal:** `plugins/claudhd/scripts/state.js` gains `readStateResult(nowDir)` and a `read --json <project-root>` CLI subcommand that prints one JSON object carrying the six-status enum, with `readState()`'s behavior byte-for-byte unchanged.
 **Files:**
 - `plugins/claudhd/scripts/state.js` (add `readStateResult(nowDir)` returning `{ status, state?, reason?, version? }`; add a `require.main === module` CLI block with the `read --json <project-root>` subcommand resolving `<project-root>/.now`; export `readStateResult`; `readState()` and every other export untouched)
@@ -45,6 +45,7 @@ Section 10 ratified drag-reorder on 2026-07-25 ("structural edits in-app (drag-r
 **Exit criteria:** root suite green with the new cases; `readState()` unchanged and its callers (`checkpoint.js`, `reconcile.js`, `issueRoadmapIds()`, the guards through `modes.js`, `sentinel-core.js`) untouched; `docs/STATE-SCHEMA.md` documents the new reader and endpoint alongside the frozen one; no file under `app/` changed by this phase.
 **Blockers:** none.
 **Wired-by:** phase 2 (the capability probe is the subcommand's first caller) and phase 3 (the read path that consumes its result).
+**As-built amendments (phase-1 review):** `NOW.md` is modified by this phase and by every phase, and is deliberately absent from the Files list above. It is generated: `nowrender.js` rewrites its Mode and Position lines from `.now/state.json` whenever `sentinel.js write` or `thread.js enter-build` runs, which is phase bookkeeping rather than implementation. The generated position is correct and is never reverted to keep a Files list literal. This applies to every remaining phase in this plan, so it is recorded once here rather than repeated per phase.
 
 ## Phase 2: The script seam, proved by capture
 
