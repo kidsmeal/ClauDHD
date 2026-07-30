@@ -1,6 +1,6 @@
 ---
 description: Show the project roadmap, add a committed intent, or mark/reorder/park an existing item by id
-argument-hint: [intent to add, or empty to show, or "done <id>" / "reopen <id>" / "park <id> Next|Later" / "reorder <id> <position>"]
+argument-hint: '[intent to add, or empty to show, or "done <id>" / "reopen <id>" / "park <id> Next|Later" / "reorder <id> <position>"]'
 allowed-tools: Read, Write, Edit, Bash(node:*)
 ---
 The roadmap is the committed, ordered lane between IDEAS.md (someday, unsorted) and NOW.md (the one active thread): what you have decided to do and roughly in what order, before any of it becomes the live cursor. One cursor still rules - the roadmap orders many intents, NOW.md points at exactly one. Adding to the roadmap never starts work and never changes the active thread.

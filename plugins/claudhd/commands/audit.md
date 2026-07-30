@@ -1,6 +1,6 @@
 ---
 description: Catch up bypassed commits in SHIPPED.md, reconcile the currentness audit, and refresh the runtime verification queue
-argument-hint: [feature or area to add to the verification queue] | (none = full sweep)
+argument-hint: "[feature or area to add to the verification queue] | (none = full sweep)"
 allowed-tools: Bash(node:*), Bash(git log:*), Read, Edit, Write, Glob, Grep
 ---
 !`node "${CLAUDE_PLUGIN_ROOT}/scripts/shipped.js"`

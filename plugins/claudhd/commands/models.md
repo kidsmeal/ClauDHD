@@ -1,6 +1,6 @@
 ---
 description: View or change which model backend each pipeline role runs on
-argument-hint: [role backend [model]]  (e.g. "phase-reviewer codex gpt-5.5")
+argument-hint: '[role backend [model]]  (e.g. "phase-reviewer codex gpt-5.5")'
 ---
 !`node "${CLAUDE_PLUGIN_ROOT}/scripts/role.js" show`
 !`node "${CLAUDE_PLUGIN_ROOT}/scripts/role.js" detect`

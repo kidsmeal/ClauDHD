@@ -1,6 +1,6 @@
 ---
 description: Quick fixes - add a small self-contained chore to the capped batch, or clear the batch in one focused pass
-argument-hint: [a quick fix to add; omit to clear the batch]
+argument-hint: "[a quick fix to add; omit to clear the batch]"
 allowed-tools: Bash(node:*), Read, Edit
 ---
 !`node "${CLAUDE_PLUGIN_ROOT}/scripts/quick.js" "$ARGUMENTS"`
