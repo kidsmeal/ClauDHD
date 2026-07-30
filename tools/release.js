@@ -63,7 +63,13 @@ console.log(`ClauDHD release: ${curr} -> ${next}  (tag ${tag})${DRY ? "  [DRY RU
 
 // --- gate on a green, valid tree BEFORE bumping anything ---
 console.log("• running tests...");
-loud("node", ["--test"]);
+// Scoped to the plugin's own zero-dependency suite, matching package.json's
+// `test` script. A bare `node --test` discovers app/test/*.test.ts too - the
+// desktop app's vitest suite, which node's runner cannot execute - so it failed
+// unconditionally once the app was folded in under app/, blocking every
+// release. The app ships separately and has its own gate (`npm run test:app`);
+// a plugin release is gated on what the plugin actually ships.
+loud("node", ["--test", "test/*.test.js"]);
 console.log("• validating manifests...");
 loud("claude", ["plugin", "validate", PLUGIN_DIR]);
 loud("claude", ["plugin", "validate", "."]);
