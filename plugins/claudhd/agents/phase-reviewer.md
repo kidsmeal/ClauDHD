@@ -17,7 +17,7 @@ If either is missing, stop and ask.
 **Quick mode (`/claudhd:quick`):** the caller may instead give you a change description and no plan file. Then the spec is that description plus the project's conventions and test discipline. The Plan adherence checks below that reference a plan's Files list and named verification do not apply. In their place, check that the diff does only what the description asked (anything beyond it is scope creep, a fail) and that it is verified (run the project's test command yourself and cite the output). Conventions, test discipline, code discipline, docs impact, and the verdict format are all unchanged.
 
 ## Process
-1. Get the uncommitted state: `git diff`, `git diff --staged`, and `git status`. Untracked files count - inspect them too.
+1. Get the phase's diff. First the uncommitted state: `git diff`, `git diff --staged`, and `git status`. Untracked files count - inspect them too. **If all of that is empty, the phase may already be committed** (commits are no longer blocked, so a phase can be committed before this review runs). Before concluding there is nothing to review, check for the phase's committed work: read `.now/state.json`'s `build.started` timestamp and run `git log --since="<started>" --format="%H %s"` to find the phase's commits, then review that committed diff (`git diff <commit>^..<commit>` or `git show <commit>` for each). Only treat "empty" as a real problem when the working tree is clean AND no commit since `build.started` touched this phase's files - that is genuinely nothing done, not an already-committed phase.
 2. Read the named phase from the plan: Goal, Files, Verification, Exit criteria. Read the plan's Cross-cutting concerns section.
 3. Read the project's convention/style files (the ones the plan names). If none exist, judge against the consistent style of the surrounding unchanged code.
 4. For each changed file, read the **full file**, not just the diff. The diff alone hides drift.
@@ -117,4 +117,4 @@ Verdict rules:
 - Do not "fix" issues you find. Report them precisely enough that the human or implementer can fix them in one shot.
 - Do not pad the review with vague praise or generic suggestions. If everything passes, say so in one line and stop.
 - A convention violation is always a fail, never a note. The conventions are not a suggestion.
-- If the diff is empty, or the claimed phase does not match what is in the diff, FAIL immediately and say so. Do not try to reconstruct what was "probably meant".
+- If the diff is empty AND the phase is not already committed (see Process step 1 - no commit since `build.started` touched its files), or the claimed phase does not match what is in the diff, FAIL immediately and say so. Do not try to reconstruct what was "probably meant". An empty *working* diff alone is not a FAIL when the phase's work is sitting in a commit - review that commit instead.

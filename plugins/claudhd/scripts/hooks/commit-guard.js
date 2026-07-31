@@ -173,10 +173,20 @@ function isGitCommitOrPush(segment) {
 }
 
 // Return true if a single command segment is specifically a git commit
-// invocation (never push) - used only to decide whether to reconcile, a
-// distinct question from whether to deny (see isCommitCommand() below).
+// invocation that will actually create a commit - used only to decide whether
+// to reconcile (see isCommitCommand() below).
+//
+// A `git commit --dry-run` creates no commit, so it must NOT reconcile: doing
+// so records the INTENT to commit as shipped work with no commit behind it
+// (a real `git commit --dry-run` once logged a fake SHIPPED entry). This hook
+// is PreToolUse - it fires before the command runs and so cannot observe the
+// true outcome (an empty index or a rejected pre-commit hook would slip
+// through the same way); excluding the one flag whose entire purpose is "do
+// not actually commit" is the deterministic part of that gap it can close.
 function isGitCommit(segment) {
-  return gitSubcommand(segment) === "commit";
+  if (gitSubcommand(segment) !== "commit") return false;
+  if (tokenizeCommand(segment).includes("--dry-run")) return false;
+  return true;
 }
 
 // Return true if the command is a `node ... sentinel.js ...` orchestrator

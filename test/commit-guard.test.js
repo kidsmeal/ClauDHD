@@ -421,6 +421,33 @@ function readShipped(dir) {
   try { return fs.readFileSync(path.join(dir, "SHIPPED.md"), "utf8"); } catch { return null; }
 }
 
+test("commit-guard: `git commit --dry-run` does NOT reconcile - a dry run creates no commit and must not log shipped work", () => {
+  const dir = mk();
+  try {
+    writeEnabled(dir);
+    writeReconcileEnabled(dir);
+    writeNow(dir);
+    // No sentinel, so gate is null: a real `git commit` here WOULD reconcile.
+    // --dry-run must not, because it creates nothing.
+    const r = runGuard(dir, bashPayload(dir, 'git commit --dry-run -m "not a real commit"'));
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(parseDeny(r.stdout), null, "a dry run is never denied");
+    assert.equal(readShipped(dir), null, "a dry-run commit must not create or append to SHIPPED.md");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("commit-guard: a real `git commit` (no --dry-run) still reconciles, confirming the dry-run exclusion is not over-broad", () => {
+  const dir = mk();
+  try {
+    writeEnabled(dir);
+    writeReconcileEnabled(dir);
+    writeNow(dir);
+    const r = runGuard(dir, bashPayload(dir, 'git commit -m "a real one"'));
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(readShipped(dir) || "", /a real one/, "a real commit must still reconcile");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("S1: `cd <scratch> && git commit` (quoted path with a space) reconciles the SCRATCH repo, not the env root", () => {
   const sessionRoot = mk();
   const scratchParent = mk();
