@@ -8,20 +8,20 @@ _Committed, so it follows your branch: `git checkout` swaps this cursor to that 
 
 This file is generated (design section 4): the facts below (Mode, Position, from, Counts, Last touched) render from `.now/state.json`, never hand-typed. The Active thread's two lines are the one piece of human prose, prompted at boundaries and persisted as state fields too - so it survives a regeneration without ever being parsed back out of this file.
 
-Mode: (none - idle)
-Position: idle - pick a mode with /claudhd:start or /claudhd:design
-from: r-0727-4
-Counts: queue 0 · quick fixes 0 · ideas untriaged 5
+Mode: design
+Position: designing (no doc yet)
+from: r-0729-1
+Counts: queue 0 · quick fixes 0 · ideas untriaged 6
 
-Last touched: 2026-07-30
+Last touched: 2026-07-31
 
 ## Active thread (only one)
 
-**rework app/ to the 1.0 contracts (Object Permanence v2)**
+**make ClauDHD legal to work in: the sentinel becomes a record, not a gate**
 
 Next physical action:
 
-- [ ] run /claudhd:plan on app/design/object_permanence_v2_reviewed.md
+- [ ] inventory pre-1.0 commands and scripts from the v0.9.0 tag against 1.0.6's surface, then grill the two halves
 
 Rule: when you finish a step, check it off and write the next single tiny step. Do not start another thread until this one ships or you consciously commit the next one to the roadmap (`/claudhd:roadmap <intent>`) and activate it in its turn (`/claudhd:start <id>`).
 
