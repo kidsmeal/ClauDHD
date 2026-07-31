@@ -11,17 +11,17 @@ This file is generated (design section 4): the facts below (Mode, Position, from
 Mode: build
 Position: (no plan yet)
 from: r-0729-1
-Counts: queue 0 · quick fixes 0 · ideas untriaged 6
+Counts: queue 0 · quick fixes 0 · ideas untriaged 3
 
 Last touched: 2026-07-31
 
 ## Active thread (only one)
 
-**make ClauDHD legal to work in: the sentinel becomes a record, not a gate**
+**ClauDHD is legal to work in: log-only shipped (1.0.7/1.0.8)**
 
 Next physical action:
 
-- [ ] inventory pre-1.0 commands and scripts from the v0.9.0 tag against 1.0.6's surface, then grill the two halves
+- [ ] nothing in flight - using ClauDHD; the sweep's surface half (set-intent/add-files commands) is parked in r-0729-1 and IDEAS.md
 
 Rule: when you finish a step, check it off and write the next single tiny step. Do not start another thread until this one ships or you consciously commit the next one to the roadmap (`/claudhd:roadmap <intent>`) and activate it in its turn (`/claudhd:start <id>`).
 

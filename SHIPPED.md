@@ -5,6 +5,7 @@ Finished work, newest first. Written automatically at the commit boundary; run `
 <!-- last-sha: dea0d2d5abab06e35d62128d54b5b0a36dbc0c4d -->
 
 ### 2026-07-31
+- docs: drop resolved ideas, record r-0729-1 half-shipped
 - chore: release v1.0.8 (`dea0d2d`)
 - feat: surface the out-of-scope log in the SessionStart brief (`695c873`)
 - fix: two bookkeeping bugs that acted on intent instead of outcome (`026759e`)
