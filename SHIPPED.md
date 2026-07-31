@@ -2,7 +2,13 @@
 
 Finished work, newest first. Written automatically at the commit boundary; run `/claudhd:audit` to catch up any commit that bypassed the guard. This file records completed work so progress stays visible.
 
-<!-- last-sha: 749a48ac7bc765767a7118da66297cb46461c828 -->
+<!-- last-sha: dea0d2d5abab06e35d62128d54b5b0a36dbc0c4d -->
+
+### 2026-07-31
+- chore: release v1.0.8 (`dea0d2d`)
+- feat: surface the out-of-scope log in the SessionStart brief (`695c873`)
+- fix: two bookkeeping bugs that acted on intent instead of outcome (`026759e`)
+- docs: log v1.0.7 in SHIPPED.md (`0ecf3e6`)
 
 ### 2026-07-31
 - chore: release v1.0.7 (`749a48a`)
