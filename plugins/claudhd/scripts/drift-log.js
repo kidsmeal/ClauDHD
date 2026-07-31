@@ -77,4 +77,12 @@ function logDrift(root, record) {
   }
 }
 
-module.exports = { logDrift, readDriftLog, driftLogPath };
+// Remove the log. Called when a fresh phase starts (sentinel.js write), so the
+// log is bounded to the CURRENT phase's out-of-scope edits and never grows into
+// an ever-climbing count that trains the eye to ignore it. Best-effort: an
+// absent file or an unlink failure is fine, never thrown.
+function clearDriftLog(root) {
+  try { fs.rmSync(driftLogPath(root), { force: true }); } catch { /* nothing to clear */ }
+}
+
+module.exports = { logDrift, readDriftLog, driftLogPath, clearDriftLog };

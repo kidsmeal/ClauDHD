@@ -486,6 +486,13 @@ function cmdWrite(args) {
     _clearRoundFile();
   }
 
+  // A fresh phase starts with a clean out-of-scope log, so the drift the brief
+  // surfaces is THIS phase's, not an ever-growing pile. A fix-relay re-write for
+  // the same plan+phase is the same phase continuing - keep its log.
+  if (!sameSentinelPhase) {
+    try { require("./drift-log.js").clearDriftLog(ROOT); } catch { /* best-effort */ }
+  }
+
   console.log("sentinel.js: wrote phase " + phaseNumber + " sentinel (" + files.length + " file(s) in scope)");
 }
 

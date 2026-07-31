@@ -293,6 +293,21 @@ try {
     flags.push(`${dirty.size} uncommitted path(s) in the working tree. Commit, stash, or discard before drifting further.`);
   }
 
+  // Out-of-scope work log (r-0729-1): the guards no longer block an edit outside
+  // a live phase's scope, they record it here. Surface the count so the drift is
+  // visible, which is the whole point of logging instead of denying. The log is
+  // cleared when a fresh phase starts, so this is the current phase's drift, not
+  // a lifetime tally.
+  try {
+    const drift = require("./drift-log.js").readDriftLog(ROOT);
+    if (drift.length) {
+      const paths = [...new Set(drift.map((d) => d && d.path).filter(Boolean))];
+      const shown = paths.slice(0, 5).map((p) => safeInline(p)).join(", ");
+      const more = paths.length > 5 ? `, and ${paths.length - 5} more` : "";
+      flags.push(`${paths.length} edit(s) outside the active phase's scope this phase: ${shown}${more}. Either widen the phase (add-files) or note the scope grew; the edits landed, they were only recorded.`);
+    }
+  } catch { /* never let drift surfacing break the brief */ }
+
   // Prefer this branch's checkpoint, so after a branch switch you see where you
   // left off HERE, not wherever you last stopped.
   const safe = safeBranch(branch);
