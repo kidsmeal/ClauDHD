@@ -1,7 +1,7 @@
 ---
 name: claudhd-pipeline
 description: Use to run a feature through the full ClauDHD pipeline in the correct order with both review gates - phrases like "run this through the pipeline", "drive the gated build end to end", "design, plan, and build this with reviews", or chaining /claudhd:start through /claudhd:review by hand. Orchestrates design (the grill, absorbed into /claudhd:design) -> design-reviewer -> phase-planner -> per phase (implementer -> phase-reviewer, re-reviewing after any fix), pausing only at the human gates (unresolved decisions, plan blockers, every commit). Not for quick one-off edits (see /claudhd:quick).
-version: 1.0.5
+version: 1.0.6
 ---
 
 # ClauDHD pipeline orchestrator

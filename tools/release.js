@@ -24,6 +24,8 @@ const ROOT = path.join(__dirname, "..");
 const PLUGIN_JSON = path.join(ROOT, "plugins", "claudhd", ".claude-plugin", "plugin.json");
 const MARKET_JSON = path.join(ROOT, ".claude-plugin", "marketplace.json");
 const PLUGIN_DIR = path.join("plugins", "claudhd"); // relative, for `claude plugin tag`
+const SHIPPED_JS = path.join(ROOT, "plugins", "claudhd", "scripts", "shipped.js");
+const SKILL_MD = path.join(ROOT, "plugins", "claudhd", "skills", "pipeline", "SKILL.md");
 
 const args = process.argv.slice(2);
 const DRY = args.includes("--dry-run");
@@ -86,11 +88,35 @@ function setVersion(file) {
   if (out === txt) die("no version field updated in " + file);
   fs.writeFileSync(file, out);
 }
+// The pipeline skill carries the version in YAML frontmatter (`version: X.Y.Z`),
+// not JSON, so setVersion's quote-anchored regex never matched it and every
+// release left it behind - consistency.test.js's version-sync check is what
+// caught the drift. Bump it here so all three manifests move together.
+function setYamlVersion(file) {
+  const txt = fs.readFileSync(file, "utf8");
+  const out = txt.replace(/^(version:\s*)\d+\.\d+\.\d+\s*$/m, `$1${next}`);
+  if (out === txt) die("no version field updated in " + file);
+  fs.writeFileSync(file, out);
+}
 try {
   setVersion(PLUGIN_JSON);
   setVersion(MARKET_JSON);
-  loud("git", ["add", PLUGIN_JSON, MARKET_JSON]);
+  setYamlVersion(SKILL_MD);
+  loud("git", ["add", PLUGIN_JSON, MARKET_JSON, SKILL_MD]);
   loud("git", ["commit", "-m", "chore: release v" + next]);
+  // Log the release into SHIPPED.md via the plugin's own catch-up script, then
+  // commit that. A release commits through execFileSync, which fires no
+  // PreToolUse hook, so the commit-boundary reconcile never runs and every
+  // release was previously invisible to SHIPPED.md by construction. shipped.js
+  // reads from the last-sha watermark to HEAD, so it picks up the release
+  // commit just made; it is the single write path for SHIPPED, so the format
+  // stays consistent with an in-session commit.
+  loud("node", [SHIPPED_JS]);
+  const shippedDirty = quiet("git", ["status", "--porcelain", "SHIPPED.md"]);
+  if (shippedDirty) {
+    loud("git", ["add", "SHIPPED.md"]);
+    loud("git", ["commit", "-m", "docs: log v" + next + " in SHIPPED.md"]);
+  }
   loud("git", ["push", "origin", "main"]);
   loud("claude", ["plugin", "tag", PLUGIN_DIR, "--push", "-m", "ClauDHD %s"]);
 } catch (e) {
