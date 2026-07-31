@@ -88,113 +88,34 @@ function bashPayload(dir, command, sessionId) {
   };
 }
 
-// --- deny cases ---
+// --- never denies (r-0729-1: log, don't deny) ---
+// The commit guard no longer blocks any commit or push, in any command-head
+// form. A live sentinel is present in each case; under the old contract every
+// one of these denied. The command-parsing (gitSubcommand/commandTriggersGuard)
+// is still exercised - it gates whether reconcile runs - but its outcome is
+// never a deny.
 
-test("commit-guard: denies git commit -m x", () => {
-  const dir = mk();
-  try {
-    writeEnabled(dir);
-    writeSentinel(dir, {});
-    const r = runGuard(dir, bashPayload(dir, "git commit -m x"));
-    assert.equal(r.status, 0, "exit code must be 0 even on deny\nstderr: " + r.stderr);
-    const deny = parseDeny(r.stdout);
-    assert.ok(deny !== null, "stdout should be parseable deny JSON; got: " + r.stdout);
-    assert.equal(deny.hookSpecificOutput.permissionDecision, "deny");
-    assert.equal(deny.hookSpecificOutput.hookEventName, "PreToolUse");
-    assert.match(deny.hookSpecificOutput.permissionDecisionReason, /commit gate/);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
-test("commit-guard: denies git push", () => {
-  const dir = mk();
-  try {
-    writeEnabled(dir);
-    writeSentinel(dir, {});
-    const r = runGuard(dir, bashPayload(dir, "git push"));
-    assert.equal(r.status, 0, "exit code must be 0 even on deny\nstderr: " + r.stderr);
-    const deny = parseDeny(r.stdout);
-    assert.ok(deny !== null, "stdout should be parseable deny JSON; got: " + r.stdout);
-    assert.equal(deny.hookSpecificOutput.permissionDecision, "deny");
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
-test("commit-guard: denies git commit after && (foo && git commit ...)", () => {
-  const dir = mk();
-  try {
-    writeEnabled(dir);
-    writeSentinel(dir, {});
-    const r = runGuard(dir, bashPayload(dir, "foo && git commit -m msg"));
-    assert.equal(r.status, 0, "exit code must be 0\nstderr: " + r.stderr);
-    const deny = parseDeny(r.stdout);
-    assert.ok(deny !== null, "should deny git commit after &&; got: " + r.stdout);
-    assert.equal(deny.hookSpecificOutput.permissionDecision, "deny");
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
-test("commit-guard: denies git push after ; (x; git push)", () => {
-  const dir = mk();
-  try {
-    writeEnabled(dir);
-    writeSentinel(dir, {});
-    const r = runGuard(dir, bashPayload(dir, "x; git push"));
-    assert.equal(r.status, 0, "exit code must be 0\nstderr: " + r.stderr);
-    const deny = parseDeny(r.stdout);
-    assert.ok(deny !== null, "should deny git push after semicolon; got: " + r.stdout);
-    assert.equal(deny.hookSpecificOutput.permissionDecision, "deny");
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
-test("commit-guard: denies git commit inside subshell ( git commit )", () => {
-  const dir = mk();
-  try {
-    writeEnabled(dir);
-    writeSentinel(dir, {});
-    const r = runGuard(dir, bashPayload(dir, "( git commit -m x )"));
-    assert.equal(r.status, 0, "exit code must be 0\nstderr: " + r.stderr);
-    const deny = parseDeny(r.stdout);
-    assert.ok(deny !== null, "should deny git commit inside subshell; got: " + r.stdout);
-    assert.equal(deny.hookSpecificOutput.permissionDecision, "deny");
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
-test("commit-guard: denies git -C ./sub commit", () => {
-  const dir = mk();
-  try {
-    writeEnabled(dir);
-    writeSentinel(dir, {});
-    const r = runGuard(dir, bashPayload(dir, "git -C ./sub commit -m x"));
-    assert.equal(r.status, 0, "exit code must be 0\nstderr: " + r.stderr);
-    const deny = parseDeny(r.stdout);
-    assert.ok(deny !== null, "should deny git -C ./sub commit; got: " + r.stdout);
-    assert.equal(deny.hookSpecificOutput.permissionDecision, "deny");
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
-test("commit-guard: denies git -c key=value commit (a global option with a separate argument must not swallow the subcommand)", () => {
-  const dir = mk();
-  try {
-    writeEnabled(dir);
-    writeSentinel(dir, {});
-    const r = runGuard(dir, bashPayload(dir, "git -c user.name=Test commit -m x"));
-    assert.equal(r.status, 0, "exit code must be 0\nstderr: " + r.stderr);
-    const deny = parseDeny(r.stdout);
-    assert.ok(deny !== null, "should deny git -c key=value commit; got: " + r.stdout);
-    assert.equal(deny.hookSpecificOutput.permissionDecision, "deny");
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
-test("commit-guard: denies git --git-dir X --work-tree Y commit (chained global options with separate arguments)", () => {
-  const dir = mk();
-  try {
-    writeEnabled(dir);
-    writeSentinel(dir, {});
-    const r = runGuard(dir, bashPayload(dir, "git --git-dir /repo/.git --work-tree /repo commit -m x"));
-    assert.equal(r.status, 0, "exit code must be 0\nstderr: " + r.stderr);
-    const deny = parseDeny(r.stdout);
-    assert.ok(deny !== null, "should deny git --git-dir/--work-tree commit; got: " + r.stdout);
-    assert.equal(deny.hookSpecificOutput.permissionDecision, "deny");
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
+for (const [label, command] of [
+  ["git commit -m x", "git commit -m x"],
+  ["git push", "git push"],
+  ["foo && git commit", "foo && git commit -m msg"],
+  ["x; git push", "x; git push"],
+  ["( git commit )", "( git commit -m x )"],
+  ["git -C ./sub commit", "git -C ./sub commit -m x"],
+  ["git -c key=value commit", "git -c user.name=Test commit -m x"],
+  ["git --git-dir X --work-tree Y commit", "git --git-dir /repo/.git --work-tree /repo commit -m x"],
+]) {
+  test(`commit-guard: never denies ${label} (sentinel live)`, () => {
+    const dir = mk();
+    try {
+      writeEnabled(dir);
+      writeSentinel(dir, {});
+      const r = runGuard(dir, bashPayload(dir, command));
+      assert.equal(r.status, 0, "exit code must be 0\nstderr: " + r.stderr);
+      assert.equal(parseDeny(r.stdout), null, `${label} must not be denied; got: ` + r.stdout);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+}
 
 // --- allow cases ---
 
@@ -307,7 +228,7 @@ test("commit-guard: allows the gate command with a quoted path containing a spac
 
 // The order-aware half of the same rule: a clear that lands AFTER the commit
 // has not taken the documented route, so it must still deny.
-test("commit-guard: denies when the sentinel clear follows the commit", () => {
+test("commit-guard: never denies when the sentinel clear follows the commit", () => {
   const dir = mk();
   try {
     writeEnabled(dir);
@@ -316,34 +237,7 @@ test("commit-guard: denies when the sentinel clear follows the commit", () => {
       "git commit -m msg && node " + sentinelJsPath() + " clear";
     const r = runGuard(dir, bashPayload(dir, command));
     assert.equal(r.status, 0, "exit code must be 0\nstderr: " + r.stderr);
-    const deny = parseDeny(r.stdout);
-    assert.ok(deny !== null, "a trailing clear must still deny; got: " + r.stdout);
-    assert.equal(deny.hookSpecificOutput.permissionDecision, "deny");
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
-// The deny message must not assert review state this hook cannot read, and must
-// not pair a cleared mode with "mid-build" the way the old wording did.
-test("commit-guard: deny message reports the live sentinel, not a review verdict", () => {
-  const dir = mk();
-  try {
-    writeEnabled(dir);
-    writeSentinel(dir, {});
-    const r = runGuard(dir, bashPayload(dir, "git commit -m x"));
-    const deny = parseDeny(r.stdout);
-    assert.ok(deny !== null, "should deny; got: " + r.stdout);
-    const reason = deny.hookSpecificOutput.permissionDecisionReason;
-    assert.match(reason, /sentinel is still live/);
-    assert.doesNotMatch(
-      reason,
-      /not yet reviewed/,
-      "the guard does not read review state and must not claim a phase is unreviewed"
-    );
-    assert.doesNotMatch(
-      reason,
-      /mid-build/,
-      "mid-build contradicts a cleared mode value in the same sentence"
-    );
+    assert.equal(parseDeny(r.stdout), null, "no commit form is denied anymore; got: " + r.stdout);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -397,64 +291,31 @@ test("commit-guard: fail-open for stale sentinel", () => {
 
 // --- exit code is always 0 ---
 
-test("commit-guard: exit code is always 0 even when denying", () => {
+test("commit-guard: exit code is always 0 for a commit under a live sentinel", () => {
   const dir = mk();
   try {
     writeEnabled(dir);
     writeSentinel(dir, {});
     const r = runGuard(dir, bashPayload(dir, "git push origin main"));
-    assert.equal(r.status, 0, "exit code MUST be 0 even on deny; got: " + r.status);
-    const deny = parseDeny(r.stdout);
-    assert.ok(deny !== null, "should have produced deny JSON");
-    assert.equal(deny.hookSpecificOutput.permissionDecision, "deny");
+    assert.equal(r.status, 0, "exit code MUST be 0; got: " + r.status);
+    assert.equal(parseDeny(r.stdout), null, "no deny is emitted");
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-// --- deny message content check ---
+// --- reconcile in front of the (now deny-less) gate ---
 
-test("commit-guard: deny message references phase number and commit gate", () => {
+test("commit-guard: a bare mid-phase commit (sentinel live, no clear) is allowed but NOT reconciled - reconcile still waits for the gate commit that clears the sentinel", () => {
   const dir = mk();
   try {
     writeEnabled(dir);
-    writeSentinel(dir, { phase: 3 });
-    const r = runGuard(dir, bashPayload(dir, "git commit -m test"));
-    const deny = parseDeny(r.stdout);
-    assert.ok(deny !== null, "should produce deny JSON");
-    const reason = deny.hookSpecificOutput.permissionDecisionReason;
-    assert.match(reason, /3/, "reason should mention the phase number");
-    assert.match(reason, /commit gate/, "reason should mention commit gate");
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
-test("commit-guard: deny message names the ACTUAL stored mode, not a hardcoded default (review item 5)", () => {
-  const dir = mk();
-  try {
-    writeEnabled(dir);
-    writeSentinel(dir, { phase: 3 }, { mode: "build" });
-    const r1 = runGuard(dir, bashPayload(dir, "git commit -m test"));
-    const reason1 = parseDeny(r1.stdout).hookSpecificOutput.permissionDecisionReason;
-    assert.match(reason1, /mode: build/, "reason should name the stored mode (build)");
-
-    writeSentinel(dir, { phase: 3 }, { mode: "design" });
-    const r2 = runGuard(dir, bashPayload(dir, "git commit -m test"));
-    const reason2 = parseDeny(r2.stdout).hookSpecificOutput.permissionDecisionReason;
-    assert.match(reason2, /mode: design/, "reason should track a DIFFERENT stored mode too, not a fixed string");
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
-// --- phase 4: the reconcile in front of the gate ---
-
-test("commit-guard: a denied commit (sentinel present, not stale) is never reconciled - a commit that never happens must never be recorded as shipped", () => {
-  const dir = mk();
-  try {
-    writeEnabled(dir);
+    writeReconcileEnabled(dir);
     writeSentinel(dir, {});
     writeNow(dir);
-    const r = runGuard(dir, bashPayload(dir, 'git commit -m "should not ship"'));
+    const r = runGuard(dir, bashPayload(dir, 'git commit -m "mid-phase wip"'));
     assert.equal(r.status, 0, r.stderr);
-    const deny = parseDeny(r.stdout);
-    assert.ok(deny !== null, "should still deny, unchanged from before phase 4");
-    assert.ok(!fs.existsSync(path.join(dir, "SHIPPED.md")), "a denied commit must not be reconciled");
+    assert.equal(parseDeny(r.stdout), null, "a mid-phase commit is allowed now, not denied");
+    assert.ok(!fs.existsSync(path.join(dir, "SHIPPED.md")),
+      "a bare mid-phase commit still does not reconcile - the sentinel is not cleared, so the phase is not done");
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -537,41 +398,10 @@ test("commit-guard: fail-open (exit 0) when the resolved root genuinely does not
   }
 });
 
-test("commit-guard: fail-open (exit 0) via the TOP-LEVEL catch, when a required sibling module (modes.js) is broken", () => {
-  // Mirrors the reconcile.js module-init-failure fixture above, but breaks
-  // modes.js instead - reached only on the DENY path (deny() lazily requires
-  // it), so this fixture must actually deny (sentinel present, marker
-  // present) for the broken module to be reached at all.
-  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "claudhd-cg-scratch2-"));
-  const repoDir = mk();
-  try {
-    const scriptsDir = path.join(scratch, "scripts");
-    const hooksDir = path.join(scriptsDir, "hooks");
-    fs.mkdirSync(hooksDir, { recursive: true });
-
-    const REAL_SCRIPTS = path.join(__dirname, "..", "plugins", "claudhd", "scripts");
-    for (const name of ["root.js", "sentinel-core.js", "state.js", "lock.js", "constants.js", "nowfile.js", "roadmapids.js", "reconcile.js", "shipped.js", "nowrender.js"]) {
-      fs.copyFileSync(path.join(REAL_SCRIPTS, name), path.join(scriptsDir, name));
-    }
-    fs.copyFileSync(path.join(REAL_SCRIPTS, "hooks", "commit-guard.js"), path.join(hooksDir, "commit-guard.js"));
-    fs.writeFileSync(path.join(scriptsDir, "modes.js"), "throw new Error('simulated modes.js module-init failure');\n");
-
-    writeEnabled(repoDir);
-    writeSentinel(repoDir, {});
-
-    const r = spawnSync(process.execPath, [path.join(hooksDir, "commit-guard.js")], {
-      encoding: "utf8",
-      input: JSON.stringify(bashPayload(repoDir, 'git commit -m "should still exit 0"')),
-      env: { ...process.env, GANTRY_PROJECT_DIR: repoDir },
-    });
-
-    assert.equal(r.status, 0, "exit code must still be 0 even though modes.js failed to load\nstderr: " + r.stderr);
-    assert.equal(r.stdout.trim(), "", "a broken dependency must fail open, never deny");
-  } finally {
-    fs.rmSync(scratch, { recursive: true, force: true });
-    fs.rmSync(repoDir, { recursive: true, force: true });
-  }
-});
+// (The former "broken modes.js" fail-open test is gone: the commit guard no
+// longer requires modes.js at all - that require lived only in the deleted
+// deny message. The reconcile.js module-init-failure test above is the
+// remaining broken-sibling fail-open coverage.)
 
 // ---------------------------------------------------------------------------
 // 1.0.4 S1 fix: cross-repo root resolution. A `git commit`/`push` that runs
@@ -581,68 +411,71 @@ test("commit-guard: fail-open (exit 0) via the TOP-LEVEL catch, when a required 
 // comment. These mirror the live-test scenario exactly.
 // ---------------------------------------------------------------------------
 
-test("S1: `cd <scratch> && git commit` (quoted path with a space) is judged against the SCRATCH repo's own sentinel, not the env root's", () => {
-  const sessionRoot = mk(); // env root - adopted, but carries NO sentinel
+// These no longer have a deny to observe, so they assert the thing S1 actually
+// protects: RECONCILE runs against the repo the commit truly runs in, never the
+// env-pinned root. Each drives a real commit (no sentinel in the target repo,
+// so the gate is null and reconcile fires) and checks the target repo's
+// SHIPPED.md got the entry while the env root's did not.
+
+function readShipped(dir) {
+  try { return fs.readFileSync(path.join(dir, "SHIPPED.md"), "utf8"); } catch { return null; }
+}
+
+test("S1: `cd <scratch> && git commit` (quoted path with a space) reconciles the SCRATCH repo, not the env root", () => {
+  const sessionRoot = mk();
   const scratchParent = mk();
-  const scratchDir = path.join(scratchParent, "scratch repo with spaces"); // deliberately has a space
+  const scratchDir = path.join(scratchParent, "scratch repo with spaces");
   fs.mkdirSync(scratchDir, { recursive: true });
   try {
-    writeEnabled(sessionRoot); // adopted, no active sentinel -> would ALLOW if consulted
-    writeEnabled(scratchDir); // adopted AND carries an active sentinel -> must DENY
-    writeSentinel(scratchDir, {});
+    writeEnabled(sessionRoot); writeReconcileEnabled(sessionRoot); writeNow(sessionRoot);
+    writeEnabled(scratchDir); writeReconcileEnabled(scratchDir); writeNow(scratchDir);
 
-    // Single-quoted (not double): the path may contain backslashes on
-    // Windows, and this file's tokenizeCommand() honors backslash-escapes
-    // only inside a DOUBLE-quoted span (matching real shell quoting rules),
-    // so a single-quoted path round-trips backslashes literally.
     const command = "cd '" + scratchDir + "' && git commit -m \"scratch commit\"";
     const r = runGuard(sessionRoot, bashPayload(sessionRoot, command));
     assert.equal(r.status, 0, r.stderr);
-    const deny = parseDeny(r.stdout);
-    assert.ok(deny !== null,
-      "must deny against the scratch repo's active sentinel, even though env root has none; got: " + r.stdout);
+    assert.match(readShipped(scratchDir) || "", /scratch commit/,
+      "reconcile must have run against the scratch repo the commit actually runs in");
+    assert.equal(readShipped(sessionRoot), null,
+      "the env root must NOT be reconciled for a commit that runs in the scratch repo");
   } finally {
     fs.rmSync(sessionRoot, { recursive: true, force: true });
     fs.rmSync(scratchParent, { recursive: true, force: true });
   }
 });
 
-test("S1: `git -C <scratch> commit` form resolves the same way as the cd-chain form", () => {
+test("S1: `git -C <scratch> commit` reconciles the scratch repo the same way the cd-chain form does", () => {
   const sessionRoot = mk();
   const scratchDir = mk();
   try {
-    writeEnabled(sessionRoot); // adopted, no active sentinel
-    writeEnabled(scratchDir); // adopted, active sentinel
-    writeSentinel(scratchDir, {});
+    writeEnabled(sessionRoot); writeReconcileEnabled(sessionRoot); writeNow(sessionRoot);
+    writeEnabled(scratchDir); writeReconcileEnabled(scratchDir); writeNow(scratchDir);
 
-    const command = "git -C " + JSON.stringify(scratchDir) + " commit -m x";
+    const command = "git -C " + JSON.stringify(scratchDir) + " commit -m \"dash-C commit\"";
     const r = runGuard(sessionRoot, bashPayload(sessionRoot, command));
     assert.equal(r.status, 0, r.stderr);
-    const deny = parseDeny(r.stdout);
-    assert.ok(deny !== null,
-      "git -C must resolve root the same way the cd-chain form does; got: " + r.stdout);
+    assert.match(readShipped(scratchDir) || "", /dash-C commit/, "git -C must resolve root the same way the cd-chain form does");
+    assert.equal(readShipped(sessionRoot), null, "the env root must not be reconciled");
   } finally {
     fs.rmSync(sessionRoot, { recursive: true, force: true });
     fs.rmSync(scratchDir, { recursive: true, force: true });
   }
 });
 
-test("S1 sol fix: `git -C \"path with spaces\" commit` (quoted -C value containing a space) is still recognized as a commit and resolved to the scratch repo", () => {
-  const sessionRoot = mk(); // adopted, no active sentinel
+test("S1 sol fix: `git -C \"path with spaces\" commit` (quoted -C value with a space) is still recognized and reconciles the scratch repo", () => {
+  const sessionRoot = mk();
   const scratchParent = mk();
   const scratchDir = path.join(scratchParent, "scratch repo with spaces");
   fs.mkdirSync(scratchDir, { recursive: true });
   try {
-    writeEnabled(sessionRoot);
-    writeEnabled(scratchDir);
-    writeSentinel(scratchDir, {});
+    writeEnabled(sessionRoot); writeReconcileEnabled(sessionRoot); writeNow(sessionRoot);
+    writeEnabled(scratchDir); writeReconcileEnabled(scratchDir); writeNow(scratchDir);
 
-    const command = "git -C " + JSON.stringify(scratchDir) + " commit -m x";
+    const command = "git -C " + JSON.stringify(scratchDir) + " commit -m \"quoted C commit\"";
     const r = runGuard(sessionRoot, bashPayload(sessionRoot, command));
     assert.equal(r.status, 0, r.stderr);
-    const deny = parseDeny(r.stdout);
-    assert.ok(deny !== null,
-      "a quoted -C value with a space must still be recognized as `git ... commit` and resolved against the scratch repo; got: " + r.stdout);
+    assert.match(readShipped(scratchDir) || "", /quoted C commit/,
+      "a quoted -C value with a space must still be recognized as `git ... commit` and resolved against the scratch repo");
+    assert.equal(readShipped(sessionRoot), null, "the env root must not be reconciled");
   } finally {
     fs.rmSync(sessionRoot, { recursive: true, force: true });
     fs.rmSync(scratchParent, { recursive: true, force: true });

@@ -1,6 +1,14 @@
 /*
- * commit-guard.js - PreToolUse hook: deny Bash calls that contain a
- * `git commit` or `git push` invocation at any command-head position.
+ * commit-guard.js - PreToolUse hook on Bash calls containing a `git commit`
+ * or `git push`. r-0729-1 (log, don't deny): it NEVER blocks a commit. Its
+ * only remaining job is to run the commit-boundary reconcile at the right
+ * interception point. The gate is still computed (it decides whether reconcile
+ * fires) but no deny is ever emitted.
+ *
+ * Much of the machinery below - command-head detection, the sentinel-call
+ * exception, cross-repo root resolution - predates the log-only change and is
+ * retained because reconcile must run against the right repo at the right
+ * instant. What is gone is the deny: a mid-phase commit is ordinary work now.
  *
  * A "command-head position" is: start-of-string, or after &&, ;, |, or (.
  * A leading `git -C <path>` is allowed (the -C flag selects the working dir
@@ -88,37 +96,10 @@ const { resolveRoot, readSentinel, isStale } = require("../sentinel-core.js");
 // Deny output
 // ---------------------------------------------------------------------------
 
-// Mode-aware (phase 5): names the project's current mode alongside the
-// existing phase/commit-gate reason. describeMode() is modes.js's own
-// normalization (null/unrecognized -> "idle"), reused here so the two
-// guards never label the same mode value differently. This is a message-only
-// change - the commit gate's DECISION still turns solely on sentinel
-// presence/staleness (computeGate(), unchanged).
-function deny(phase, mode) {
-  const { describeMode } = require("../modes.js");
-  // States the fact it can actually establish - a live sentinel - and never
-  // asserts review state, which this hook does not read. The old wording
-  // ("phase N is mid-build and not yet reviewed") claimed both, and printed
-  // "mode: idle" alongside "mid-build" in the same sentence when the mode
-  // field had been cleared while a sentinel was still live. It also sent a
-  // reader who had ALREADY passed review looking for a review to run.
-  const reason =
-    "ClauDHD holds the commit gate: phase " + phase + "'s sentinel is still live " +
-    "(mode: " + describeMode(mode) + "). If this phase has passed /claudhd:review, " +
-    "commit at the gate by clearing in the SAME command: " +
-    "`node <path>/sentinel.js clear && git add <files> && git commit -m \"...\"` " +
-    "(a leading `cd` or other prefix is fine). If it has not been reviewed, run " +
-    "/claudhd:review first. To abandon the phase outright: `node sentinel.js clear`.";
-  process.stdout.write(
-    JSON.stringify({
-      hookSpecificOutput: {
-        hookEventName: "PreToolUse",
-        permissionDecision: "deny",
-        permissionDecisionReason: reason,
-      },
-    }) + "\n"
-  );
-}
+// r-0729-1 (log, don't deny): this hook no longer emits a deny of any kind.
+// It still resolves the root, computes the gate, and runs the commit-boundary
+// reconcile - the deny emission is the only thing removed. The former deny()
+// function and its mode-aware message are gone with it.
 
 // ---------------------------------------------------------------------------
 // Command scanning
@@ -617,12 +598,11 @@ function main() {
     }
   }
 
-  // 7-8. Deny if the gate says so.
-  if (gate !== null) {
-    const { readState } = require("../state.js"); // lazy - see header comment
-    const state = readState(path.join(root, ".now")); // never throws once loaded
-    deny(gate.phase, state && state.mode != null ? state.mode : null);
-  }
+  // 7-8. r-0729-1 (log, don't deny): the commit is never blocked. `gate` is
+  // still computed above because it is what decides whether reconcile runs
+  // (a bare mid-phase commit reconciles nothing; the gate commit that clears
+  // the sentinel does), but a non-null gate no longer emits a deny. Commits
+  // mid-phase are ordinary work now, not a violation to stop.
 }
 
 try {

@@ -1011,58 +1011,40 @@ function adoptForFileListGuard(dir) {
   write(dir, "NOW.md", "# NOW\n<!-- claudhd: opt-in marker -->\n\n## Loose ends\n\n(none yet)\n");
 }
 
-test("ROW-4B: write-files clears a recorded override - the edit it used to permit now denies under the fresh sentinel", () => {
+// r-0729-1 note: the guard no longer denies or consults the override, so these
+// no longer probe the guard. Establishing a fresh scope still CLEARS the
+// override key (it keeps NOW.md's "## Loose ends" render from showing a stale
+// unguarded-session line), and that clear is what these now assert directly.
+
+test("ROW-4B: write-files clears a recorded override key", () => {
   const dir = mk();
   try {
     adoptForFileListGuard(dir);
     const sessionId = "session-row4b";
-    const outOfScopeFile = path.join(dir, "src", "unrelated.js");
 
-    // 1. Record a real override (no sentinel exists yet - unguarded mode).
     override.recordOverride(dir, sessionId);
+    assert.ok(JSON.parse(fs.readFileSync(path.join(dir, ".now", "state.json"), "utf8")).override,
+      "sanity: the override was recorded");
 
-    // 2. The override permits the out-of-scope edit, exactly as designed.
-    const before = runFileListGuard(dir, outOfScopeFile, sessionId);
-    assert.equal(before.status, 0, before.stderr);
-    assert.equal(before.stdout.trim(), "", "the override must permit the edit before any scope is established");
-
-    // 3. Establish a fresh scope via write-files - must clear the override,
-    //    with no hand-editing of state.json.
     const w = run(dir, ["write-files", "src/scoped.js"], { GANTRY_SESSION_ID: sessionId });
     assert.equal(w.status, 0, "write-files should exit 0\nstdout: " + w.stdout + "\nstderr: " + w.stderr);
     const state = JSON.parse(fs.readFileSync(path.join(dir, ".now", "state.json"), "utf8"));
     assert.ok(!state.override, "write-files must clear the override key");
-
-    // 4. The SAME previously-permitted out-of-scope edit must now deny.
-    const after = runFileListGuard(dir, outOfScopeFile, sessionId);
-    assert.equal(after.status, 0, after.stderr);
-    const deny = JSON.parse(after.stdout.trim());
-    assert.equal(deny.hookSpecificOutput.permissionDecision, "deny",
-      "the override must not survive into the fresh write-files scope; got: " + after.stdout);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("ROW-4B: write (plan-backed) also clears a recorded override", () => {
+test("ROW-4B: write (plan-backed) also clears a recorded override key", () => {
   const dir = mk();
   try {
     adoptForFileListGuard(dir);
     const planPath = writePlan(dir);
     const sessionId = "session-row4b-plan";
-    const outOfScopeFile = path.join(dir, "totally", "unrelated.js");
 
     override.recordOverride(dir, sessionId);
-    const before = runFileListGuard(dir, outOfScopeFile, sessionId);
-    assert.equal(before.stdout.trim(), "", "the override must permit the edit before any scope is established");
-
     const w = run(dir, ["write", planPath, "2"], { GANTRY_SESSION_ID: sessionId });
     assert.equal(w.status, 0, w.stderr);
     const state = JSON.parse(fs.readFileSync(path.join(dir, ".now", "state.json"), "utf8"));
     assert.ok(!state.override, "write must clear the override key");
-
-    const after = runFileListGuard(dir, outOfScopeFile, sessionId);
-    const deny = JSON.parse(after.stdout.trim());
-    assert.equal(deny.hookSpecificOutput.permissionDecision, "deny",
-      "the override must not survive into the fresh plan-backed scope; got: " + after.stdout);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 

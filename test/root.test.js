@@ -192,8 +192,10 @@ test("checkpoint.js (a state writer) and file-list-guard.js (a guard) resolve th
     );
 
     // Now prove the guard resolves the SAME root: write a sentinel in this exact
-    // dir and confirm the guard (given the same env) finds it and denies an
-    // out-of-scope path - it could only do that by resolving to this dir.
+    // dir and confirm the guard (given the same env) finds it and RECORDS an
+    // out-of-scope edit into that dir's own .now/out-of-scope.jsonl - it could
+    // only write there by resolving to this dir. (r-0729-1: the guard logs
+    // rather than denies, so the observable is the drift log, not stdout.)
     fs.mkdirSync(path.join(dir, ".gantry"), { recursive: true });
     fs.writeFileSync(path.join(dir, ".gantry", "enabled"), "");
     fs.writeFileSync(path.join(dir, ".gantry", "active-phase.json"), JSON.stringify({
@@ -212,8 +214,8 @@ test("checkpoint.js (a state writer) and file-list-guard.js (a guard) resolve th
     });
     assert.equal(g.status, 0, g.stderr);
     assert.ok(
-      g.stdout.trim().length > 0,
-      "the guard must have found the sentinel in the SAME dir checkpoint.js just wrote to, and denied the out-of-scope path"
+      fs.existsSync(path.join(dir, ".now", "out-of-scope.jsonl")),
+      "the guard must have found the sentinel in the SAME dir checkpoint.js just wrote to, and logged the out-of-scope path there"
     );
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
