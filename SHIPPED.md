@@ -2,7 +2,12 @@
 
 Finished work, newest first. Written automatically at the commit boundary; run `/claudhd:audit` to catch up any commit that bypassed the guard. This file records completed work so progress stays visible.
 
-<!-- last-sha: 9736081461abad8ee900008eb6dda330d5f3df79 -->
+<!-- last-sha: 749a48ac7bc765767a7118da66297cb46461c828 -->
+
+### 2026-07-31
+- chore: release v1.0.7 (`749a48a`)
+- fix: release logs itself to SHIPPED.md and bumps the skill version (`d814711`)
+- feat: log out-of-scope work instead of denying it (r-0729-1) (`d0a76d9`)
 
 ### 2026-07-31
 - docs: merge the mode-rule and command-surface work into one thread
