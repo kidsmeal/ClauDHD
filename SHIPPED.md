@@ -2,7 +2,14 @@
 
 Finished work, newest first. Written automatically at the commit boundary; run `/claudhd:audit` to catch up any commit that bypassed the guard. This file records completed work so progress stays visible.
 
-<!-- last-sha: 1f0fbc5402025e94ad0463cb3febff6841fa4bcf -->
+<!-- last-sha: dfe1220ec8d358ada578548dea53f1909b8e2306 -->
+
+### 2026-09-09
+- chore: release v1.0.10 (`dfe1220`)
+- fix: role.js exits after stdout flushes so relayed reports are not truncated on macOS (`c226e5e`)
+- test: echo backend copies stdin synchronously so macOS Node 20 sees the whole prompt (`ded0746`)
+- fix: npm test runs on Node 20 through an explicit file list (`e197e01`)
+- docs: log v1.0.9 in SHIPPED.md (`7866697`)
 
 ### 2026-09-09
 - chore: release v1.0.9 (`1f0fbc5`)
