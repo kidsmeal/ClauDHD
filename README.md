@@ -144,7 +144,7 @@ These are deliberate design limits:
 Zero-dependency tests run on Node's built-in test runner:
 
 ```
-npm test        # or: node --test   (from the repo root)
+npm test        # from the repo root; runs tools/run-tests.js over test/*.test.js
 ```
 
 They spin up throwaway git repos and exercise the real scripts. See [test/](test/). Nothing under `test/` or `tools/` ships with the installed plugin.
