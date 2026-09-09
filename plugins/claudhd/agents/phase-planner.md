@@ -25,7 +25,7 @@ If no design doc path is given, stop and ask for one. Do not invent a design.
 ## Decompose into phases
 Break the work into phases. Each phase must be:
 - **Independently verifiable** - you can prove it works before moving on (a test, a build, an observable behavior).
-- **Small enough** to be one focused implementation session.
+- **Small enough** for one implementer run: one subsystem per phase, and a Files list of at most 10 source files. Test files, generated companions (`.uid`, `.g.dart`, lockfiles), and data or asset files do not count toward the 10. Reason: every implementer call resends the whole transcript and subagent runs never compact, so cost grows with the square of run length. Measured on one project: phases listing 14 to 19 files ran up to 150 calls and 22M to 43M input tokens each; the four runs over 100 calls were 55% of the project's total spend.
 - **Ordered by dependency**, not by importance.
 
 For each phase, list:
@@ -59,6 +59,7 @@ Verification command(s): <the project's test/build commands you will rely on>
 
 ## Summary
 <2-3 sentences: what gets built, in how many phases>
+Source files per phase: <phase 1: N, phase 2: N, ...> (cap 10)
 
 ## Blockers / Open Questions
 <unresolved design decisions - these need human resolution before phase 1 starts>
@@ -85,5 +86,6 @@ Return a short summary message: phase count, any blockers that prevent starting 
 - Never invent a resolution to design ambiguity. If the design is unclear, self-contradictory, or leaves a decision unmade, list it under Blockers. A phase that requires a decision you cannot make from the design alone is a blocker, not a phase.
 - Convention violations are blockers, not "TODO" items inside a phase. If the design implies breaking the project's stated conventions, surface it for human resolution.
 - A cross-cutting concern that touches shared global state, a schema/format, or a public contract MUST appear in the Cross-cutting section. Do not bury it inside a phase.
-- Prefer 4-7 phases. If you have 15, you are decomposing too finely. If you have 1, you are not decomposing enough.
+- Phase count follows the size cap, never a target. Prefer 6-12 phases. A phase whose Files list exceeds 10 source files, or whose Goal names two subsystems, gets split at a verifiable seam (data model then UI, codegen then its consumers, write path then read path). Never merge two small phases to lower the count. If you have 25, you are decomposing too finely. If you have 1, you are not decomposing enough.
+- Before writing the plan, count each phase's source files against the cap and split any phase over it. State the per-phase counts in the Summary so the orchestrator can check them without reading every Files list.
 - Do not plan optimization, polish, or "nice to have" phases unless the design explicitly requires them.
