@@ -2,7 +2,14 @@
 
 Finished work, newest first. Written automatically at the commit boundary; run `/claudhd:audit` to catch up any commit that bypassed the guard. This file records completed work so progress stays visible.
 
-<!-- last-sha: dea0d2d5abab06e35d62128d54b5b0a36dbc0c4d -->
+<!-- last-sha: 1f0fbc5402025e94ad0463cb3febff6841fa4bcf -->
+
+### 2026-09-09
+- chore: release v1.0.9 (`1f0fbc5`)
+- feat: phase-planner caps phases at 10 source files, one subsystem each (`280483f`)
+
+### 2026-07-31
+- docs: log v1.0.8 in SHIPPED.md (`a830748`)
 
 ### 2026-07-31
 - docs: drop resolved ideas, record r-0729-1 half-shipped
