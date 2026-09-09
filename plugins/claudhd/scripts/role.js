@@ -254,8 +254,15 @@ function cmdRun(args) {
         : "")
     );
   }
-  if (res.stdout) process.stdout.write(res.stdout);
-  process.exit(res.status == null ? 1 : res.status);
+  // Exit only after stdout has flushed. Pipes are asynchronous on macOS, and
+  // process.exit() right after write() dropped everything past the first
+  // 8192-byte chunk of a relayed reviewer report (CI macos-latest, Node 20).
+  const code = res.status == null ? 1 : res.status;
+  if (res.stdout) {
+    process.stdout.write(res.stdout, () => process.exit(code));
+    return;
+  }
+  process.exit(code);
 }
 
 // --- detect ---
