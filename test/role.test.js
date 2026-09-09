@@ -127,11 +127,15 @@ const ROUNDS = {
   ],
 };
 
-// A stdin-echo backend: pipes stdin straight to stdout so the composed prompt
-// appears in the process stdout. Used to assert prompt/context wording.
+// A stdin-echo backend: reads all of stdin, then writes it to stdout with a
+// synchronous fd write, so the composed prompt appears in the process stdout.
+// Used to assert prompt/context wording. Not `process.stdin.pipe(process.stdout)`:
+// pipes are asynchronous on macOS, and on Node 20 the process exited after the
+// first 8192 bytes were flushed, truncating the prompt (CI, macos-latest/20).
+// The code carries no whitespace because role-core splits `cmd` on whitespace.
 const ECHO_BACKEND = {
   type: "cli",
-  cmd: "node -e \"process.stdin.pipe(process.stdout)\"",
+  cmd: "node -e \"require('fs').writeSync(1,require('fs').readFileSync(0))\"",
   promptVia: "stdin",
 };
 
