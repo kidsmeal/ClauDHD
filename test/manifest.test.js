@@ -72,3 +72,33 @@ test("hooks/hooks.json wires the PreToolUse commit guard and the PostToolUse com
   const total = hooks.SessionStart.length + hooks.Stop.length + hooks.PreToolUse.length + hooks.PostToolUse.length;
   assert.equal(total, 4, "hooks/hooks.json must declare exactly four hook entries (SessionStart, Stop, PreToolUse commit guard, PostToolUse commit verify)");
 });
+
+// A hook script that fails to parse is skipped by the harness with no signal
+// at all: no stderr, no exit code, nothing in the transcript. On 2026-09-09 a
+// stray newline inside a string in commit-guard.js and commit-verify.js
+// silently disabled both for two commits. Every script the manifest names,
+// plus every module those scripts require from scripts/, must at least parse.
+test("every hook script named in hooks/hooks.json, and every scripts/*.js module, passes node --check", () => {
+  const { spawnSync } = require("node:child_process");
+  const hooks = readJson(HOOKS).hooks;
+  const scriptsDir = path.join(ROOT, "plugins", "claudhd", "scripts");
+  const named = new Set();
+  for (const entries of Object.values(hooks)) {
+    for (const entry of entries) {
+      for (const h of entry.hooks) {
+        const m = /\$\{CLAUDE_PLUGIN_ROOT\}\/([^"\s]+\.js)/.exec(h.command);
+        assert.ok(m, "hook command must name a .js script under ${CLAUDE_PLUGIN_ROOT}: " + h.command);
+        named.add(path.join(ROOT, "plugins", "claudhd", m[1]));
+      }
+    }
+  }
+  assert.ok(named.size >= 4, "expected at least the four hook scripts");
+  const modules = fs.readdirSync(scriptsDir).filter((f) => f.endsWith(".js")).map((f) => path.join(scriptsDir, f));
+  const hookDir = path.join(scriptsDir, "hooks");
+  const hookModules = fs.readdirSync(hookDir).filter((f) => f.endsWith(".js")).map((f) => path.join(hookDir, f));
+  for (const file of [...named, ...modules, ...hookModules]) {
+    assert.ok(fs.existsSync(file), "hook script missing on disk: " + file);
+    const r = spawnSync(process.execPath, ["--check", file], { encoding: "utf8" });
+    assert.equal(r.status, 0, "does not parse: " + path.relative(ROOT, file) + "\n" + r.stderr);
+  }
+});

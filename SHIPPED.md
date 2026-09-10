@@ -5,6 +5,7 @@ Finished work, newest first. Written automatically at the commit boundary; run `
 <!-- last-sha: 2816ba458489266290843949d78e5a31e3576612 -->
 
 ### 2026-09-09
+- test: every hook script and scripts/ module must pass node --check
 - chore: release v1.0.11 (`2816ba4`)
 - feat: drop the file-list guard, verify commits post-hoc, per-plan auto-commit grant (`ed24b14`)
 - fix: commit-guard expands ~, $HOME and /c/ paths before resolving the commit's repo (`a3eff11`)

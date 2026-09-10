@@ -13,7 +13,7 @@ Position: (no plan yet)
 from: r-0729-1
 Counts: queue 0 · quick fixes 0 · ideas untriaged 3
 
-Last touched: 2026-07-31
+Last touched: 2026-09-09
 
 ## Active thread (only one)
 
