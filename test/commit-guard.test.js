@@ -63,12 +63,12 @@ function writeNow(dir, thread) {
   write(dir, "NOW.md", `# NOW\n<!-- claudhd: opt-in marker -->\n\n## Active thread\n\n**${thread || "main thread"}**\n\n- [ ] step\n`);
 }
 
-function runGuard(dir, payload) {
+function runGuard(dir, payload, extraEnv) {
   const input = typeof payload === "string" ? payload : JSON.stringify(payload);
   return spawnSync(process.execPath, [GUARD], {
     encoding: "utf8",
     input,
-    env: { ...process.env, GANTRY_PROJECT_DIR: dir },
+    env: { ...process.env, GANTRY_PROJECT_DIR: dir, ...(extraEnv || {}) },
   });
 }
 
@@ -549,5 +549,106 @@ test("S1: a genuine internal walk failure at the effective directory fails open,
   } finally {
     fs.rmSync(sessionRoot, { recursive: true, force: true });
     fs.rmSync(scratchDir, { recursive: true, force: true });
+  }
+});
+
+// --- shell-expanded cd targets (2026-09-09 fix) ---
+// Reproduces the 2026-09-09 finding: six ClauDHD commits made from a session
+// whose project dir was a DIFFERENT repo, via
+//   cd ~/Documents/ClauDHD && git add ... && git commit -m ...
+// produced no SHIPPED.md entries. effectiveCommandDir() took the `cd` token
+// literally: `~/Documents/ClauDHD` is not path.isAbsolute(), so it was
+// resolved under the payload cwd as <cwd>/~/Documents/ClauDHD - a directory
+// that does not exist - and walkForRoot() climbed from there back into
+// whatever adopted ancestor sat above the SESSION's cwd (or found none and
+// went inert). The repo the commit actually landed in was never consulted.
+//
+// The home dir is pinned to a temp dir through HOME/USERPROFILE (os.homedir()
+// reads USERPROFILE on win32 and HOME elsewhere), so `~` is deterministic.
+function homeEnv(home) { return { HOME: home, USERPROFILE: home }; }
+
+function adoptedRepo(dir) {
+  fs.mkdirSync(dir, { recursive: true });
+  writeEnabled(dir); writeReconcileEnabled(dir); writeNow(dir);
+}
+
+test("cd ~/<repo> && git add && git commit from a foreign, UNADOPTED project dir reconciles <repo> (the 2026-09-09 shape)", () => {
+  const home = mk();
+  const sessionDir = path.join(home, "Documents", "other-project"); // no markers, like goshade-turbo
+  const target = path.join(home, "Documents", "ClauDHD");
+  fs.mkdirSync(sessionDir, { recursive: true });
+  adoptedRepo(target);
+  try {
+    const command = 'cd ~/Documents/ClauDHD && git add plugins/x.js && git commit -m "feat: tilde commit"';
+    const r = runGuard(sessionDir, bashPayload(sessionDir, command),
+      { ...homeEnv(home), CLAUDE_PROJECT_DIR: sessionDir, CLAUDHD_PROJECT_DIR: "" });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(readShipped(target) || "", /feat: tilde commit/,
+      "the repo named by `cd ~/...` is where the commit lands; it must be reconciled");
+    assert.equal(readShipped(sessionDir), null, "the session's own dir must not be touched");
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test("cd ~/<repo> && git commit from a foreign ADOPTED project dir reconciles <repo>, never the session root", () => {
+  const home = mk();
+  const sessionRoot = path.join(home, "Documents", "session-project");
+  const target = path.join(home, "Documents", "target-repo");
+  adoptedRepo(sessionRoot);
+  adoptedRepo(target);
+  try {
+    const command = "cd ~/Documents/target-repo && git commit -m \"tilde commit\"";
+    const r = runGuard(sessionRoot, bashPayload(sessionRoot, command), homeEnv(home));
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(readShipped(target) || "", /tilde commit/, "the tilde-expanded repo must be reconciled");
+    assert.equal(readShipped(sessionRoot), null,
+      "an unexpanded `~` used to resolve under the session root and walk back into it; the session root must stay untouched");
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test("cd \"$HOME/<repo>\" && git commit expands the env var the same way the shell will", () => {
+  const home = mk();
+  const sessionRoot = path.join(home, "session-project");
+  const target = path.join(home, "target-repo");
+  adoptedRepo(sessionRoot);
+  adoptedRepo(target);
+  try {
+    const command = 'cd "$HOME/target-repo" && git commit -m "home var commit"';
+    const r = runGuard(sessionRoot, bashPayload(sessionRoot, command), homeEnv(home));
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(readShipped(target) || "", /home var commit/, "$HOME must expand to the home dir");
+    assert.equal(readShipped(sessionRoot), null, "the session root must not be reconciled");
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test("a cd target that does not exist on disk leaves the guard inert instead of walking up into an adopted ancestor", () => {
+  const parent = mk();
+  const sessionRoot = path.join(parent, "session-project");
+  adoptedRepo(sessionRoot);
+  try {
+    // `cd` fails, so `&& git commit` never runs: nothing to reconcile anywhere.
+    const command = "cd " + JSON.stringify(path.join(sessionRoot, "no-such-dir", "repo")) + " && git commit -m \"never happens\"";
+    const r = runGuard(sessionRoot, bashPayload(sessionRoot, command));
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(readShipped(sessionRoot), null,
+      "a non-existent effective directory must not fall through to the nearest adopted ancestor");
+  } finally { fs.rmSync(parent, { recursive: true, force: true }); }
+});
+
+test("cd /c/... (Git Bash drive path on win32) && git commit resolves to the drive-letter repo", { skip: process.platform !== "win32" }, () => {
+  const sessionRoot = mk();
+  const target = mk();
+  adoptedRepo(sessionRoot);
+  adoptedRepo(target);
+  try {
+    // C:\Users\x\AppData\... -> /c/Users/x/AppData/...
+    const msys = "/" + target[0].toLowerCase() + target.slice(2).split(path.sep).join("/");
+    const command = "cd " + JSON.stringify(msys) + " && git commit -m \"msys commit\"";
+    const r = runGuard(sessionRoot, bashPayload(sessionRoot, command));
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(readShipped(target) || "", /msys commit/, "a /c/-style path must map to the C: drive, not to <cwd-drive>:/c/...");
+    assert.equal(readShipped(sessionRoot), null, "the session root must not be reconciled");
+  } finally {
+    fs.rmSync(sessionRoot, { recursive: true, force: true });
+    fs.rmSync(target, { recursive: true, force: true });
   }
 });

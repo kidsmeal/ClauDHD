@@ -66,6 +66,16 @@
  * closes. `WALK_FAILED` (a genuine internal error during the walk) fails
  * open outright, same as every other unresolvable-state path in this file.
  *
+ * Shell expansion (2026-09-09 fix): the cd/-C token is expanded the way the
+ * shell will expand it before the walk - `~`, `$HOME`/`${VAR}`, and Git
+ * Bash's `/c/...` drive form on win32 (expandShellPath()). The 1.0.4 resolver
+ * took `~/Documents/ClauDHD` literally as a relative path under the session
+ * cwd, and walked up from that non-existent directory into the session's
+ * own ancestors, so a `cd ~/<other-repo> && git commit` from a foreign
+ * project dir reconciled the wrong repo or nothing. An effective directory
+ * that does not exist after expansion now leaves the hook inert without
+ * walking (isExistingDir()): the cd/-C fails, so no commit happens.
+ *
  * Hard invariants:
  *   - Always exits 0, on every path including denies and errors.
  *   - Fails OPEN on ANY error: malformed stdin, missing fields, absent
@@ -88,6 +98,7 @@
  */
 "use strict";
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 
 const { resolveRoot, readSentinel, isStale } = require("../sentinel-core.js");
@@ -349,7 +360,8 @@ function leadingCdDir(command) {
   for (const seg of segments) {
     if (seg.startsWith('"') || seg.startsWith("'")) continue;
     const tokens = tokenizeCommand(seg);
-    if (tokens[0] === "cd" && tokens.length > 1) { cdDir = tokens[1]; continue; }
+    // A bare `cd` goes home; the token is expanded later by expandShellPath().
+    if (tokens[0] === "cd") { cdDir = tokens.length > 1 ? tokens[1] : "~"; continue; }
     if (isGitCommitOrPush(seg)) break;
   }
   return cdDir;
@@ -378,19 +390,83 @@ function commitDashCDir(command) {
   return null; // no commit/push segment in this command at all
 }
 
+// The home directory the shell will substitute for `~` and `$HOME`. Read from
+// the hook's own env first (the same env the Bash tool's shell inherits;
+// Git Bash on Windows sets HOME) so tests can pin it, then os.homedir().
+function shellHome(env) {
+  return env.HOME || env.USERPROFILE || os.homedir();
+}
+
+// Reproduce the shell expansions a `cd <dir>` / `-C <dir>` token goes through
+// before git ever sees it (2026-09-09 fix). The 1.0.4 resolver took the token
+// literally, so `cd ~/Documents/ClauDHD && git commit` issued from a session
+// in another project resolved `~/Documents/ClauDHD` as a RELATIVE path under
+// the session cwd - a directory that does not exist - and walkForRoot()
+// climbed from there into whatever adopted ancestor sat above the session,
+// or found none and went inert. Either way the repo the commit landed in was
+// never reconciled (six ClauDHD commits on 2026-09-09 with no SHIPPED.md
+// entries). Handled forms:
+//   ~ / ~/x                     -> <home>/x        (`~user` is left as-is)
+//   $HOME/x, ${HOME}/x, $VAR/x  -> env value       (unknown vars stay literal)
+//   /c/x (Git Bash on win32)    -> C:\x            (path.isAbsolute("/c/x")
+//                                                   is true on win32, so it
+//                                                   would otherwise resolve
+//                                                   to <cwd-drive>:\c\x)
+// Pure string work; the existence check in main() catches what is still
+// unresolvable after this.
+function expandShellPath(p, env) {
+  let out = p;
+  if (out === "~" || out.startsWith("~/") || out.startsWith("~\\")) {
+    out = shellHome(env) + out.slice(1);
+  }
+  out = out.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g, (m, braced, bare) => {
+    const name = braced || bare;
+    if (name === "HOME" || name === "USERPROFILE") return shellHome(env);
+    return Object.prototype.hasOwnProperty.call(env, name) ? env[name] : m;
+  });
+  if (process.platform === "win32") {
+    const drive = /^\/([A-Za-z])(?:\/(.*))?$/.exec(out);
+    if (drive) out = drive[1].toUpperCase() + ":\\" + (drive[2] || "").replace(/\//g, "\\");
+  }
+  return out;
+}
+
 // The directory a git commit/push segment found in `command` ACTUALLY runs
 // in: the cd-chain (if any), resolved against `payloadCwd` (falling back to
 // `envRoot` only when the payload carries no cwd at all), then the target
 // invocation's own -C (if any), resolved against THAT - matching the order a
-// real shell would apply them. Pure string/path composition; the only
-// filesystem access is the walk the caller performs on the result.
-function effectiveCommandDir(command, payloadCwd, envRoot) {
+// real shell would apply them. Each token is passed through expandShellPath()
+// first, since the shell does that before either cd or git runs. Pure
+// string/path composition; the only filesystem access is the existence check
+// and the walk the caller performs on the result.
+function effectiveCommandDir(command, payloadCwd, envRoot, env) {
+  const e = env || process.env;
   let dir = payloadCwd || envRoot;
   const cdDir = leadingCdDir(command);
-  if (cdDir != null) dir = path.isAbsolute(cdDir) ? cdDir : path.resolve(dir, cdDir);
+  if (cdDir != null) {
+    const expanded = expandShellPath(cdDir, e);
+    dir = path.isAbsolute(expanded) ? expanded : path.resolve(dir, expanded);
+  }
   const dashC = commitDashCDir(command);
-  if (dashC != null) dir = path.isAbsolute(dashC) ? dashC : path.resolve(dir, dashC);
+  if (dashC != null) {
+    const expanded = expandShellPath(dashC, e);
+    dir = path.isAbsolute(expanded) ? expanded : path.resolve(dir, expanded);
+  }
   return dir;
+}
+
+// True only when `dir` exists and is a directory. A `cd <missing>` fails and
+// its `&& git commit` never runs, and `git -C <missing>` exits before
+// committing, so there is nothing to reconcile - and walking UP from a
+// missing directory is exactly how an unexpanded `~/...` token reached an
+// unrelated adopted ancestor (see expandShellPath). Any fs error counts as
+// "does not exist": the caller then stays inert, the fail-open direction.
+function isExistingDir(dir) {
+  try {
+    return fs.statSync(dir).isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 // Find the token index right after the FIRST `git [global-options] commit`
@@ -582,7 +658,11 @@ function main() {
   // the env root, which is exactly the cross-repo corruption this fix closes.
   const envRoot = resolveRoot(process.env);
   const payloadCwd = typeof payload.cwd === "string" && payload.cwd !== "" ? payload.cwd : null;
-  const effectiveDir = effectiveCommandDir(command, payloadCwd, envRoot);
+  const effectiveDir = effectiveCommandDir(command, payloadCwd, envRoot, process.env);
+  // A missing effective directory means the cd/-C fails and no commit runs
+  // (2026-09-09 fix). Never walk up from it: the nearest adopted ancestor is an
+  // unrelated repo, and reconciling that is the misroute this fix closes.
+  if (!isExistingDir(effectiveDir)) return;
   const walkedRoot = resolveRoot.walkForRoot(effectiveDir);
   if (walkedRoot === resolveRoot.WALK_FAILED) return;
   if (walkedRoot === null) return;
