@@ -2,7 +2,11 @@
 
 Finished work, newest first. Written automatically at the commit boundary; run `/claudhd:audit` to catch up any commit that bypassed the guard. This file records completed work so progress stays visible.
 
-<!-- last-sha: 2816ba458489266290843949d78e5a31e3576612 -->
+<!-- last-sha: 2162d4c5bf8639266543391ecbc30daac122755a -->
+
+### 2026-09-09
+- chore: release v1.0.12 (`2162d4c`)
+- docs: log v1.0.11 in SHIPPED.md (`54f42bd`)
 
 ### 2026-09-09
 - test: every hook script and scripts/ module must pass node --check
