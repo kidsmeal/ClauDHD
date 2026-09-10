@@ -2,7 +2,14 @@
 
 Finished work, newest first. Written automatically at the commit boundary; run `/claudhd:audit` to catch up any commit that bypassed the guard. This file records completed work so progress stays visible.
 
-<!-- last-sha: dfe1220ec8d358ada578548dea53f1909b8e2306 -->
+<!-- last-sha: 2816ba458489266290843949d78e5a31e3576612 -->
+
+### 2026-09-09
+- chore: release v1.0.11 (`2816ba4`)
+- feat: drop the file-list guard, verify commits post-hoc, per-plan auto-commit grant (`ed24b14`)
+- fix: commit-guard expands ~, $HOME and /c/ paths before resolving the commit's repo (`a3eff11`)
+- feat: pipeline skill preflights the harness and refuses outside Claude Code (`e04d91d`)
+- docs: log v1.0.10 in SHIPPED.md (`c44db77`)
 
 ### 2026-09-09
 - chore: release v1.0.10 (`dfe1220`)
