@@ -34,7 +34,7 @@ Report to me in this shape only: a verdict line ("phase `<phase>` review: PASS" 
 
 **Before the commit gate, log every Deferred note so none is dropped.** Append each to `CURRENTNESS_AUDIT.md`'s `## Deferred review notes` section: `- [ ] <note, with file:line>: <why deferred> (phase N, <feature or plan name>)`. If no audit file exists, append them to the plan's own phase section instead and tell me that `/claudhd:init` would enable persistent tracking. A deferred note must land in writing somewhere durable, never only in chat.
 
-**On PASS** (or PASS-WITH-NOTES with only deferred notes remaining, now logged): present the clean diff and verdict, and the exact compound command below, then wait for me to say go. Never commit on my behalf unless I explicitly say so. claudhd 1.0 ships primary-reviewer-only: there is no second-opinion pass, so the primary reviewer's clean verdict is what opens the gate.
+**On PASS** (or PASS-WITH-NOTES with only deferred notes remaining, now logged): present the clean diff and verdict, and the exact compound command below, then run `node ${CLAUDE_PLUGIN_ROOT}/scripts/thread.js commit-policy`: on `gate`, wait for me to say go; on `auto` for this plan (a grant I recorded once with `thread.js commit-policy auto <plan>`), run the compound command below without asking and report the hash. Never commit on my behalf unless I explicitly say so or that grant is recorded. Push stays a human action under either policy. claudhd 1.0 ships primary-reviewer-only: there is no second-opinion pass, so the primary reviewer's clean verdict is what opens the gate.
 
 **The commit itself is ONE Bash invocation, never split into a separate clear step and a separate commit step:**
 

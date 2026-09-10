@@ -9,7 +9,6 @@ const path = require("node:path");
 const { runAsync } = require("../tools/helpers.js");
 
 const SENTINEL_SCRIPT = path.join(__dirname, "..", "plugins", "claudhd", "scripts", "sentinel.js");
-const FILE_LIST_GUARD = path.join(__dirname, "..", "plugins", "claudhd", "scripts", "hooks", "file-list-guard.js");
 const HOLD_LOCK = path.join(__dirname, "..", "tools", "hold-lock.js");
 const override = require("../plugins/claudhd/scripts/override.js");
 
@@ -990,36 +989,21 @@ test("write-files: logs a stale phase's recorded rounds to review-log.jsonl befo
 // a hand-edited state.json.
 // ---------------------------------------------------------------------------
 
-function runFileListGuard(dir, filePath, sessionId) {
-  const payload = {
-    session_id: sessionId,
-    cwd: dir,
-    hook_event_name: "PreToolUse",
-    tool_name: "Edit",
-    tool_input: { file_path: filePath },
-  };
-  return spawnSync(process.execPath, [FILE_LIST_GUARD], {
-    encoding: "utf8",
-    input: JSON.stringify(payload),
-    env: { ...process.env, GANTRY_PROJECT_DIR: dir },
-  });
-}
-
-function adoptForFileListGuard(dir) {
+function adoptForOverride(dir) {
   fs.mkdirSync(path.join(dir, ".now"), { recursive: true });
   fs.writeFileSync(path.join(dir, ".now", "enabled"), "");
   write(dir, "NOW.md", "# NOW\n<!-- claudhd: opt-in marker -->\n\n## Loose ends\n\n(none yet)\n");
 }
 
-// r-0729-1 note: the guard no longer denies or consults the override, so these
-// no longer probe the guard. Establishing a fresh scope still CLEARS the
-// override key (it keeps NOW.md's "## Loose ends" render from showing a stale
-// unguarded-session line), and that clear is what these now assert directly.
+// Establishing a fresh scope CLEARS the override key (it keeps NOW.md's
+// "## Loose ends" render from showing a stale unguarded-session line); these
+// assert that clear directly. The Edit/Write file-list guard that once
+// consulted the override was removed in 1.0.11.
 
 test("ROW-4B: write-files clears a recorded override key", () => {
   const dir = mk();
   try {
-    adoptForFileListGuard(dir);
+    adoptForOverride(dir);
     const sessionId = "session-row4b";
 
     override.recordOverride(dir, sessionId);
@@ -1036,7 +1020,7 @@ test("ROW-4B: write-files clears a recorded override key", () => {
 test("ROW-4B: write (plan-backed) also clears a recorded override key", () => {
   const dir = mk();
   try {
-    adoptForFileListGuard(dir);
+    adoptForOverride(dir);
     const planPath = writePlan(dir);
     const sessionId = "session-row4b-plan";
 
@@ -1082,7 +1066,7 @@ function holdLock(lockDir, id, holdMs, logFile) {
 test("RACE (sol fix): noteOverrideFile racing sentinel.js write-files never resurrects the override write-files clears - both serialize on override.lock", async () => {
   const dir = mk();
   try {
-    adoptForFileListGuard(dir);
+    adoptForOverride(dir);
     const sessionId = "session-race";
 
     // A real, pre-existing active override with one accumulated file - both

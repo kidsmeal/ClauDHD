@@ -11,11 +11,9 @@
  *
  * `mode: "build"` is set here too (by /claudhd:build, alongside
  * sentinel.js's own `build` write), but ONLY for NOW.md's display line.
- * Guard enforcement itself keys off the SENTINEL's presence, not this field:
- * file-list-guard.js hardcodes "build" once a sentinel exists and only
- * consults `mode` in the sentinel-absent branch (design/idle). A stale
+ * The commit guard keys off the SENTINEL's presence, not this field. A stale
  * "design" mode lingering after a build starts would otherwise mislabel
- * nowrender's Position line even though enforcement was already correct.
+ * nowrender's Position line even though the sentinel was already correct.
  *
  * Subcommands (CLI, structured argv only - no free-text write path beyond
  * the thread/next/text args a session composes itself, same as every other
@@ -156,6 +154,7 @@ function renderNow(root, state) {
     build: state.build || null,
     design: state.design || null,
     intent: state.intent || null,
+    commitPolicy: state.commitPolicy || null,
     cursor,
     ideas: ideasFacts(ideasText),
     now: nowText,
@@ -317,7 +316,26 @@ function clearMode(root) {
   return writeAndRender(root, { mode: null }, ["mode"]);
 }
 
-module.exports = { enterDesign, setIntent, setDesignDoc, auditDesign, addDecision, resolveDecision, enterBuild, clearMode, designLockPath };
+// 1.0.11: the per-plan auto-commit grant. `auto` records {mode, plan,
+// grantedAt} under its own state key (so no other writer's owned-key list
+// touches it); `gate` removes it. The reconcile removes it by itself when the
+// plan's final phase commits. The pipeline skill and /claudhd:review read it
+// at the commit gate; push is never covered.
+function setCommitPolicy(root, mode, plan) {
+  if (mode === "auto") {
+    return writeAndRender(root, {
+      commitPolicy: { mode: "auto", plan: plan || null, grantedAt: new Date().toISOString() },
+    }, ["commitPolicy"]);
+  }
+  return writeAndRender(root, { commitPolicy: undefined }, ["commitPolicy"]);
+}
+
+function readCommitPolicy(root) {
+  const s = readState(path.join(root, ".now")) || {};
+  return s.commitPolicy && s.commitPolicy.mode === "auto" ? s.commitPolicy : null;
+}
+
+module.exports = { enterDesign, setIntent, setDesignDoc, auditDesign, addDecision, resolveDecision, enterBuild, clearMode, setCommitPolicy, readCommitPolicy, designLockPath };
 
 function runCli() {
   const ROOT = require("./root.js")(process.env);
@@ -394,6 +412,24 @@ function runCli() {
         clearMode(ROOT);
         console.log("thread.js: mode cleared (idle)");
         return;
+      case "commit-policy": {
+        const [mode, plan] = rest;
+        if (mode === undefined) {
+          const current = readCommitPolicy(ROOT);
+          console.log(current ? "auto" + (current.plan ? " " + current.plan : "") : "gate");
+          return;
+        }
+        if (mode !== "auto" && mode !== "gate") {
+          console.error("thread.js commit-policy: usage: commit-policy [auto <plan>|gate]  (mode must be auto|gate)");
+          process.exitCode = 1;
+          return;
+        }
+        setCommitPolicy(ROOT, mode, plan);
+        console.log(mode === "auto"
+          ? "thread.js: commit-policy auto recorded" + (plan ? " for " + plan : "") + " (push stays manual; clears when the plan's final phase commits)"
+          : "thread.js: commit-policy gate (grant cleared)");
+        return;
+      }
       default:
         console.error(
           "thread.js: unknown subcommand: " + sub + "\n" +
@@ -405,7 +441,8 @@ function runCli() {
           "  thread.js decision <resolved|open> <text>\n" +
           "  thread.js resolve-decision <open text> [-- <resolution text>]\n" +
           "  thread.js enter-build\n" +
-          "  thread.js clear-mode\n"
+          "  thread.js clear-mode\n" +
+          "  thread.js commit-policy [auto <plan>|gate]\n"
         );
         process.exitCode = 1;
     }

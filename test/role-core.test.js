@@ -493,14 +493,12 @@ test("buildInvocation for claude-headless injects --settings when a settingsPath
   }
 });
 
-test("buildGuardSettings wires both phase-enforcement guards as PreToolUse hooks", () => {
-  const s = core.buildGuardSettings("/p/file-list-guard.js", "/p/commit-guard.js");
+test("buildGuardSettings wires only the commit guard as a PreToolUse hook (file-list guard removed in 1.0.11)", () => {
+  const s = core.buildGuardSettings("/p/commit-guard.js");
   const pre = s.hooks.PreToolUse;
-  assert.equal(pre.length, 2);
-  const edit = pre.find((h) => h.matcher === "Edit|Write|MultiEdit");
-  const bash = pre.find((h) => h.matcher === "Bash");
-  assert.match(edit.hooks[0].command, /file-list-guard\.js/);
-  assert.match(bash.hooks[0].command, /commit-guard\.js/);
+  assert.equal(pre.length, 1);
+  assert.equal(pre[0].matcher, "Bash");
+  assert.match(pre[0].hooks[0].command, /commit-guard\.js/);
 });
 
 test("buildInvocation for openai-compat selects the provider by name (no spaces in argv)", () => {

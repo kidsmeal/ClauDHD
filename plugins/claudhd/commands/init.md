@@ -14,7 +14,7 @@ Once I confirm, set the cursor through the state writer, not a hand-edit, so NOW
 
 ## Enable enforcement (explicit opt-in, do not skip past this)
 
-Ask me directly, do not assume the answer: **"Enable ClauDHD's enforcement hooks for this project? (blocks out-of-phase edits and mid-build commits; opt-in, fail-open)"**
+Ask me directly, do not assume the answer: **"Enable ClauDHD's enforcement hooks for this project? (runs the commit-boundary reconcile and the post-commit verify on every commit; opt-in, fail-open, denies nothing)"**
 
 - If I say yes: run `node "${CLAUDE_PLUGIN_ROOT}/scripts/init.js" --enable-hooks`. This writes `.now/enabled`, the marker both guards AND the commit-boundary reconcile gate on. A project without this marker (or the legacy `.gantry/enabled`) is entirely inert; nothing below fires in it.
 - If I say no or do not answer: do nothing further here. The hooks stay inert, and the pipeline commands below still work at prompt level, just without the mechanical guard.

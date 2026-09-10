@@ -169,11 +169,9 @@ test("walkForRoot: a legacy marker paired with an unreadable NOW.md (a directory
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-// --- cross-check: a state writer (checkpoint.js) and a guard (file-list-guard.js)
-// resolve the SAME root from the SAME env, so a guard can never enforce against
-// a different repo than the one the writer just updated. ---
+// --- a state writer (checkpoint.js) resolves the root from GANTRY_PROJECT_DIR ---
 
-test("checkpoint.js (a state writer) and file-list-guard.js (a guard) resolve the identical root from GANTRY_PROJECT_DIR", () => {
+test("checkpoint.js (a state writer) resolves GANTRY_PROJECT_DIR as the root", () => {
   const dir = mk();
   try {
     fs.writeFileSync(
@@ -183,39 +181,9 @@ test("checkpoint.js (a state writer) and file-list-guard.js (a guard) resolve th
     const env = { ...process.env, GANTRY_PROJECT_DIR: dir };
     delete env.CLAUDHD_PROJECT_DIR;
     delete env.CLAUDE_PROJECT_DIR;
-
     const cp = spawnSync(process.execPath, [scriptPath("checkpoint.js")], { encoding: "utf8", env });
     assert.equal(cp.status, 0, cp.stderr);
-    assert.ok(
-      fs.existsSync(path.join(dir, ".now", "last-session.md")),
-      "checkpoint.js must have resolved GANTRY_PROJECT_DIR as root, exactly like the guards do"
-    );
-
-    // Now prove the guard resolves the SAME root: write a sentinel in this exact
-    // dir and confirm the guard (given the same env) finds it and RECORDS an
-    // out-of-scope edit into that dir's own .now/out-of-scope.jsonl - it could
-    // only write there by resolving to this dir. (r-0729-1: the guard logs
-    // rather than denies, so the observable is the drift log, not stdout.)
-    fs.mkdirSync(path.join(dir, ".gantry"), { recursive: true });
-    fs.writeFileSync(path.join(dir, ".gantry", "enabled"), "");
-    fs.writeFileSync(path.join(dir, ".gantry", "active-phase.json"), JSON.stringify({
-      plan: "plan.md", phase: 1, files: ["src/a.js"], allow: [],
-      started: new Date().toISOString(), session: "s",
-    }));
-    const guardPayload = JSON.stringify({
-      session_id: "s",
-      cwd: dir,
-      hook_event_name: "PreToolUse",
-      tool_name: "Edit",
-      tool_input: { file_path: path.join(dir, "src", "unrelated.js") },
-    });
-    const g = spawnSync(process.execPath, [scriptPath(path.join("hooks", "file-list-guard.js"))], {
-      encoding: "utf8", input: guardPayload, env,
-    });
-    assert.equal(g.status, 0, g.stderr);
-    assert.ok(
-      fs.existsSync(path.join(dir, ".now", "out-of-scope.jsonl")),
-      "the guard must have found the sentinel in the SAME dir checkpoint.js just wrote to, and logged the out-of-scope path there"
-    );
+    assert.ok(fs.existsSync(path.join(dir, ".now", "last-session.md")),
+      "checkpoint.js must have resolved GANTRY_PROJECT_DIR as root");
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

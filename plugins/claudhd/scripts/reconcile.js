@@ -30,8 +30,8 @@
  * written by /claudhd:init's explicit 1.0 opt-in step. The legacy
  * `.gantry/enabled` is NOT a reconcile signal - B1's own text says legacy
  * projects "stay enforced", not "get reconciled": that marker is honored ONLY
- * by the guards' enforcement gating (commit-guard.js's computeGate() and
- * file-list-guard.js), never here. A project carrying the NOW.md marker plus
+ * by the commit guard's enforcement gating (commit-guard.js's computeGate()),
+ * never here. A project carrying the NOW.md marker plus
  * `.gantry/enabled` alone (no `.now/enabled`) may still be denied commits by
  * an enforcing guard, but is NOT adopted for reconcile and is left
  * byte-untouched by this function - enforcement and reconciliation are two
@@ -270,6 +270,10 @@ function reconcile(root, message, sessionId, willClearBuild) {
   //     abandoned (see the header comment's stale-sentinel note). A commit
   //     with no usable active plan simply skips this step.
   const buildIsUsable = build != null && !isStale(build, sessionId);
+  // 1.0.11: a per-plan auto-commit grant (thread.js commit-policy auto) clears
+  // itself when the plan's final phase commits, so "work through" is said once
+  // per plan and never outlives it.
+  let clearedPolicy = false;
   if (buildIsUsable && build.plan) {
     const planAbsPath = path.isAbsolute(build.plan) ? build.plan : path.join(root, build.plan);
     const planText = readOrNull(planAbsPath);
@@ -281,6 +285,10 @@ function reconcile(root, message, sessionId, willClearBuild) {
       }
 
       const isFinalPhase = build.phase === maxPhaseNumber(planText);
+      if (isFinalPhase && prior.commitPolicy) {
+        writeStateAtomic(nowDir, { commitPolicy: undefined }, ["commitPolicy"]);
+        clearedPolicy = true;
+      }
       if (isFinalPhase && from && roadmapText != null) {
         const { text: movedText, changed: moveChanged } = moveRoadmapItemToShipped(roadmapText, from);
         if (moveChanged) {
@@ -313,6 +321,7 @@ function reconcile(root, message, sessionId, willClearBuild) {
     build: renderBuild,
     design: prior.design || null,
     intent: prior.intent || null,
+    commitPolicy: clearedPolicy ? null : (prior.commitPolicy || null),
     cursor,
     ideas: ideasFacts(ideasText),
     now: nowText,

@@ -196,18 +196,13 @@ function cmdRun(args) {
   }
 
   // Harness-safe implementer guard injection: a headless `claude -p` implementer
-  // gets the two phase-enforcement guards wired in via a settings file, so
-  // the file-list and commit guards apply exactly as for the native implementer
-  // (no dependence on plugin hook auto-load in a nested session). Only for the
-  // implementer - a headless reviewer must NOT inherit the file-list guard, or
-  // its _reviewed.md write would be blocked.
+  // gets the commit guard wired in via a settings file, so the commit gate
+  // applies exactly as for the native implementer (no dependence on plugin
+  // hook auto-load in a nested session). Only for the implementer.
   let settingsPath;
   if (role === "implementer" && descriptor.type === "claude-headless") {
     const hooksDir = path.join(__dirname, "hooks");
-    const settings = core.buildGuardSettings(
-      path.join(hooksDir, "file-list-guard.js"),
-      path.join(hooksDir, "commit-guard.js")
-    );
+    const settings = core.buildGuardSettings(path.join(hooksDir, "commit-guard.js"));
     try {
       fs.mkdirSync(path.join(ROOT, ".gantry"), { recursive: true });
       fs.writeFileSync(

@@ -38,7 +38,7 @@ function writeSentinel(dir, overrides, extra) {
 // specifically (see writeReconcileEnabled below), never this file.
 //
 // Since 1.0.4's S1 fix, commit-guard.js resolves root through root.js's
-// walkForRoot() - the same walk file-list-guard.js uses - which honors the
+// walkForRoot() - which honors the
 // legacy `.gantry/enabled` marker ONLY when paired with a claudhd-marked
 // NOW.md at that SAME level (root.js's own stricter pairing rule, needed so
 // a bare legacy marker never falsely counts as adoption mid-walk). writeNow()
@@ -339,7 +339,7 @@ test("commit-guard: a commit outside a build phase (no sentinel) is reconciled t
 
 test("commit-guard: a module-init failure in reconcile.js (lazy, in-try require) never produces a nonzero exit or blocks the commit", () => {
   // A self-contained copy of the guard's own relative layout (hooks/
-  // commit-guard.js requires ../sentinel-core.js, ../state.js, ../modes.js
+  // commit-guard.js requires ../sentinel-core.js, ../state.js
   // and ../reconcile.js - state.js's own leaf dependencies come along too),
   // with a reconcile.js stand-in that throws during its own top-level
   // evaluation - exactly the module-initialization failure the lazy, in-try
@@ -352,7 +352,7 @@ test("commit-guard: a module-init failure in reconcile.js (lazy, in-try require)
     fs.mkdirSync(hooksDir, { recursive: true });
 
     const REAL_SCRIPTS = path.join(__dirname, "..", "plugins", "claudhd", "scripts");
-    for (const name of ["root.js", "sentinel-core.js", "state.js", "modes.js", "lock.js", "constants.js", "nowfile.js", "roadmapids.js"]) {
+    for (const name of ["root.js", "sentinel-core.js", "state.js", "lock.js", "constants.js", "nowfile.js", "roadmapids.js"]) {
       fs.copyFileSync(path.join(REAL_SCRIPTS, name), path.join(scriptsDir, name));
     }
     fs.copyFileSync(path.join(REAL_SCRIPTS, "hooks", "commit-guard.js"), path.join(hooksDir, "commit-guard.js"));

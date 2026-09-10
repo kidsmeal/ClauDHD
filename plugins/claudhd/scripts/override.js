@@ -3,8 +3,8 @@
  * override.js - the /claudhd:override escape hatch (design section 6, phase 5).
  *
  * Records a per-session, loud, never-silent override: "unguarded session,
- * N files outside any phase". This is the way out of mode enforcement (see
- * modes.js) for a genuinely unscoped edit, without a hard block with no exit.
+ * N files outside any phase". It records a genuinely unscoped stretch of
+ * work on the board; since 1.0.11 no Edit/Write guard consults it.
  * "Outside any phase" covers BOTH an unguarded-mode edit (no sentinel) AND an
  * out-of-list edit under a LIVE sentinel (build mode, wrong file) - both
  * guard call sites funnel through the same noteOverrideFile() below.

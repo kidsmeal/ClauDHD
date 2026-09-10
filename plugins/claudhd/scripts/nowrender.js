@@ -45,11 +45,16 @@ const IDEA_FLOW =
 const LEAVING =
   "Before you walk away, or whenever you switch context, make the \"Next physical action\" line true and tiny. That one line is what lets you stop mid-thought and lose nothing. The rest of this file regenerates itself at every commit; only the Active thread's two lines are yours to keep current.";
 
-function positionLine(mode, build, design) {
+function positionLine(mode, build, design, commitPolicy) {
   if (mode === "build") {
     const plan = (build && build.plan) || "(no plan yet)";
     const phase = build && Number.isFinite(build.phase) ? build.phase : null;
-    return "Position: " + (phase != null ? "phase " + phase + " of " : "") + plan;
+    // 1.0.11: the per-plan auto-commit grant is a display fact here only; the
+    // Mode line stays untouched so brief.js's mode-drift check keeps parsing.
+    const grant = commitPolicy && commitPolicy.mode === "auto"
+      ? ", auto-commit granted" + (commitPolicy.plan ? " for " + commitPolicy.plan : "")
+      : "";
+    return "Position: " + (phase != null ? "phase " + phase + " of " : "") + plan + grant;
   }
   if (mode === "design") {
     const doc = (design && design.doc) || "(no doc yet)";
@@ -86,6 +91,7 @@ function render(state) {
   const cursor = s.cursor || null;
   const ideas = s.ideas || null;
   const intent = s.intent || null;
+  const commitPolicy = s.commitPolicy || null;
   const now = s.now || "";
 
   const threadName = (intent && intent.thread) || "(name your current focus here)";
@@ -126,7 +132,7 @@ function render(state) {
     GENERATED_NOTE,
     "",
     "Mode: " + modeDisplay(mode),
-    positionLine(mode, build, design),
+    positionLine(mode, build, design, commitPolicy),
     "from: " + fromDisplay,
     countsLine(cursor, ideas),
     "",

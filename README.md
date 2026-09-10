@@ -14,18 +14,18 @@ It has zero dependencies and runs entirely on local files plus ordinary git. The
 | drive + orient | chat (commands, boards) | the board rides your first reply; `/claudhd:now` on demand |
 | glance + dispatch | a companion app (optional, out of this repo) | always visible, live, model-free |
 
-The hook layer holds regardless of prompt content: a `PreToolUse` guard denies an edit outside the active mode's allowlist, and a second guard denies `git commit`/`git push` while a phase is mid-review. Both fail open on any hook error. The chat layer is sixteen commands covering capture, triage, design, the phased build, and review. The board renders as a widget when the harness provides one, otherwise as the same board in plain text, which is the acceptance baseline.
+The hook layer holds regardless of prompt content: a `PreToolUse` hook runs the commit-boundary reconcile on every commit (a mid-phase commit reconciles nothing; the commit that closes a reviewed phase writes the plan status, `SHIPPED.md`, and the board), and a `PostToolUse` hook confirms the commit landed and records its hash. Both fail open on any hook error. The chat layer is sixteen commands covering capture, triage, design, the phased build, and review. The board renders as a widget when the harness provides one, otherwise as the same board in plain text, which is the acceptance baseline.
 
 ## What it gives you
 
 - **A generated NOW cursor** (`NOW.md`). Mode, position, the active thread, and the queue behind it. The facts render from `.now/state.json`; only the active thread's two lines are yours to keep current. It stays a real committed file: `git checkout` swaps the cursor to that branch's thread, and `git log -p NOW.md` shows the cursor at each commit.
-- **Mode-enforced phases.** Design mode allows `*.md` edits only; build mode allows exactly the active phase's file list; idle denies source edits and leaves markdown editable. The guard is deny-by-default once a project opts in, with `/claudhd:override` as a recorded, per-session escape hatch.
+- **Mode-tracked phases.** Design, build, and idle are recorded in `.now/state.json` and rendered on the board; the active phase's file list lives in the sentinel and the phase-reviewer checks the diff against it. No hook denies an edit (the Edit/Write guard was removed in 1.0.11); the commit gate is the enforcement point.
 - **A commit-boundary reconcile.** Every `git commit` inside a session regenerates `NOW.md`, the plan's per-phase status, the `SHIPPED.md` entry, and the roadmap item's state, then stages them onto the same commit. This replaces the old `/claudhd:wrap` command.
 - **An idea inbox** (`IDEAS.md`) and **tap-card triage**. `/claudhd:idea <text>` captures verbatim, in one line, at zero tokens. `/claudhd:triage` renders each open idea as a card (roadmap / quick fix / drop / skip / discuss) and applies your tap through the plugin's own mechanical write vocabulary. Your wording is preserved verbatim.
 - **A roadmap with stable ids** (`ROADMAP.md`). Every item carries a generated `r-MMDD-N` id, rendered beside its text. `/claudhd:start <id>` is the readiness gate: it restates a vague item concretely and activates a design thread.
 - **A design grill and review gate.** `/claudhd:design` interrogates the open decisions one fork at a time, tracks a live resolved/open board, writes the design doc, then hands it to a design-reviewer before `/claudhd:plan` turns it into phases.
-- **A phased build with a reviewed commit gate.** `/claudhd:build` implements one phase tests-first inside the guard; `/claudhd:review` reviews the diff, relays any required fixes back through a re-review that carries prior rounds as settled context, and opens the commit gate only on a clean verdict (or your explicit overrule, logged). Primary-reviewer-only: there is no second-opinion pass.
-- **A quick-fixes lane** (`/claudhd:quick`). Small, self-contained chores go into a capped batch and clear in one focused pass, under the same guard as any other source edit, via a sentinel scoped to just that batch.
+- **A phased build with a reviewed commit gate.** `/claudhd:build` implements one phase tests-first under the sentinel; `/claudhd:review` reviews the diff, relays any required fixes back through a re-review that carries prior rounds as settled context, and opens the commit gate only on a clean verdict (or your explicit overrule, logged). Primary-reviewer-only: there is no second-opinion pass.
+- **A quick-fixes lane** (`/claudhd:quick`). Small, self-contained chores go into a capped batch and clear in one focused pass, via a sentinel scoped to just that batch.
 
 ## Quick start
 
@@ -99,8 +99,8 @@ Once `/claudhd:init` has set up a marked `NOW.md`:
 
 - **On every turn (`Stop` hook):** a silent checkpoint is written to `.now/last-session.md`, plus a per-branch copy at `.now/branches/<branch>.md`, and `.now/state.json` is regenerated. Local script, no tokens.
 - **When you return (`SessionStart` hook):** a short brief is injected into Claude's context, without being printed to you: your active thread and next action, what shipped on this branch since you were last here, and drift flags. This is the only automatic piece that adds tokens, a few hundred once per session.
-- **Before every `Edit`/`Write`/`MultiEdit` (`PreToolUse` guard, opt-in only):** the path is checked against the active mode's allowlist. A denial explains why and names the remedy command.
-- **Before every `git commit`/`git push` (`PreToolUse` guard, opt-in only):** a commit mid-build without a clean review is denied. A commit the guard allows also triggers the reconcile: `NOW.md`, the plan's phase status, `SHIPPED.md`, and the roadmap item's state all regenerate and stage onto the same commit.
+- **After every `Bash` call (`PostToolUse` verify, opt-in only):** if the preceding call was a commit the guard let through, HEAD is compared. A landed commit records its hash, subject, plan and phase under `lastCommit` in `.now/state.json`; a commit that did not land is noted in `.now/reconcile.log`.
+- **Before every `git commit` (`PreToolUse` hook, opt-in only):** nothing is denied (since 1.0.7 the sentinel is a record, not a gate). The commit triggers the reconcile: `NOW.md`, the plan's phase status, `SHIPPED.md`, and the roadmap item's state all regenerate and stage onto the same commit.
 
 ## Branch switching
 

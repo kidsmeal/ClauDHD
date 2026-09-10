@@ -55,15 +55,13 @@
  * command string itself (composing a cd-chain with a -C on the same
  * invocation, mirroring GIT_GLOBAL_OPTS_WITH_ARG's own option-skipping),
  * falling back to the hook payload's own `cwd` field, then the env root, when
- * neither is present. root.js's walkForRoot(effectiveDir) - the SAME walk
- * file-list-guard.js uses - then resolves the nearest ADOPTED ancestor from
- * there; that walked root is what both computeGate() and reconcile() key off
+ * neither is present. root.js's walkForRoot(effectiveDir)
+ * then resolves the nearest ADOPTED ancestor from there; that walked root is what both computeGate() and reconcile() key off
  * from this point on, never the env root. `null` (no adopted ancestor found
  * anywhere up from the effective directory) leaves this hook entirely inert
  * for that commit - no deny, no reconcile, exactly like an unadopted project
- * - deliberately NOT falling back to the env root the way file-list-guard.js
- * does, since that fallback is exactly the cross-repo corruption this fix
- * closes. `WALK_FAILED` (a genuine internal error during the walk) fails
+ * - deliberately NOT falling back to the env root, since that fallback is
+ * exactly the cross-repo corruption this fix closes. `WALK_FAILED` (a genuine internal error during the walk) fails
  * open outright, same as every other unresolvable-state path in this file.
  *
  * Shell expansion (2026-09-09 fix): the cd/-C token is expanded the way the
@@ -90,11 +88,9 @@
  *     dependency) can never produce an uncaught exception here - Node's
  *     default nonzero exit on an uncaught exception would otherwise violate
  *     "always exit 0" before main()'s own outer try/catch ever got a chance.
- *   - state.js/modes.js (needed only for the mode-aware deny message) are
- *     required lazily too, deliberately NOT wrapped in their own local
- *     try/catch: a broken sibling module there throws naturally up to the
- *     outer try/catch at the bottom of this file, the same "top-level catch"
- *     safety net file-list-guard.js relies on for the same reason.
+ *   - pending-commit.js (the PostToolUse handshake, 1.0.11) is required
+ *     lazily inside its own try/catch: a missing or broken module skips the
+ *     pending record and never skips the reconcile or the commit.
  */
 "use strict";
 const fs = require("fs");
@@ -677,12 +673,26 @@ function main() {
   // shipped. reconcile.js has its own adoption gate (NOW.md's claudhd marker)
   // and no-ops silently in a project that never ran /claudhd:init for 1.0.
   if (gate === null && isCommitCommand(command)) {
+    const message = extractCommitMessage(command, root);
+    const willClearBuild = commandClearsSentinelBeforeCommit(command);
+    // 1.0.11: hand the PostToolUse verify hook what it needs to confirm the
+    // commit landed and record the real hash (pending-commit.js). Written
+    // BEFORE the reconcile so a reconcile throw cannot lose it; required
+    // lazily in its own try so a missing module never skips the reconcile.
     try {
-      // Lazy, in-try require: see the header comment's "A reconcile failure
-      // never blocks or fails the commit" note.
+      const pc = require("../pending-commit.js");
+      const live = readSentinel(root);
+      pc.writePending(root, sessionId, {
+        message,
+        willClearBuild,
+        command: String(command).slice(0, 400),
+        plan: live && live.plan != null ? live.plan : null,
+        phase: live && Number.isFinite(live.phase) ? live.phase : null,
+      });
+    } catch { /* fail open */ }
+    try {
       const { reconcile } = require("../reconcile.js");
-      const willClearBuild = commandClearsSentinelBeforeCommit(command);
-      reconcile(root, extractCommitMessage(command, root), sessionId, willClearBuild);
+      reconcile(root, message, sessionId, willClearBuild);
     } catch (e) {
       logReconcileFailure(root, e);
     }

@@ -174,12 +174,10 @@ from `0`, a real clean count). `lastCommitMsg` is capped at 200 chars.
 
 ### `mode` (string enum, or `null`)
 
-One of `"build"`, `"design"`, or `null` (idle - no active mode). Read by
-`modes.js`'s `decide()` for the guards' deny-by-default allowlist ONLY when
-the `build` sentinel is absent - a live sentinel makes the guard enforce
-`"build"` unconditionally regardless of this field's value (`file-list-guard.js`
-hardcodes it), so `mode` here is mainly a display fact for `nowrender.js`'s
-Position line once a sentinel exists. Written by `thread.js`: `enterDesign()`
+One of `"build"`, `"design"`, or `null` (idle - no active mode). A display
+fact for `nowrender.js`'s Position line and for `brief.js`'s mode-drift check;
+since 1.0.11 no hook enforces against it (the Edit/Write guard and `modes.js`
+were removed). Written by `thread.js`: `enterDesign()`
 sets `"design"`, `enterBuild()` sets `"build"` (paired with `/claudhd:build`'s
 own `sentinel.js write` call, which is what the guard actually enforces
 against), `clearMode()` resets it to `null`, `auditDesign()` sets `"design"`
@@ -422,6 +420,40 @@ equals that session's id (`overrideActiveFor()`); a different session's
 override record does not apply to the current one. Rendered into NOW.md's
 `## Loose ends` section by `override.js`'s own renderer, never left as a
 silent state-only fact.
+
+### `commitPolicy` (object, or absent)
+
+1.0.11. The per-plan auto-commit grant: `{ mode: "auto", plan: string|null,
+grantedAt: ISO 8601 }`. Written by `thread.js`'s `setCommitPolicy()`
+(`thread.js commit-policy auto <plan>`), removed by `commit-policy gate` and
+by `reconcile.js` when the plan's final phase commits. The pipeline skill and
+`/claudhd:review` read it at the commit gate: `auto` means commit after a
+clean review without asking; push is never covered. Rendered on NOW.md's
+Position line while `mode` is `"build"`.
+
+### `lastCommit` (object, or absent)
+
+1.0.11. Written by `hooks/commit-verify.js` (PostToolUse on Bash) once a
+guard-approved commit is confirmed to have landed: `{ sha, short, subject,
+at, plan, phase, sessionId }`. Its own key on purpose: the Stop checkpoint
+rewrites `git` wholesale, so the hash would not survive there.
+
+### `commitPolicy` (object, or absent)
+
+1.0.11. The per-plan auto-commit grant: `{ mode: "auto", plan: string|null,
+grantedAt: ISO 8601 }`. Written by `thread.js`'s `setCommitPolicy()`
+(`thread.js commit-policy auto <plan>`), removed by `commit-policy gate` and
+by `reconcile.js` when the plan's final phase commits. The pipeline skill and
+`/claudhd:review` read it at the commit gate: `auto` means commit after a
+clean review without asking; push is never covered. Rendered on NOW.md's
+Position line while `mode` is `"build"`.
+
+### `lastCommit` (object, or absent)
+
+1.0.11. Written by `hooks/commit-verify.js` (PostToolUse on Bash) once a
+guard-approved commit is confirmed to have landed: `{ sha, short, subject,
+at, plan, phase, sessionId }`. Its own key on purpose: the Stop checkpoint
+rewrites `git` wholesale, so the hash would not survive there.
 
 ## Fields NOT in this file
 

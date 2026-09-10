@@ -60,17 +60,15 @@ test("hooks/hooks.json is valid JSON and wires the Stop + SessionStart hooks", (
   assert.ok(hooks && hooks.Stop, "Stop hook must be configured");
 });
 
-test("hooks/hooks.json wires both PreToolUse phase-enforcement guards and declares exactly four hook entries", () => {
+test("hooks/hooks.json wires the PreToolUse commit guard and the PostToolUse commit verify, no Edit/Write guard (1.0.11), exactly four entries", () => {
   const hooks = readJson(HOOKS).hooks;
   assert.ok(Array.isArray(hooks.PreToolUse), "PreToolUse hooks must be configured");
-  const matchers = hooks.PreToolUse.map((h) => h.matcher);
-  assert.ok(matchers.includes("Edit|Write|MultiEdit"), "file-list-guard's Edit|Write|MultiEdit matcher must be present");
-  assert.ok(matchers.includes("Bash"), "commit-guard's Bash matcher must be present");
-  for (const h of hooks.PreToolUse) {
-    const commands = h.hooks.map((c) => c.command).join(" ");
-    if (h.matcher === "Edit|Write|MultiEdit") assert.match(commands, /file-list-guard\.js/);
-    if (h.matcher === "Bash") assert.match(commands, /commit-guard\.js/);
-  }
-  const total = hooks.SessionStart.length + hooks.Stop.length + hooks.PreToolUse.length;
-  assert.equal(total, 4, "hooks/hooks.json must declare exactly four hook entries (SessionStart, Stop, and the two PreToolUse guards)");
+  assert.deepEqual(hooks.PreToolUse.map((h) => h.matcher), ["Bash"],
+    "the only PreToolUse guard is the Bash commit guard; the Edit/Write file-list guard was removed in 1.0.11");
+  assert.match(hooks.PreToolUse[0].hooks.map((c) => c.command).join(" "), /commit-guard\.js/);
+  assert.ok(Array.isArray(hooks.PostToolUse), "PostToolUse hooks must be configured");
+  assert.deepEqual(hooks.PostToolUse.map((h) => h.matcher), ["Bash"]);
+  assert.match(hooks.PostToolUse[0].hooks.map((c) => c.command).join(" "), /commit-verify\.js/);
+  const total = hooks.SessionStart.length + hooks.Stop.length + hooks.PreToolUse.length + hooks.PostToolUse.length;
+  assert.equal(total, 4, "hooks/hooks.json must declare exactly four hook entries (SessionStart, Stop, PreToolUse commit guard, PostToolUse commit verify)");
 });

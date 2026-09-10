@@ -458,14 +458,10 @@ function buildInvocation(descriptor, opts) {
 // section of .now/state.json (schema v2; a legacy .gantry/active-phase.json
 // is imported into it once, on first read - see sentinel-core.js), so
 // injecting them is inert when enforcement is not opted in.
-function buildGuardSettings(fileListGuardPath, commitGuardPath) {
+function buildGuardSettings(commitGuardPath) {
   return {
     hooks: {
       PreToolUse: [
-        {
-          matcher: "Edit|Write|MultiEdit",
-          hooks: [{ type: "command", command: 'node "' + fileListGuardPath + '"' }],
-        },
         {
           matcher: "Bash",
           hooks: [{ type: "command", command: 'node "' + commitGuardPath + '"' }],
