@@ -1,0 +1,26 @@
+name: mirror to gitlab
+
+on:
+  push:
+  delete:
+  workflow_dispatch:
+
+concurrency:
+  group: mirror
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: push all refs to gitlab
+        env:
+          GITLAB_MIRROR_TOKEN: ${{ secrets.GITLAB_MIRROR_TOKEN }}
+        run: |
+          git remote add gitlab "https://oauth2:${GITLAB_MIRROR_TOKEN}@gitlab.com/kidsmeal/ClauDHD.git"
+          git remote set-head origin -d
+          git push --prune --force gitlab 'refs/remotes/origin/*:refs/heads/*' 'refs/tags/*:refs/tags/*'
