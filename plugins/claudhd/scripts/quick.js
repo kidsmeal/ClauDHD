@@ -22,7 +22,9 @@ const { QUICK_CAP } = require("./constants.js");
 
 // Single resolver for every ClauDHD script (see root.js).
 const ROOT = require("./root.js")(process.env);
-const NOW_MD = path.join(ROOT, "NOW.md");
+// NOW.md's location comes from paths.js (.claude/claudhd.json).
+const NOW_PATHS = require("./paths.js").resolvePaths(ROOT).now;
+const NOW_MD = NOW_PATHS.abs;
 const LOCK = path.join(ROOT, ".now", "quick.lock");
 
 // CAP is a signal, not a hard stop: adds past it still land, but loudly, so
@@ -55,7 +57,7 @@ function listMode() {
   let txt = "";
   try { txt = fs.existsSync(NOW_MD) ? fs.readFileSync(NOW_MD, "utf8") : ""; } catch { txt = ""; }
   if (!txt) {
-    console.log("No NOW.md here. Run /claudhd:init to set up ClauDHD in this project.");
+    console.log("No " + NOW_PATHS.rel + " here. Run /claudhd:init to set up ClauDHD in this project.");
     return;
   }
   const lines = txt.split(/\r?\n/);
@@ -77,7 +79,7 @@ function addMode(text) {
     let result;
     withLock(LOCK, () => {
       if (!fs.existsSync(NOW_MD)) {
-        result = { ok: false, msg: "No NOW.md here. Run /claudhd:init first - quick fixes live in the NOW cursor." };
+        result = { ok: false, msg: "No " + NOW_PATHS.rel + " here. Run /claudhd:init first - quick fixes live in the NOW cursor." };
         return;
       }
       const raw = fs.readFileSync(NOW_MD, "utf8");
@@ -121,7 +123,7 @@ function addMode(text) {
       console.log((result && result.msg) || "Quick fix not added.");
       return;
     }
-    let out = "Quick fix added -> NOW.md (" + result.open + "/" + CAP + "): " + text;
+    let out = "Quick fix added -> " + NOW_PATHS.rel + " (" + result.open + "/" + CAP + "): " + text;
     if (result.open > CAP) {
       out += "\n! Batch is over its cap (" + result.open + "/" + CAP + "). Clear it with /claudhd:quick, or promote the important one to the Queue - don't let it become a backlog.";
     } else if (result.open === CAP) {
@@ -129,7 +131,7 @@ function addMode(text) {
     }
     console.log(out);
   } catch (e) {
-    console.error("! ClauDHD: could not write NOW.md (" + e.message + "). Quick fix not added.");
+    console.error("! ClauDHD: could not write " + NOW_PATHS.rel + " (" + e.message + "). Quick fix not added.");
     process.exit(1);
   }
 }

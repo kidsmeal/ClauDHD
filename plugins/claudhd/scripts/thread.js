@@ -107,6 +107,7 @@ const { withLock } = require("./lock.js");
 const { readState, writeStateAtomic, cursorFacts, ideasFacts } = require("./state.js");
 const { render } = require("./nowrender.js");
 const { clearOverrideLine } = require("./override.js");
+const { resolvePaths } = require("./paths.js");
 
 function designLockPath(nowDir) {
   return path.join(nowDir, "design.lock");
@@ -134,7 +135,8 @@ function todayDate() {
 // with an override still genuinely active, state.override is truthy and
 // nothing is touched.
 function renderNow(root, state) {
-  const nowMdPath = path.join(root, "NOW.md");
+  const P = resolvePaths(root);
+  const nowMdPath = P.now.abs;
   let nowText = readOrNull(nowMdPath);
   if (nowText == null) return null;
   if (!state.override) nowText = clearOverrideLine(nowText);
@@ -146,7 +148,7 @@ function renderNow(root, state) {
   // reads intent directly for display, keeping every live cursor derivation
   // consistent closes off the same class of stale-derivation bug elsewhere.
   const cursor = Object.assign({}, cursorFacts(nowText, state.intent) || {}, { lastTouched: todayDate() });
-  const ideasText = readOrNull(path.join(root, "IDEAS.md"));
+  const ideasText = readOrNull(P.ideas.abs);
 
   const renderState = {
     mode: state.mode != null ? state.mode : null,

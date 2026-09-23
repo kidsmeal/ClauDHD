@@ -75,9 +75,10 @@ function capText(s, limit) {
 }
 
 // Wrap untrusted, externally-authored text in the data fence with its preamble.
-// `source` names where the text came from (e.g. "NOW.md") for the preamble.
+// `source` names where the text came from (e.g. "NOW.md", or its configured
+// path) for the preamble. Every caller passes one; the fallback is a label.
 function fenceData(body, source) {
-  return dataPreamble(source || "NOW.md") + "\n" + DATA_BEGIN + "\n" + body + "\n" + DATA_END;
+  return dataPreamble(source || "the project's NOW file") + "\n" + DATA_BEGIN + "\n" + body + "\n" + DATA_END;
 }
 
 module.exports = {

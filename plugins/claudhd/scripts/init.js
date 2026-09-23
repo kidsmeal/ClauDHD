@@ -64,20 +64,26 @@ function exists(rel) {
   try { return fs.existsSync(path.join(ROOT, rel)); } catch { return false; }
 }
 
+// Where every scaffolded file goes: paths.js reads .claude/claudhd.json (state,
+// audit, design dirs) and falls back to the project root / the docs-or-root
+// audit rule when there is none. The directories are created as needed.
+const PATHS = require("./paths.js").resolvePaths(ROOT);
+
 // NOW.md goes through render({}) rather than a template copy, so a fresh
 // cursor can never diverge from the generated shape.
 const created = [];
 const kept = [];
 const failed = [];
-for (const name of ["NOW.md", "IDEAS.md", "SHIPPED.md", "ROADMAP.md"]) {
-  const dest = path.join(ROOT, name);
-  if (fs.existsSync(dest)) { kept.push(name); continue; }
+for (const key of ["now", "ideas", "shipped", "roadmap"]) {
+  const { abs: dest, rel } = PATHS[key];
+  if (fs.existsSync(dest)) { kept.push(rel); continue; }
   try {
-    if (name === "NOW.md") fs.writeFileSync(dest, nowrender.render({}));
-    else fs.copyFileSync(path.join(TEMPLATES, name), dest);
-    created.push(name);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    if (key === "now") fs.writeFileSync(dest, nowrender.render({}));
+    else fs.copyFileSync(path.join(TEMPLATES, path.basename(dest)), dest);
+    created.push(rel);
   } catch (e) {
-    failed.push(name + " (" + e.message + ")");
+    failed.push(rel + " (" + e.message + ")");
   }
 }
 
@@ -90,7 +96,7 @@ for (const name of ["NOW.md", "IDEAS.md", "SHIPPED.md", "ROADMAP.md"]) {
 let roadmapIdNote = "no ROADMAP.md to backfill";
 let roadmapSectionsNote = null;
 let roadmapWarning = null;
-const roadmapPath = path.join(ROOT, "ROADMAP.md");
+const roadmapPath = PATHS.roadmap.abs;
 try {
   if (fs.existsSync(roadmapPath)) {
     const { changed, itemSections, text: backfilledText } = issueRoadmapIds(NOW_DIR, roadmapPath, new Date());
@@ -138,7 +144,7 @@ try {
 // pre-existed without one. Without this, an already-present NOW.md would go
 // dormant under the marker gate.
 let markerNote = "present";
-const nowPath = path.join(ROOT, "NOW.md");
+const nowPath = PATHS.now.abs;
 try {
   if (fs.existsSync(nowPath)) {
     const c = fs.readFileSync(nowPath, "utf8");
@@ -151,19 +157,19 @@ try {
   failed.push("NOW.md marker (" + e.message + ")");
 }
 
-// The two living audit docs (folded in from Gantry). Docs land in docs/ if the
-// project keeps one, else at the repo root - the same rule sentinel.js's
-// allow-list computation uses, so the sentinel and the scaffold never disagree
-// about where these live.
-const docDir = exists("docs") ? "docs" : ".";
+// The two living audit docs (folded in from Gantry). They land in paths.js's
+// audit dir: the configured one, or docs/ if the project keeps one, else the
+// repo root - the same rule sentinel.js's allow-list computation reads, so the
+// sentinel and the scaffold never disagree about where these live.
+const docDir = PATHS.auditDir;
 const auditCreated = [];
 const auditKept = [];
-for (const name of ["CURRENTNESS_AUDIT.md", "RUNTIME_VERIFICATION_QUEUE.md"]) {
-  const relDest = path.join(docDir, name);
-  const dest = path.join(ROOT, relDest);
+for (const key of ["audit", "rvq"]) {
+  const { abs: dest, rel: relDest } = PATHS[key];
   if (fs.existsSync(dest)) { auditKept.push(relDest); continue; }
   try {
-    fs.copyFileSync(path.join(TEMPLATES, name), dest);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(path.join(TEMPLATES, path.basename(dest)), dest);
     auditCreated.push(relDest);
   } catch (e) {
     failed.push(relDest + " (" + e.message + ")");
@@ -410,7 +416,7 @@ const recent = git(["log", "-8", "--oneline"]);
 // scaffolding. .gantry/models.json and friends never show up here anyway - they
 // are gitignored above before this scan runs.
 const own = new Set([
-  "NOW.md", "IDEAS.md", "SHIPPED.md", "ROADMAP.md", ".gitignore",
+  ...PATHS.ownRel, ".gitignore",
   ...[...auditCreated, ...auditKept].map((p) => p.replace(/\\/g, "/")),
 ]);
 const tracked = git(["diff", "--name-only", "HEAD"]);

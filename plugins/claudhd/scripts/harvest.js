@@ -106,13 +106,13 @@ try {
   }
 
   console.log("\nDedup against (skip ideas already tracked here):");
-  for (const name of ["IDEAS.md", "NOW.md", "SHIPPED.md"]) {
-    const p = path.join(ROOT, name);
+  const PATHS = require("./paths.js").resolvePaths(ROOT);
+  for (const p of [PATHS.ideas.abs, PATHS.now.abs, PATHS.shipped.abs]) {
     console.log("  " + p + (fs.existsSync(p) ? "" : "  (missing)"));
   }
 
   if (DRY) {
-    console.log("\nDRY RUN: preview only. Do NOT append anything to IDEAS.md and do");
+    console.log("\nDRY RUN: preview only. Do NOT append anything to " + PATHS.ideas.rel + " and do");
     console.log("NOT record a watermark. Just show what would be harvested, then stop.");
   } else {
     // Ensure .now/ exists so the model can record the watermark below.

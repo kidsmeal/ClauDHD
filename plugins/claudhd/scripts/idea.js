@@ -14,6 +14,7 @@ const vocab = require("./vocab.js");
 
 // Single resolver for every ClauDHD script (see root.js).
 const ROOT = require("./root.js")(process.env);
+const IDEAS_REL = require("./paths.js").resolvePaths(ROOT).ideas.rel;
 
 const text = process.argv.slice(2).join(" ").trim();
 if (!text) {
@@ -23,8 +24,8 @@ if (!text) {
 
 try {
   vocab.appendCapture(ROOT, text);
-  console.log(`Captured -> IDEAS.md: ${text}`);
+  console.log(`Captured -> ${IDEAS_REL}: ${text}`);
 } catch (e) {
-  console.error("! ClauDHD: could not write IDEAS.md (" + e.message + "). Idea not captured.");
+  console.error("! ClauDHD: could not write " + IDEAS_REL + " (" + e.message + "). Idea not captured.");
   process.exit(1);
 }

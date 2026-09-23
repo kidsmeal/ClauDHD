@@ -91,6 +91,7 @@ const { execSync } = require("child_process");
 const { resolveRoot, normalize, readSentinel, isStale } = require("./sentinel-core.js");
 const { writeStateAtomic } = require("./state.js");
 const { withLock } = require("./lock.js");
+const { resolvePaths } = require("./paths.js");
 
 const ROOT = resolveRoot(process.env);
 const NOW_DIR = path.join(ROOT, ".now");
@@ -218,29 +219,19 @@ function parsePhaseFiles(planText, phaseNumber) {
 // ---------------------------------------------------------------------------
 
 // Compute the allow-list for a sentinel given the plan path and project root.
-// Mirrors init.js's docDir logic: audit docs go in docs/ if it exists, else root.
-// Also includes ROADMAP.md only when that file actually exists at the project root.
+// The audit docs' location is paths.js's audit rule (a configured dir, or
+// "auto": docs/ if it exists, else root), the same one init.js scaffolds
+// with, so the sentinel and the scaffold never disagree. ROADMAP.md is
+// included only when it exists at its configured location.
 function computeAllow(planAbsPath) {
   // Normalize the plan path to a root-relative POSIX string.
   const planRel = _toRelPosix(planAbsPath);
+  const P = resolvePaths(ROOT);
 
-  // docDir: "docs" if docs/ exists under ROOT, else "." (root)
-  const docsExists = _exists(path.join(ROOT, "docs"));
-  const docDir = docsExists ? "docs" : ".";
+  const allow = [planRel, P.audit.rel, P.rvq.rel];
 
-  const auditDocs = [
-    "CURRENTNESS_AUDIT.md",
-    "RUNTIME_VERIFICATION_QUEUE.md",
-  ].map((name) => {
-    const rel = docDir === "." ? name : docDir + "/" + name;
-    return rel;
-  });
-
-  const allow = [planRel, ...auditDocs];
-
-  // ROADMAP.md only when it actually exists at the project root.
-  if (_exists(path.join(ROOT, "ROADMAP.md"))) {
-    allow.push("ROADMAP.md");
+  if (_exists(P.roadmap.abs)) {
+    allow.push(P.roadmap.rel);
   }
 
   return allow;
@@ -527,7 +518,7 @@ function cmdWriteFiles(args) {
     // generic *.md allowance (that is design/idle mode's rule, not build's -
     // a live sentinel routes through modes.decide("build", ...) unconditionally),
     // so without this the check-off step would deny itself.
-    allow: ["NOW.md"],
+    allow: [resolvePaths(ROOT).now.rel],
     started: new Date().toISOString(),
     session,
     originalFiles: files.slice(),

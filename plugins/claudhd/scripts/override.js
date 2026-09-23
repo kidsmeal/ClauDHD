@@ -32,6 +32,7 @@ const path = require("path");
 const { withLock } = require("./lock.js");
 const { readState, writeStateAtomic, cursorFacts, ideasFacts } = require("./state.js");
 const { render } = require("./nowrender.js");
+const { resolvePaths } = require("./paths.js");
 
 const OVERRIDE_OWNED_KEYS = ["override"];
 const LOOSE_HEADING_RE = /^##\s+Loose ends\b/i;
@@ -144,7 +145,8 @@ function clearOverrideLine(text) {
 // splicing one back in for a record that no longer exists (spliceOverrideLine
 // with no real session would otherwise render a bogus "unknown" line).
 function renderNow(root, state) {
-  const nowMdPath = path.join(root, "NOW.md");
+  const P = resolvePaths(root);
+  const nowMdPath = P.now.abs;
   const oldNowText = readOrNull(nowMdPath);
   if (oldNowText == null) return null;
 
@@ -154,7 +156,7 @@ function renderNow(root, state) {
     : clearOverrideLine(oldNowText);
 
   const cursor = Object.assign({}, cursorFacts(withOverrideLine) || {}, { lastTouched: todayDate() });
-  const ideasText = readOrNull(path.join(root, "IDEAS.md"));
+  const ideasText = readOrNull(P.ideas.abs);
 
   const renderState = {
     mode: state.mode != null ? state.mode : null,

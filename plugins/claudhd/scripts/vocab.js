@@ -134,6 +134,7 @@ const { activeThread } = require("./nowfile.js");
 const { readState, writeStateAtomic, roadmapLockPath } = require("./state.js");
 const roadmapIds = require("./roadmapids.js");
 const { splitPreservingEol, joinLines } = roadmapIds;
+const { resolvePaths } = require("./paths.js");
 
 // Byte-identical to idea.js's pre-phase-6 header - moved here, not changed,
 // so an existing IDEAS.md's first line never drifts across the refactor.
@@ -211,11 +212,12 @@ function parseIdeaLine(line) {
   return { marker, date, thread, text };
 }
 
-function ideasPath(root) { return path.join(root, "IDEAS.md"); }
+// State-file locations delegate to paths.js (.claude/claudhd.json).
+function ideasPath(root) { return resolvePaths(root).ideas.abs; }
 function ideasLockPath(root) { return path.join(root, ".now", "ideas.lock"); }
-function roadmapPath(root) { return path.join(root, "ROADMAP.md"); }
+function roadmapPath(root) { return resolvePaths(root).roadmap.abs; }
 function nowDirOf(root) { return path.join(root, ".now"); }
-function nowMdPath(root) { return path.join(root, "NOW.md"); }
+function nowMdPath(root) { return resolvePaths(root).now.abs; }
 
 function stampNow() {
   const d = new Date();
@@ -716,7 +718,7 @@ function runCli() {
         const text = rest.join(" ").trim();
         if (!text) { console.log("Nothing captured. Usage: vocab.js append-capture <text>"); return; }
         const r = appendCapture(ROOT, text);
-        console.log(r.ok ? `Captured -> IDEAS.md: ${r.text}` : "Nothing captured.");
+        console.log(r.ok ? `Captured -> ${resolvePaths(ROOT).ideas.rel}: ${r.text}` : "Nothing captured.");
         return;
       }
       case "move": {
@@ -728,7 +730,7 @@ function runCli() {
           return;
         }
         const r = move(ROOT, { position, expectedLine, section });
-        console.log(`vocab.js: promoted -> ROADMAP.md ${r.section} (${r.id || "no id assigned"})`);
+        console.log(`vocab.js: promoted -> ${resolvePaths(ROOT).roadmap.rel} ${r.section} (${r.id || "no id assigned"})`);
         return;
       }
       case "mark": {
