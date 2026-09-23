@@ -81,12 +81,29 @@ function nowFile(thread) {
 }
 
 // Opt a repo into ClauDHD: marked NOW.md + .gitignore committed, so NOW.md
-// rides the branch and .now/ stays local.
-function optIn(dir, git, thread = "main thread") {
+// rides the branch and .now/ stays local. opts.stateDir also commits
+// .claude/claudhd.json pointing the state files at that directory, and puts
+// NOW.md there instead of at the root.
+function optIn(dir, git, thread = "main thread", opts = {}) {
   write(dir, ".gitignore", ".now/\n");
-  write(dir, "NOW.md", nowFile(thread));
-  git(["add", ".gitignore", "NOW.md"]);
+  const files = [".gitignore"];
+  let nowRel = "NOW.md";
+  if (opts.stateDir) {
+    writeConfig(dir, { state: opts.stateDir });
+    files.push(".claude/claudhd.json");
+    fs.mkdirSync(path.join(dir, opts.stateDir), { recursive: true });
+    nowRel = opts.stateDir + "/NOW.md";
+  }
+  write(dir, nowRel, nowFile(thread));
+  files.push(nowRel);
+  git(["add", ...files]);
   git(["commit", "-q", "-m", "init claudhd"]);
 }
 
-module.exports = { makeRepo, cleanup, run, runAsync, write, read, exists, nowFile, optIn, scriptPath };
+// Write <dir>/.claude/claudhd.json with the given paths object.
+function writeConfig(dir, paths, version = 1) {
+  fs.mkdirSync(path.join(dir, ".claude"), { recursive: true });
+  fs.writeFileSync(path.join(dir, ".claude", "claudhd.json"), JSON.stringify({ version, paths }, null, 2) + "\n");
+}
+
+module.exports = { makeRepo, cleanup, run, runAsync, write, read, exists, nowFile, optIn, writeConfig, scriptPath };
