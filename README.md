@@ -2,7 +2,7 @@
 
 Focus and drift control for [Claude Code](https://claude.com/claude-code), with a reviewed build pipeline.
 
-ClauDHD keeps track of where you are in a project and enforces the phase boundary while you get there. ClauDHD records the position of work in a few plain Markdown files at the repo root, enforces a per-mode file allowlist while a phase is in flight, and regenerates the tracking files at each commit.
+ClauDHD keeps track of where you are in a project and enforces the phase boundary while you get there. ClauDHD records the position of work in a few plain Markdown files (at the repo root unless `.claude/claudhd.json` names another directory), enforces a per-mode file allowlist while a phase is in flight, and regenerates the tracking files at each commit.
 
 It has zero dependencies and runs entirely on local files plus ordinary git. There is no ClauDHD account or server, and it makes no network calls beyond normal Claude Code usage (or an external model backend you configure yourself for a review role). It uses the Node.js runtime Claude Code already bundles.
 
@@ -58,6 +58,22 @@ That scaffolds `NOW.md`, `IDEAS.md`, `SHIPPED.md`, `ROADMAP.md` (without overwri
 
 In every other repo, ClauDHD stays silent.
 
+## File locations
+
+By default the four state files sit at the project root and the two audit docs in `docs/` (root when there is no `docs/`). A committed `.claude/claudhd.json` moves them:
+
+```json
+{ "version": 1, "paths": { "state": "docs/dev", "audit": "docs/dev", "design": "docs/dev" } }
+```
+
+| Key | Type | Default | Effect |
+|---|---|---|---|
+| `paths.state` | dir | `"."` | holds `NOW.md`, `ROADMAP.md`, `IDEAS.md`, `SHIPPED.md` |
+| `paths.audit` | dir or `"auto"` | `"auto"` | holds `CURRENTNESS_AUDIT.md`, `RUNTIME_VERIFICATION_QUEUE.md`; `auto` is `docs/` if it exists, else root |
+| `paths.design` | dir or `null` | `null` | where `/claudhd:design` writes docs; `null` is `design/` |
+
+Directories must be relative, inside the project, and not under `.git/`, `.now/`, or `.gantry/`. An invalid file falls back to the defaults with one warning on stderr and in `.now/reconcile.log`. `node plugins/claudhd/scripts/paths.js` prints the resolved paths. To move an existing project, run `/claudhd:init --relocate --state docs/dev --audit docs/dev --design docs/dev --dry-run`, then again without `--dry-run`; it moves the files with `git mv`, writes the config, rewrites references in tracked `*.md`, and never commits. Files left at the old location are ignored and flagged in the session brief.
+
 ## Commands
 
 | Command | What it does |
@@ -75,7 +91,7 @@ In every other repo, ClauDHD stays silent.
 | `/claudhd:quick [text]` | Add a chore to the quick-fixes batch, or (no argument) clear the batch under a scoped sentinel. |
 | `/claudhd:override` | A loud, recorded escape hatch for a genuinely unscoped edit. |
 | `/claudhd:audit` | Reconcile the currentness audit and the runtime verification queue against real code and commits. |
-| `/claudhd:init` | Scaffold the file set, the pipeline docs, and the enforcement opt-in. |
+| `/claudhd:init` | Scaffold the file set, the pipeline docs, and the enforcement opt-in. `--relocate` moves the files to configured dirs. |
 | `/claudhd:models` | View or change which model backend each pipeline role runs on. |
 | `/claudhd:version` | Print the installed version, to confirm the plugin is active. |
 
@@ -106,7 +122,7 @@ Once `/claudhd:init` has set up a marked `NOW.md`:
 
 `NOW.md` is committed, so git handles the swap: `git checkout feature-x` brings up that branch's cursor, and switching back restores the previous one. The breadcrumbs follow too, since the `Stop` checkpoint is written per branch. Each feature branch keeps its own cursor with no manual tracking.
 
-The drift check ignores ClauDHD's own files (`NOW.md`, `IDEAS.md`, `SHIPPED.md`, `ROADMAP.md`), since the cursor is meant to stay live and uncommitted between commits. Only your real changes trip the "uncommitted work piling up" flag.
+The drift check ignores ClauDHD's own files (`NOW.md`, `IDEAS.md`, `SHIPPED.md`, `ROADMAP.md`, at their configured paths), since the cursor is meant to stay live and uncommitted between commits. Only your real changes trip the "uncommitted work piling up" flag.
 
 ## Token cost
 

@@ -9,6 +9,18 @@ regenerated snapshot, not a source of truth for anything a second machine
 needs. The generated documents (NOW.md, ROADMAP.md) are the shareable
 projection of it.
 
+## File locations
+
+Every state-file name in this doc (NOW.md, ROADMAP.md, IDEAS.md, SHIPPED.md,
+CURRENTNESS_AUDIT.md, RUNTIME_VERIFICATION_QUEUE.md) means that file at the
+location `plugins/claudhd/scripts/paths.js` resolves from the project's
+`.claude/claudhd.json` (the project root, and docs-or-root for the audit docs,
+when there is no config). Paths stored in this file are root-relative POSIX
+strings. `/claudhd:init --relocate` (`relocate.js`) is the one writer that
+rewrites stored paths when files move: `build.plan`, `build.allow`,
+`build.files`, `build.originalFiles`, `design.doc`, `commitPolicy.plan`. It
+refuses while a non-stale plan-backed `build` is set.
+
 ## Reading the file
 
 Call `readState(nowDir)` (`plugins/claudhd/scripts/state.js`). Never read
@@ -168,7 +180,8 @@ is the first open item's text in `## Next` (capped at 200 chars), or `null`.
 Never `null` itself; its fields are `null` individually when unknown.
 `{ uncommitted, unpushed, lastCommitAt, lastCommitMsg }`. `uncommitted` is a
 count of dirty/untracked paths, excluding NOW.md/IDEAS.md/SHIPPED.md/
-ROADMAP.md (the plugin's own generated files are never "your work").
+ROADMAP.md at their configured paths (`resolvePaths().ownRel`; the plugin's
+own generated files are never "your work").
 `unpushed` is `null` when there is no upstream tracking branch (distinct
 from `0`, a real clean count). `lastCommitMsg` is capped at 200 chars.
 
@@ -232,7 +245,7 @@ or phase number to parse Files from:
   plan: null,
   phase: "quick",     // a string, not a number - there is no real phase
   files: string[],    // the batch's own files, named explicitly by the caller
-  allow: ["NOW.md"],  // always includes NOW.md, since the clearing pass
+  allow: ["NOW.md"],  // the configured NOW.md path; always included, since the clearing pass
                        // checks off batch items there and a live sentinel's
                        // build-mode allowlist has no generic *.md allowance
   started: string,

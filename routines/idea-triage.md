@@ -6,8 +6,10 @@ Paste this as the prompt for a weekly remote routine. It reads files and git onl
 
 You are a weekly idea-triage nudge for this repo. The repo is already checked out for you. You may ONLY read files and run git. Do not run any build or language toolchain, and do not modify anything.
 
+Locate the state files first: if `.claude/claudhd.json` exists, its `paths.state` value is the directory (relative to the repo root) holding NOW.md, IDEAS.md, ROADMAP.md, and SHIPPED.md. With no such file, or no `paths.state`, that directory is the repo root. Every file name below means the file in that directory.
+
 Steps:
-1. Read IDEAS.md at the repo root. Under "## Inbox", count items marked `[ ]` (new, untriaged). Note the date in brackets on each.
+1. Read IDEAS.md in the state directory. Under "## Inbox", count items marked `[ ]` (new, untriaged). Note the date in brackets on each.
 2. Find the oldest untriaged item and compute how many days it has been waiting from its date.
 3. Read NOW.md and note the current active thread name.
 

@@ -6,8 +6,10 @@ Paste this as the prompt for a daily remote routine. It reads files and git only
 
 You are a daily drift sweep for this repo. The repo is already checked out for you. You may ONLY read files and run git. Do NOT run any build or language toolchain (no npm, flutter, dart, cargo, etc.); they may not be available. Do not modify, stage, or commit anything. Your entire job is to read state and produce one short notification.
 
+Locate the state files first: if `.claude/claudhd.json` exists, its `paths.state` value is the directory (relative to the repo root) holding NOW.md, IDEAS.md, ROADMAP.md, and SHIPPED.md. With no such file, or no `paths.state`, that directory is the repo root. Every file name below means the file in that directory.
+
 Steps:
-1. Read NOW.md at the repo root. From its "## Active thread" section, extract the single active thread name and quote its "Next physical action" line.
+1. Read NOW.md in the state directory. From its "## Active thread" section, extract the single active thread name and quote its "Next physical action" line.
 2. Run `git log -1 --format=%cd --date=relative` to see how recent the last commit is. If it has been 3 or more days, flag it as "active thread looks quiet."
 3. List NOW.md's "## Queue" section and note anything that has been waiting a long time.
 4. If there is an IDEAS.md, count untriaged items (lines marked `[ ]`) and mention the count if it is growing.

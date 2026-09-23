@@ -8,6 +8,15 @@ no free-text operation. Free text always dispatches to a session." A
 consumer that only reads this file should be able to write a working
 in-app dispatcher without reading the plugin's source.
 
+## File locations
+
+IDEAS.md, ROADMAP.md, and NOW.md below mean those files at the locations
+`plugins/claudhd/scripts/paths.js` resolves: the `paths.state` directory in
+the project's `.claude/claudhd.json`, or the project root when there is no
+config. vocab.js's `ideasPath()`/`roadmapPath()`/`nowMdPath()` delegate to
+`resolvePaths(root)`; a consumer that locates the files itself reads the same
+config, or runs `node paths.js --json`. Every verb's argv is unchanged.
+
 ## The rule
 
 Every verb below takes structured argv only: paths, ids, positions, dates,
