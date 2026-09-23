@@ -3,8 +3,9 @@ description: Set up ClauDHD in the current project - the file set, the pipeline 
 allowed-tools: Bash(node:*), Read, Edit
 ---
 !`node "${CLAUDE_PLUGIN_ROOT}/scripts/init.js"`
+!`node "${CLAUDE_PLUGIN_ROOT}/scripts/paths.js"`
 
-ClauDHD is now scaffolded: `NOW.md`, `IDEAS.md`, `SHIPPED.md`, `ROADMAP.md` (any existing ones kept, never overwritten), the two living pipeline docs, `.gantry/models.json`, and the `.gitignore` entries for the plugin's own local state. Use the repo signals printed above (branch, recent commits, uncommitted files) to set up my first active thread. Do not make me name it cold:
+ClauDHD is now scaffolded: `NOW.md`, `IDEAS.md`, `SHIPPED.md`, `ROADMAP.md` (at the paths printed on the last line above, from `.claude/claudhd.json` when the project has one, else the project root; any existing ones kept, never overwritten), the two living pipeline docs, `.gantry/models.json`, and the `.gitignore` entries for the plugin's own local state. Use the repo signals printed above (branch, recent commits, uncommitted files) to set up my first active thread. Do not make me name it cold:
 
 1. **Propose one active thread.** From what looks in-flight in the repo, name the single most likely thing I'm working on, in a few words.
 2. **Propose its next physical action.** One concrete step I could start in under a minute.

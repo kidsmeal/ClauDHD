@@ -81,3 +81,53 @@ test("the scan itself catches each rule (guards against a regex that matches not
     assert.deepEqual([...lines].sort(), ["1", "2", "3", "4"]);
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
+
+// --- commands/*.md ---
+//
+// A command body (frontmatter excluded) that names a state or audit file, or
+// the design/ directory, must run the paths.js preamble so the model reads the
+// real locations. Exempt: bodies that only name a file as a label in text the
+// model relays, never one it reads or writes.
+const COMMANDS = path.join(__dirname, "..", "plugins", "claudhd", "commands");
+const PREAMBLE = '!`node "${CLAUDE_PLUGIN_ROOT}/scripts/paths.js"`';
+const PREAMBLE_EXEMPT = {
+  override: "NOW.md appears only in the one line the model relays; override.js does the write",
+};
+const NAMES_IN_PROSE = new RegExp("\\b" + NAME_ALT + "|`design/");
+
+function commandBody(text) {
+  const m = text.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n/);
+  return { frontmatter: m ? m[0] : "", body: m ? text.slice(m[0].length) : text };
+}
+
+test("every command that names a state/audit file or design/ runs the paths.js preamble", () => {
+  const missing = [];
+  for (const f of fs.readdirSync(COMMANDS).filter((n) => n.endsWith(".md"))) {
+    const name = f.replace(/\.md$/, "");
+    const { body } = commandBody(fs.readFileSync(path.join(COMMANDS, f), "utf8"));
+    if (!NAMES_IN_PROSE.test(body) || PREAMBLE_EXEMPT[name]) continue;
+    if (!body.includes(PREAMBLE)) missing.push("commands/" + f);
+  }
+  assert.deepEqual(missing, [], "missing the paths.js preamble: " + missing.join(", "));
+});
+
+test("a command with the paths.js preamble and an allowed-tools line allows Bash(node:*)", () => {
+  const bad = [];
+  for (const f of fs.readdirSync(COMMANDS).filter((n) => n.endsWith(".md"))) {
+    const { frontmatter, body } = commandBody(fs.readFileSync(path.join(COMMANDS, f), "utf8"));
+    if (!body.includes(PREAMBLE)) continue;
+    const allowed = frontmatter.match(/^allowed-tools:\s*(.+)$/m);
+    if (allowed && !allowed[1].includes("Bash(node:*)")) bad.push("commands/" + f);
+  }
+  assert.deepEqual(bad, [], "paths.js preamble cannot run under: " + bad.join(", "));
+});
+
+test("no command places a state file at the project root by name", () => {
+  const bad = [];
+  for (const f of fs.readdirSync(COMMANDS).filter((n) => n.endsWith(".md"))) {
+    const { body } = commandBody(fs.readFileSync(path.join(COMMANDS, f), "utf8"));
+    const re = new RegExp(NAME_ALT + "`?\\s+(?:at|in) the project root", "g");
+    if (re.test(body)) bad.push("commands/" + f);
+  }
+  assert.deepEqual(bad, [], "state file pinned to the project root in: " + bad.join(", "));
+});

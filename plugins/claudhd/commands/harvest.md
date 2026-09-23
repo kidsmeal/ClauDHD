@@ -4,8 +4,9 @@ argument-hint: "[--dry-run] [--full]"
 allowed-tools: Bash(node:*), Grep, Read, Edit, Write
 ---
 !`node "${CLAUDE_PLUGIN_ROOT}/scripts/harvest.js" "$ARGUMENTS"`
+!`node "${CLAUDE_PLUGIN_ROOT}/scripts/paths.js"`
 
-The script above located this project's past session transcripts and the files to dedup against. Harvest the ideas that were raised but never captured or built - both mine and yours. Work efficiently; do NOT slurp whole transcripts:
+The script above located this project's past session transcripts and the files to dedup against. The paths line above names where this project keeps its ClauDHD files (`NOW=`, `ROADMAP=`, `IDEAS=`, `SHIPPED=`, `AUDIT=`, `RVQ=`, `DESIGN_DIR=`); every file name in this command means the file at that path. Harvest the ideas that were raised but never captured or built - both mine and yours. Work efficiently; do NOT slurp whole transcripts:
 
 1. **Grep first, read narrowly.** Grep the in-scope session files for idea signals, then read only the surrounding lines. Look for:
    - mine (the user): "we should also", "would be nice", "later", "TODO", "what if", "eventually", "out of scope", "don't forget", "note to self".

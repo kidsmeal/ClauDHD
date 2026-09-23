@@ -2,7 +2,11 @@
 description: Activate a roadmap item, the readiness gate that turns vague intent into something to design
 argument-hint: <roadmap-id, e.g. r-0725-1>
 ---
+!`node "${CLAUDE_PLUGIN_ROOT}/scripts/paths.js"`
+
 Arguments: $ARGUMENTS
+
+The paths line above names where this project keeps its ClauDHD files (`NOW=`, `ROADMAP=`, `IDEAS=`, `SHIPPED=`, `AUDIT=`, `RVQ=`, `DESIGN_DIR=`); every file name in this command means the file at that path.
 
 Vague wording is legal on the roadmap; the readiness gate lives here, at activation, not at capture. If `$ARGUMENTS` is empty, show me `ROADMAP.md`'s `## Next` section (numbered) and ask which id to activate.
 

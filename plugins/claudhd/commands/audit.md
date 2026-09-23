@@ -4,17 +4,18 @@ argument-hint: "[feature or area to add to the verification queue] | (none = ful
 allowed-tools: Bash(node:*), Bash(git log:*), Read, Edit, Write, Glob, Grep
 ---
 !`node "${CLAUDE_PLUGIN_ROOT}/scripts/shipped.js"`
+!`node "${CLAUDE_PLUGIN_ROOT}/scripts/paths.js"`
 
-The line above is the catch-up scan: commits made outside a Claude Code session bypass the commit-boundary guard, so they never trigger the automatic `SHIPPED.md` entry. This is the documented way to close that gap; relay its one-line result, then continue.
+The first line above is the catch-up scan: commits made outside a Claude Code session bypass the commit-boundary guard, so they never trigger the automatic `SHIPPED.md` entry. This is the documented way to close that gap; relay its one-line result, then continue. The second line names where this project keeps its ClauDHD files (`NOW=`, `ROADMAP=`, `SHIPPED=`, `AUDIT=`, `RVQ=`, `DESIGN_DIR=`); every file name below means the file at that path.
 
-Two living docs, one command otherwise, since both exist to keep a cold session from trusting a stale doc. The file names below live at the project root or in `docs/`; find them, and if either is missing, run `/claudhd:init` first or create it from the template.
+Two living docs, one command otherwise, since both exist to keep a cold session from trusting a stale doc. They live at the `AUDIT=` and `RVQ=` paths printed above; if either is missing, run `/claudhd:init` first or create it from the template.
 
 ## Part 1: CURRENTNESS_AUDIT.md
 
 This is an audit snapshot, not a reorganization. Do not move or rewrite the old docs; correct the audit file instead.
 
 1. **Reconcile open doc flags.** Find `## Open doc flags`. For each `- [ ]` entry, check whether the cited doc still lags the change that flagged it: grep the doc for the invalidated claim or check git history. If refreshed since, tick it (`[x]`). Report how many cleared and how many remain open.
-2. Gather the signals. Read `ROADMAP.md`/`NOW.md` if present, skim plan files (`plans/*.md`, `docs/plan_*.md`, `design/*.md`), and read recent history: `git log --oneline -40`. For a large doc set, do not read every file inline: Grep first for the plan-file's own status markers (`**Status:**` lines, `## Summary` headings, phase headings) to triage which plans are worth a full read, then Read only the ones that look live or ambiguous.
+2. Gather the signals. Read `ROADMAP.md`/`NOW.md` (paths printed above) if present, skim plan files (`plans/*.md`, `docs/plan_*.md`, `design/*.md`, and the `DESIGN_DIR=` directory when one is printed), and read recent history: `git log --oneline -40`. For a large doc set, do not read every file inline: Grep first for the plan-file's own status markers (`**Status:**` lines, `## Summary` headings, phase headings) to triage which plans are worth a full read, then Read only the ones that look live or ambiguous.
 3. For each significant plan or system, decide its real state from code evidence (Glob/Grep the files it claims), not from the doc's own language: **Trust First** (a current anchor), **Needs Reconciliation** (mixed signals; say exactly which claims are stale and what the code shows instead), or **Likely Shipped / Historical** (done; should not pull attention).
 4. Rewrite `CURRENTNESS_AUDIT.md` from the template's structure, set its "Last updated" line to today, keep entries terse (one or two lines each, file path plus the one-line read).
 

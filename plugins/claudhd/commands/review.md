@@ -2,7 +2,11 @@
 description: Review the uncommitted diff for one phase against the plan and the project's conventions
 argument-hint: <path-to-plan> <phase-number>
 ---
+!`node "${CLAUDE_PLUGIN_ROOT}/scripts/paths.js"`
+
 Arguments: $ARGUMENTS
+
+The paths line above names where this project keeps its ClauDHD files (`NOW=`, `ROADMAP=`, `IDEAS=`, `SHIPPED=`, `AUDIT=`, `RVQ=`, `DESIGN_DIR=`); every file name in this command means the file at that path.
 
 Resolve a plan file and a phase number from those arguments before doing anything else, tolerating filler:
 - **Plan file**: the plan path (a path, normally ending in `_plan.md` or `-plan.md`).
@@ -32,7 +36,7 @@ Report to me in this shape only: a verdict line ("phase `<phase>` review: PASS" 
 
 **On PASS-WITH-NOTES:** if there are **Fix-now notes**, before re-spawning the implementer run `node ${CLAUDE_PLUGIN_ROOT}/scripts/sentinel.js add-files <reviewer's cited file paths>` the same way, then record the round (`node ${CLAUDE_PLUGIN_ROOT}/scripts/sentinel.js record-round <plan> <phase> PASS-WITH-NOTES` with the Fix-now notes on stdin), then send them to the implementer as a scoped fix pass on the same phase - the Fix-now notes text passed verbatim, same as a FAIL's Required fixes - and re-review with the recorded context before presenting for commit. Fix-now passes share the same 5-round cap as FAIL fixes; past the cap, stop and hand me the outstanding notes with the round history, same three options as above. Only **Deferred notes** (pending APIs, plan-blessed placeholders, later-phase consumers) may survive into the commit unchanged. Do not present a diff with outstanding fix-now notes for commit.
 
-**Before the commit gate, log every Deferred note so none is dropped.** Append each to `CURRENTNESS_AUDIT.md`'s `## Deferred review notes` section: `- [ ] <note, with file:line>: <why deferred> (phase N, <feature or plan name>)`. If no audit file exists, append them to the plan's own phase section instead and tell me that `/claudhd:init` would enable persistent tracking. A deferred note must land in writing somewhere durable, never only in chat.
+**Before the commit gate, log every Deferred note so none is dropped.** Append each to `CURRENTNESS_AUDIT.md`'s (the `AUDIT=` path) `## Deferred review notes` section: `- [ ] <note, with file:line>: <why deferred> (phase N, <feature or plan name>)`. If no audit file exists, append them to the plan's own phase section instead and tell me that `/claudhd:init` would enable persistent tracking. A deferred note must land in writing somewhere durable, never only in chat.
 
 **On PASS** (or PASS-WITH-NOTES with only deferred notes remaining, now logged): present the clean diff and verdict, and the exact compound command below, then run `node ${CLAUDE_PLUGIN_ROOT}/scripts/thread.js commit-policy`: on `gate`, wait for me to say go; on `auto` for this plan (a grant I recorded once with `thread.js commit-policy auto <plan>`), run the compound command below without asking and report the hash. Never commit on my behalf unless I explicitly say so or that grant is recorded. Push stays a human action under either policy. claudhd 1.0 ships primary-reviewer-only: there is no second-opinion pass, so the primary reviewer's clean verdict is what opens the gate.
 

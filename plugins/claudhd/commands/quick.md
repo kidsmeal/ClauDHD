@@ -4,8 +4,9 @@ argument-hint: "[a quick fix to add; omit to clear the batch]"
 allowed-tools: Bash(node:*), Read, Edit
 ---
 !`node "${CLAUDE_PLUGIN_ROOT}/scripts/quick.js" "$ARGUMENTS"`
+!`node "${CLAUDE_PLUGIN_ROOT}/scripts/paths.js"`
 
-The output above is from the quick-fixes lane in `NOW.md` (the `## Quick fixes` batch).
+The first output above is from the quick-fixes lane in `NOW.md` (the `## Quick fixes` batch). The paths line above names where this project keeps its ClauDHD files (`NOW=`, `ROADMAP=`, `IDEAS=`, `SHIPPED=`, `AUDIT=`, `RVQ=`, `DESIGN_DIR=`); every file name in this command means the file at that path.
 
 **Hard limits, keep the lane honest.** A quick fix is **one file** (rarely two) and **one sitting**, with **no** schema/API/public-contract change and **no** broad refactor. The batch is capped (3); overflow means clear some or promote one out. Anything bigger is not a quick fix; send it to `/claudhd:idea` for triage (it belongs on the roadmap or in a design). A fix that *fails its check* when you make it gets kicked back to `/claudhd:idea`, never patched around.
 

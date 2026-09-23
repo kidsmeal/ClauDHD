@@ -2,7 +2,11 @@
 description: Grill a feature idea to a resolved decision board, write the design doc, and audit it
 argument-hint: <feature idea, or a design doc path to audit/re-audit>
 ---
+!`node "${CLAUDE_PLUGIN_ROOT}/scripts/paths.js"`
+
 Arguments: $ARGUMENTS
+
+The paths line above names where this project keeps its ClauDHD files (`NOW=`, `ROADMAP=`, `IDEAS=`, `SHIPPED=`, `AUDIT=`, `RVQ=`, `DESIGN_DIR=`); every file name in this command means the file at that path.
 
 This command absorbs the grill (turning a rough idea into a resolved decision set) and the design-reviewer audit (turning a draft into a doc ready for `/claudhd:plan`). If `$ARGUMENTS` is a path to an existing `.md` file, enter through the audit path: `node ${CLAUDE_PLUGIN_ROOT}/scripts/thread.js audit-design <path>`. This is the one entry point for both a brand-new audit and a continuation of one already in progress, and it always leaves mode as `design` and clears any active override - a per-emergency escape from an earlier unguarded stretch must never silently carry into a properly-scoped design transition. What differs is whether it is a fresh entry or a continuation, decided for you by comparing `<path>` to whatever design doc is currently active: re-auditing the SAME doc that is already active preserves the accumulated board and `from` byte-for-byte (the settled continuation behavior a multi-pass audit depends on); auditing a different doc, or starting from idle/another mode entirely, starts a fresh board (`resolved`/`open` both empty) and clears `from` (an existing-doc audit never carries a roadmap parent), exactly as `enter-design` would. Do not call `enter-design` here either way; `audit-design` is what handles both branches. Then skip straight to the **Audit** section below. Otherwise treat `$ARGUMENTS` as a feature idea and start at **Enter design mode**.
 
@@ -54,7 +58,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/thread.js set-intent "<updated thread name>" 
 
 ## Write the design doc
 
-Only once the decision tree is resolved (or explicitly deferred), write to `design/<feature-slug>.md` (or the project's existing design directory) using this structure, filled from the resolved decisions:
+Only once the decision tree is resolved (or explicitly deferred), write to `<DESIGN_DIR>/<feature-slug>.md` when the paths line above names a `DESIGN_DIR`; when it reads `DESIGN_DIR=(default)`, write to `design/<feature-slug>.md` (or the project's existing design directory). Use this structure, filled from the resolved decisions:
 
 ```
 # <Feature> - Design

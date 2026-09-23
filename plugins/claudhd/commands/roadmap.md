@@ -3,11 +3,15 @@ description: Show the project roadmap, add a committed intent, or mark/reorder/p
 argument-hint: '[intent to add, or empty to show, or "done <id>" / "reopen <id>" / "park <id> Next|Later" / "reorder <id> <position>"]'
 allowed-tools: Read, Write, Edit, Bash(node:*)
 ---
+!`node "${CLAUDE_PLUGIN_ROOT}/scripts/paths.js"`
+
+The paths line above names where this project keeps its ClauDHD files (`NOW=`, `ROADMAP=`, `IDEAS=`, `SHIPPED=`, `AUDIT=`, `RVQ=`, `DESIGN_DIR=`); every file name in this command means the file at that path.
+
 The roadmap is the committed, ordered lane between IDEAS.md (someday, unsorted) and NOW.md (the one active thread): what you have decided to do and roughly in what order, before any of it becomes the live cursor. One cursor still rules - the roadmap orders many intents, NOW.md points at exactly one. Adding to the roadmap never starts work and never changes the active thread.
 
 Every item carries a stable `` `r-MMDD-N` `` id, rendered beside its text, so it is never typed from memory. `/claudhd:start <id>` is how an item goes from committed intent to something being designed; `/claudhd:triage`'s "roadmap" tap is how an idea gets promoted here in the first place, verbatim, with its own id stamped at promotion time.
 
-Read `ROADMAP.md` at the project root.
+Read `ROADMAP.md` at the `ROADMAP=` path printed above.
 
 **If it does not exist**, create it with this structure, then continue:
 
