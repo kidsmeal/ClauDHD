@@ -68,6 +68,7 @@ const { buildState, writeStateAtomic, readState, cursorFacts, ideasFacts, issueR
 const { render } = require("./nowrender.js");
 const { appendEntry } = require("./shipped.js");
 const { isStale } = require("./sentinel-core.js");
+const { resolvePaths } = require("./paths.js");
 
 // The facts-only keys buildState() ever produces - mirrors checkpoint.js's
 // STOP_HOOK_OWNED_KEYS exactly, named explicitly (not read off buildState's
@@ -218,7 +219,10 @@ function moveRoadmapItemToShipped(roadmapText, id) {
 }
 
 function reconcile(root, message, sessionId, willClearBuild) {
-  const nowMdPath = path.join(root, "NOW.md");
+  // Every file this call reads, writes, and stages sits where paths.js says:
+  // the configured state dir, never a stray copy at the default location.
+  const P = resolvePaths(root);
+  const nowMdPath = P.now.abs;
   const nowText = readOrNull(nowMdPath);
   if (nowText == null || !nowText.includes("<!-- claudhd") || !hasActivationMarker(root)) {
     return { skipped: true, reason: "not adopted" };
@@ -237,7 +241,7 @@ function reconcile(root, message, sessionId, willClearBuild) {
   //    comment) - every other artifact below still regenerates.
   if (message != null) {
     appendEntry(root, message, date);
-    writtenPaths.push("SHIPPED.md");
+    writtenPaths.push(P.shipped.rel);
   } else {
     logReconcileNote(root, "SHIPPED entry skipped: commit message unavailable at hook time (interactive editor commit, -F -, or an unparsed form)");
   }
@@ -252,13 +256,13 @@ function reconcile(root, message, sessionId, willClearBuild) {
   //     issueRoadmapIds, which also persists the durable ledger and writes
   //     ROADMAP.md itself when changed). No-op (changed: false) once every
   //     item already carries an id.
-  const roadmapPath = path.join(root, "ROADMAP.md");
+  const roadmapPath = P.roadmap.abs;
   let roadmapText = readOrNull(roadmapPath);
   if (roadmapText != null) {
     const { text: backfilledText, changed: idsChanged } = issueRoadmapIds(nowDir, roadmapPath, new Date());
     if (idsChanged) {
       roadmapText = backfilledText;
-      writtenPaths.push("ROADMAP.md");
+      writtenPaths.push(P.roadmap.rel);
     }
   }
 
@@ -294,7 +298,7 @@ function reconcile(root, message, sessionId, willClearBuild) {
         if (moveChanged) {
           roadmapText = movedText;
           fs.writeFileSync(roadmapPath, roadmapText);
-          if (!writtenPaths.includes("ROADMAP.md")) writtenPaths.push("ROADMAP.md");
+          if (!writtenPaths.includes(P.roadmap.rel)) writtenPaths.push(P.roadmap.rel);
         }
       }
     }
@@ -310,7 +314,7 @@ function reconcile(root, message, sessionId, willClearBuild) {
   //    than a re-parse of NOW.md text, which can legitimately lag a set-intent
   //    call made earlier in the same session.
   const cursor = Object.assign({}, cursorFacts(nowText, prior.intent) || {}, { lastTouched: date });
-  const ideasText = readOrNull(path.join(root, "IDEAS.md"));
+  const ideasText = readOrNull(P.ideas.abs);
   // willClearBuild: render as post-clear (idle build) even though `build`
   // (used above, unconditionally, for the Status line / roadmap move) is
   // still the real pre-clear value - see this file's header comment.
@@ -328,14 +332,14 @@ function reconcile(root, message, sessionId, willClearBuild) {
   };
   const newNowText = render(renderState);
   fs.writeFileSync(nowMdPath, newNowText);
-  writtenPaths.push("NOW.md");
+  writtenPaths.push(P.now.rel);
 
   // 4. Regenerate state.json's facts-only sections - never build/mode/design/
   //    intent/roadmapIds, which belong to other writers (state.js).
   const branch = git(root, ["rev-parse", "--abbrev-ref", "HEAD"]) || null;
   const changedFiles = git(root, ["diff", "--name-only", "HEAD"]);
   const untracked = git(root, ["ls-files", "--others", "--exclude-standard"]);
-  const own = new Set(["NOW.md", "IDEAS.md", "SHIPPED.md", "ROADMAP.md"]);
+  const own = P.ownRel;
   const dirty = new Set(
     (changedFiles + "\n" + untracked)
       .split(/\r?\n/)
@@ -351,8 +355,8 @@ function reconcile(root, message, sessionId, willClearBuild) {
     branch: branch && branch !== "HEAD" ? branch : null,
     now: newNowText,
     ideas: ideasText,
-    shipped: readOrNull(path.join(root, "SHIPPED.md")),
-    roadmap: readOrNull(path.join(root, "ROADMAP.md")),
+    shipped: readOrNull(P.shipped.abs),
+    roadmap: readOrNull(P.roadmap.abs),
     intent: prior.intent,
     git: {
       uncommitted: dirty.size,

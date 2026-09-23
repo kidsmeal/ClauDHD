@@ -16,7 +16,9 @@ const path = require("path");
 
 // Single resolver for every ClauDHD script (see root.js).
 const ROOT = require("./root.js")(process.env);
-const NOW_MD = path.join(ROOT, "NOW.md");
+// State-file locations come from paths.js (see its header comment).
+const PATHS = require("./paths.js").resolvePaths(ROOT);
+const NOW_MD = PATHS.now.abs;
 const NOW_DIR = path.join(ROOT, ".now");
 
 function git(args) {
@@ -124,7 +126,7 @@ ${recent}
   // breadcrumb above already landed, so a failure here loses nothing and the
   // next Stop rewrites it. State facts only; consumers derive their own flags.
   try {
-    const own = new Set(["NOW.md", "IDEAS.md", "SHIPPED.md", "ROADMAP.md"]);
+    const own = PATHS.ownRel;
     const changed = git(["diff", "--name-only", "HEAD"]);              // tracked, staged + unstaged
     const untracked = git(["ls-files", "--others", "--exclude-standard"]); // new files
     const dirty = new Set(
@@ -152,9 +154,9 @@ ${recent}
       generatedAt: new Date().toISOString(),
       branch: (branch && branch !== "unknown" && branch !== "HEAD") ? branch : null,
       now: nowTxt,
-      ideas: readOrNull(path.join(ROOT, "IDEAS.md")),
-      shipped: readOrNull(path.join(ROOT, "SHIPPED.md")),
-      roadmap: readOrNull(path.join(ROOT, "ROADMAP.md")),
+      ideas: readOrNull(PATHS.ideas.abs),
+      shipped: readOrNull(PATHS.shipped.abs),
+      roadmap: readOrNull(PATHS.roadmap.abs),
       intent,
       git: {
         uncommitted: dirty.size,

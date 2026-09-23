@@ -61,7 +61,9 @@ function walkForRoot(startDir) {
       if (fs.existsSync(path.join(dir, ".now", "enabled"))) return dir;
 
       if (fs.existsSync(path.join(dir, ".gantry", "enabled"))) {
-        const nowPath = path.join(dir, "NOW.md");
+        // NOW.md at that level's configured state dir (paths.js), required
+        // here rather than at the top so paths.js's CLI can require root.js.
+        const nowPath = require("./paths.js").resolvePaths(dir).now.abs;
         if (fs.existsSync(nowPath) && fs.readFileSync(nowPath, "utf8").includes("<!-- claudhd")) {
           return dir;
         }

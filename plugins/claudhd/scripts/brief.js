@@ -29,7 +29,12 @@ const {
 // first, then Gantry's legacy var, then Claude Code's var, then cwd. Lets the
 // same scripts run under a different host (or in tests) by setting CLAUDHD_PROJECT_DIR.
 const ROOT = require("./root.js")(process.env);
-const NOW_MD = path.join(ROOT, "NOW.md");
+// Every state-file location comes from paths.js (.claude/claudhd.json, or the
+// project root when there is none).
+const pathsLib = require("./paths.js");
+const PATHS = pathsLib.resolvePaths(ROOT);
+const NOW_MD = PATHS.now.abs;
+const NOW_REL = PATHS.now.rel;
 const NOW_DIR = path.join(ROOT, ".now");
 const PLAIN = process.argv.includes("--plain");
 // Advancing the "shipped since you were last here" anchor is a side effect that
@@ -79,7 +84,7 @@ function modeDriftFlag(nowText) {
   const stateFrom = state.from != null ? state.from : null;
 
   if (renderedMode !== stateMode || renderedFrom !== stateFrom) {
-    return `NOW.md's Mode/from lines ("${renderedMode || "idle"}"/"${renderedFrom || "unplanned"}") disagree with .now/state.json ("${stateMode || "idle"}"/"${stateFrom || "unplanned"}"). NOW.md may have been hand-edited since it was last generated; the next commit (or /claudhd:build, /claudhd:design) regenerates it.`;
+    return `${NOW_REL}'s Mode/from lines ("${renderedMode || "idle"}"/"${renderedFrom || "unplanned"}") disagree with .now/state.json ("${stateMode || "idle"}"/"${stateFrom || "unplanned"}"). ${NOW_REL} may have been hand-edited since it was last generated; the next commit (or /claudhd:build, /claudhd:design) regenerates it.`;
   }
   return null;
 }
@@ -181,7 +186,7 @@ function emit(context) {
   // not pollute the context it is reporting on. In --plain (command) mode the
   // user invoked the command and already sees the output on stdout, so the same
   // notice goes to stderr to keep stdout exactly the brief markdown.
-  const notice = `ClauDHD: injected brief from NOW.md (${context.length} chars)`;
+  const notice = `ClauDHD: injected brief from ${NOW_REL} (${context.length} chars)`;
   if (PLAIN) {
     process.stderr.write(notice + "\n");
     process.stdout.write(context + "\n");
@@ -196,12 +201,34 @@ function emit(context) {
   }
 }
 
+// One line naming the resolved locations, only when .claude/claudhd.json
+// exists (valid or not): with no config every file is where it always was.
+function pathsLine() {
+  if (PATHS.configSource === "default") return null;
+  const tag = PATHS.configSource === "invalid" ? " (config invalid, defaults in use)" : "";
+  return "ClauDHD paths" + tag + ": " + pathsLib.summaryLine(PATHS);
+}
+
+// Files left at the default location while the config points elsewhere. The
+// config wins: nothing reads or writes them, so each one gets a warning.
+function strayFlags() {
+  return PATHS.strays.map((rel) =>
+    `Stray ${safeInline(rel)} at the default location is ignored (${pathsLib.CONFIG_REL} points elsewhere). Move it with /claudhd:init --relocate.`);
+}
+
 try {
   // Only act on a NOW.md that ClauDHD created/marked, so an unrelated NOW.md
   // in someone else's repo never triggers the brief.
   let txt = "";
   try { txt = fs.existsSync(NOW_MD) ? fs.readFileSync(NOW_MD, "utf8") : ""; } catch { txt = ""; }
   if (!txt || !txt.includes("<!-- claudhd")) {
+    // Config written before the files moved: the configured NOW.md is missing
+    // but files sit at the default location. Say so instead of staying silent.
+    const strays = strayFlags();
+    if (strays.length) {
+      emit("## ClauDHD paths\n\n" + pathsLine() + "\n\n## Drift flags\n\n" + strays.map((f) => `- ${f}`).join("\n"));
+      process.exit(0);
+    }
     if (PLAIN) {
       process.stdout.write("No ClauDHD NOW.md here. Run /claudhd:init to set up ClauDHD in this project.\n");
     }
@@ -210,6 +237,10 @@ try {
 
   const lines = [];
   const flags = [];
+
+  const configured = pathsLine();
+  if (configured) lines.push(configured);
+  flags.push(...strayFlags());
 
   const branch = git(["rev-parse", "--abbrev-ref", "HEAD"]);
 
@@ -227,7 +258,7 @@ try {
     // This text is copied verbatim from NOW.md, which is committed and may be
     // authored by someone else. Cap it so it can't flood the window, then fence
     // it as untrusted data so embedded text can't steer the model as instructions.
-    if (trimmed) lines.push(fenceData(capText(trimmed, BRIEF_SECTION_CAP), "NOW.md"));
+    if (trimmed) lines.push(fenceData(capText(trimmed, BRIEF_SECTION_CAP), NOW_REL));
   }
 
   // Surface the top committed roadmap intent, so what is next is visible without
@@ -235,7 +266,7 @@ try {
   // intent text is external (ROADMAP.md is committed), so sanitize it inline the
   // same way as the other externally-authored tokens below.
   try {
-    const roadmap = path.join(ROOT, "ROADMAP.md");
+    const roadmap = PATHS.roadmap.abs;
     if (fs.existsSync(roadmap)) {
       const rtxt = fs.readFileSync(roadmap, "utf8");
       const nextSection = section(rtxt, "## Next");
@@ -257,7 +288,7 @@ try {
 
   const age = ageHours(NOW_MD);
   if (age && age > CURSOR_STALE_HOURS) {
-    flags.push(`NOW.md has not been touched in ${Math.floor(age / 24)} days. Is the active thread still right?`);
+    flags.push(`${NOW_REL} has not been touched in ${Math.floor(age / 24)} days. Is the active thread still right?`);
   }
 
   const modeDrift = modeDriftFlag(txt);
@@ -279,7 +310,7 @@ try {
   // Match the exact root-relative path git reports (always forward-slash), NOT
   // the basename - otherwise a real file like docs/NOW.md or notes/IDEAS.md would
   // be silently waved through as ClauDHD bookkeeping and never counted as drift.
-  const own = new Set(["NOW.md", "IDEAS.md", "SHIPPED.md", "ROADMAP.md"]);
+  const own = PATHS.ownRel;
   const changed = git(["diff", "--name-only", "HEAD"]);              // tracked, staged + unstaged
   const untracked = git(["ls-files", "--others", "--exclude-standard"]); // new files
   const dirty = new Set(
@@ -316,12 +347,12 @@ try {
     if (wins.length > 6) body += `\n- ... and ${wins.length - 6} more`;
     out += "\n\n## Shipped since you were last here\n\n"
       + fenceData(capText(body, BRIEF_SECTION_CAP), "git commit messages")
-      + "\n\n(Already logged to SHIPPED.md automatically at each commit.)";
+      + "\n\n(Already logged to " + PATHS.shipped.rel + " automatically at each commit.)";
   }
   if (flags.length) {
     out += "\n\n## Drift flags\n\n" + flags.map((f) => `- ${f}`).join("\n");
   }
-  out += "\n\n(Read NOW.md first. As you work, keep it live: when you finish a step, check it off in NOW.md and write the next tiny action, instead of waiting until you stop. NOW.md regenerates itself at every commit.)";
+  out += `\n\n(Read ${NOW_REL} first. As you work, keep it live: when you finish a step, check it off in ${NOW_REL} and write the next tiny action, instead of waiting until you stop. ${NOW_REL} regenerates itself at every commit.)`;
 
   // Backstop the total injected size. The data fence sits early in `out`, so a
   // total-cap truncation only trims ClauDHD's own trailing guidance and leaves
