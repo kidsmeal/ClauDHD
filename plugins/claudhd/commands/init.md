@@ -1,11 +1,14 @@
 ---
 description: Set up ClauDHD in the current project - the file set, the pipeline docs, and the enforcement opt-in
+argument-hint: "[--relocate --state <dir> [--audit <dir>] [--design <dir>] [--also <path>...] [--dry-run]]"
 allowed-tools: Bash(node:*), Read, Edit
 ---
-!`node "${CLAUDE_PLUGIN_ROOT}/scripts/init.js"`
+!`node "${CLAUDE_PLUGIN_ROOT}/scripts/init.js" $ARGUMENTS`
 !`node "${CLAUDE_PLUGIN_ROOT}/scripts/paths.js"`
 
-ClauDHD is now scaffolded: `NOW.md`, `IDEAS.md`, `SHIPPED.md`, `ROADMAP.md` (at the paths printed on the last line above, from `.claude/claudhd.json` when the project has one, else the project root; any existing ones kept, never overwritten), the two living pipeline docs, `.gantry/models.json`, and the `.gitignore` entries for the plugin's own local state. Use the repo signals printed above (branch, recent commits, uncommitted files) to set up my first active thread. Do not make me name it cold:
+**If the arguments contained `--relocate`**, the first output above is the relocation report, not a scaffold: `relocate.js` moved (or, with `--dry-run`, planned to move) this project's ClauDHD files into the named directories, wrote and staged `.claude/claudhd.json`, rewrote stored paths in `.now/state.json`, and rewrote references in tracked `*.md` files, each listed as `file:line old -> new`. Relay it compactly: the moves, the removed duplicates, the count of rewrites, and any `CONFLICT`/`REFUSED` line verbatim. On a refusal nothing was written; name what I must resolve. On a real run, tell me nothing was committed and that the reference rewrites are unstaged for review. Then stop; skip everything below.
+
+Otherwise, ClauDHD is now scaffolded: `NOW.md`, `IDEAS.md`, `SHIPPED.md`, `ROADMAP.md` (at the paths printed on the last line above, from `.claude/claudhd.json` when the project has one, else the project root; any existing ones kept, never overwritten), the two living pipeline docs, `.gantry/models.json`, and the `.gitignore` entries for the plugin's own local state. Use the repo signals printed above (branch, recent commits, uncommitted files) to set up my first active thread. Do not make me name it cold:
 
 1. **Propose one active thread.** From what looks in-flight in the repo, name the single most likely thing I'm working on, in a few words.
 2. **Propose its next physical action.** One concrete step I could start in under a minute.

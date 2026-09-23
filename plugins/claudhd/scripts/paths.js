@@ -151,6 +151,12 @@ function autoAuditDir(docsExists) {
   return docsExists ? "docs" : ".";
 }
 
+// The "auto" audit dir for a root, independent of any config: relocate.js
+// uses it as a default-location source.
+function defaultAuditDir(root) {
+  return autoAuditDir(existsSafe(path.join(path.resolve(root), "docs")));
+}
+
 function warn(root, text) {
   const key = root + "\0" + text;
   if (warned.has(key)) return;
@@ -267,6 +273,7 @@ function toJson(p) {
 module.exports = {
   resolvePaths,
   clearCache,
+  defaultAuditDir,
   summaryLine,
   toJson,
   validateDir,

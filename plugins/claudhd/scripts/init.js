@@ -49,6 +49,16 @@ const TEMPLATES = path.join(__dirname, "..", "templates");
 const NOW_DIR = path.join(ROOT, ".now");
 const MARKER = "<!-- claudhd: opt-in marker (do not remove) -->";
 
+// --relocate: move the project's ClauDHD files and write .claude/claudhd.json
+// (relocate.js), then stop; nothing below runs for a relocation. fs.writeSync
+// so the report is flushed before process.exit on every platform.
+if (process.argv.includes("--relocate")) {
+  const r = require("./relocate.js").relocate(ROOT, process.argv.slice(2));
+  const text = r.out.join("\n") + "\n";
+  try { fs.writeSync(r.code === 0 ? 1 : 2, text); } catch { (r.code === 0 ? console.log : console.error)(text); }
+  process.exit(r.code);
+}
+
 function git(args) {
   try {
     return execFileSync("git", ["-C", ROOT, ...args], {
