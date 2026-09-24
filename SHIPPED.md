@@ -5,6 +5,8 @@ Finished work, newest first. Written automatically at the commit boundary; run `
 <!-- last-sha: e3cd759a406e879065901db2f1e6bd1d072133c4 -->
 
 ### 2026-09-24
+- docs: log 0a6a814 in SHIPPED.md
+- fix: shipped catch-up skips commits already logged with a hash `0a6a814`
 - docs: log state-dir and codex commits in SHIPPED.md `e3cd759`
 - docs: add parallel lanes design seed (`97633d3`)
 - feat: init gitignores the two codex .gantry files (`623ea8c`)
