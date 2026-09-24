@@ -9,7 +9,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { makeRepo, cleanup, run, read, write, exists, optIn } = require("../tools/helpers.js");
-const { appendEntry, entryKey, recordedHashlessCounts, migrateLegacyHeader, HEADER } = require("../plugins/claudhd/scripts/shipped.js");
+const { appendEntry, entryKey, recordedHashlessCounts, recordedHashes, migrateLegacyHeader, HEADER } = require("../plugins/claudhd/scripts/shipped.js");
 
 const TEMPLATE_PATH = path.join(__dirname, "..", "plugins", "claudhd", "templates", "SHIPPED.md");
 
@@ -307,6 +307,53 @@ test("shipped CLI: two same-subject commits where only ONE was reconciled - the 
     const hashedCount = (shipped.match(/^-\s*duplicate subject\s*\(`[0-9a-f]{7,40}`\)\s*$/gm) || []).length;
     assert.equal(hashlessCount, 1, "the one reconcile-written entry survives, untouched");
     assert.equal(hashedCount, 1, "the genuinely uncovered commit is logged exactly once, with its hash - not lost, not duplicated");
+  } finally { cleanup(dir); }
+});
+
+test("recordedHashlessCounts excludes commit-verify's bare-backtick hashed bullets", () => {
+  const body = [
+    "### 2026-07-26",
+    "- logged post-commit `abc1234`",
+  ].join("\n");
+  const counts = recordedHashlessCounts(body);
+  assert.equal(counts.size, 0, "a `hash`-suffixed bullet is hashed, not reconcile-written");
+});
+
+test("recordedHashes collects hashes from both the CLI (`hash`) form and commit-verify's `hash` form", () => {
+  const body = [
+    "### 2026-07-26",
+    "- scanned by the CLI (`abc1234`)",
+    "- logged post-commit `def5678`",
+    "- reconciled, no hash",
+  ].join("\n");
+  assert.deepEqual(recordedHashes(body).sort(), ["abc1234", "def5678"]);
+});
+
+test("shipped CLI skips a commit commit-verify already logged with its hash", () => {
+  const { dir, git } = makeRepo();
+  try {
+    optIn(dir, git);
+    run(dir, "shipped.js"); // stamps the marker, logs nothing
+
+    write(dir, "one.txt", "a\n");
+    git(["add", "one.txt"]);
+    git(["commit", "-q", "-m", "logged after landing"]);
+    const short = git(["rev-parse", "--short=7", "HEAD"]).trim();
+    // commit-verify.js's post-commit shape: subject plus a bare `hash`.
+    appendEntry(dir, "logged after landing `" + short + "`", localDate());
+
+    write(dir, "two.txt", "b\n");
+    git(["add", "two.txt"]);
+    git(["commit", "-q", "-m", "never logged"]);
+
+    const r = run(dir, "shipped.js");
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /Logged 1 shipped item/, "only the unlogged commit is added");
+
+    const shipped = read(dir, "SHIPPED.md");
+    assert.equal((shipped.match(/logged after landing/g) || []).length, 1,
+      "the commit-verify entry is not duplicated");
+    assert.match(shipped, /never logged\s*\(`[0-9a-f]{7,40}`\)/);
   } finally { cleanup(dir); }
 });
 

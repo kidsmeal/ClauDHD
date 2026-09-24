@@ -2,9 +2,10 @@
 
 Finished work, newest first. Written automatically at the commit boundary; run `/claudhd:audit` to catch up any commit that bypassed the guard. This file records completed work so progress stays visible.
 
-<!-- last-sha: 97633d30845ba7a41ddfd597f12fe04f1d22b375 -->
+<!-- last-sha: e3cd759a406e879065901db2f1e6bd1d072133c4 -->
 
 ### 2026-09-24
+- docs: log state-dir and codex commits in SHIPPED.md `e3cd759`
 - docs: add parallel lanes design seed (`97633d3`)
 - feat: init gitignores the two codex .gantry files (`623ea8c`)
 - feat: add build-codex-plugin.js and the codex adapter (`2197ef5`)
