@@ -2,9 +2,28 @@
 
 Finished work, newest first. Written automatically at the commit boundary; run `/claudhd:audit` to catch up any commit that bypassed the guard. This file records completed work so progress stays visible.
 
-<!-- last-sha: 2162d4c5bf8639266543391ecbc30daac122755a -->
+<!-- last-sha: 97633d30845ba7a41ddfd597f12fe04f1d22b375 -->
+
+### 2026-09-24
+- docs: add parallel lanes design seed (`97633d3`)
+- feat: init gitignores the two codex .gantry files (`623ea8c`)
+- feat: add build-codex-plugin.js and the codex adapter (`2197ef5`)
+- feat: add codex-role.js mapping roles to spawn_agent settings (`1c14d65`)
+
+### 2026-09-23
+- feat: add relocate --exclude to skip history logs (`fba8c7b`)
+- docs: document configurable state file locations (`3d3229c`)
+- feat: add init --relocate to move state files and write config (`4bd008d`)
+- feat: commands read state-file paths from paths.js (`4f8a6c9`)
+- feat: route remaining scripts through paths.js (`7ab9c7f`)
+- feat: route hooks and the commit path through paths.js (`2d44d4b`)
+- feat: add paths.js resolver for configurable state locations (`dbf50f1`)
+
+### 2026-09-21
+- ci: add github action mirroring every push to gitlab (`3d0f433`)
 
 ### 2026-09-09
+- docs: log v1.0.12 in SHIPPED.md (`a1437e3`)
 - chore: release v1.0.12 (`2162d4c`)
 - docs: log v1.0.11 in SHIPPED.md (`54f42bd`)
 
