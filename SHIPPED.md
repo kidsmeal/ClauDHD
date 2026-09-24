@@ -2,7 +2,10 @@
 
 Finished work, newest first. Written automatically at the commit boundary; run `/claudhd:audit` to catch up any commit that bypassed the guard. This file records completed work so progress stays visible.
 
-<!-- last-sha: e3cd759a406e879065901db2f1e6bd1d072133c4 -->
+<!-- last-sha: e46b0cb07001005455649551e71a841684697a7b -->
+
+### 2026-09-24
+- chore: release v1.1.0 (`e46b0cb`)
 
 ### 2026-09-24
 - docs: log 0a6a814 in SHIPPED.md
