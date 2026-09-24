@@ -1,0 +1,23 @@
+{
+  "name": "claudhd-codex",
+  "version": "1.0.11",
+  "description": "ClauDHD's reviewed feature pipeline for Codex.",
+  "author": {
+    "name": "kidsmeal",
+    "url": "https://github.com/kidsmeal"
+  },
+  "homepage": "https://github.com/kidsmeal/ClauDHD",
+  "repository": "https://github.com/kidsmeal/ClauDHD",
+  "license": "MIT",
+  "keywords": ["adhd", "focus", "pipeline", "review", "codex"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "ClauDHD Codex",
+    "shortDescription": "Reviewed feature delivery for Codex.",
+    "longDescription": "Runs ClauDHD's design, planning, implementation, and review gates through explicit Codex subagent roles.",
+    "developerName": "kidsmeal",
+    "category": "Productivity",
+    "capabilities": ["Write"],
+    "defaultPrompt": "Run ClauDHD's reviewed feature pipeline."
+  }
+}
