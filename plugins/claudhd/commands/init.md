@@ -1,6 +1,6 @@
 ---
 description: Set up ClauDHD in the current project - the file set, the pipeline docs, and the enforcement opt-in
-argument-hint: "[--relocate --state <dir> [--audit <dir>] [--design <dir>] [--also <path>...] [--dry-run]]"
+argument-hint: "[--relocate --state <dir> [--audit <dir>] [--design <dir>] [--also <path>...] [--exclude <path>...] [--dry-run]]"
 allowed-tools: Bash(node:*), Read, Edit
 ---
 !`node "${CLAUDE_PLUGIN_ROOT}/scripts/init.js" $ARGUMENTS`

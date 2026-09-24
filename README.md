@@ -72,7 +72,7 @@ By default the four state files sit at the project root and the two audit docs i
 | `paths.audit` | dir or `"auto"` | `"auto"` | holds `CURRENTNESS_AUDIT.md`, `RUNTIME_VERIFICATION_QUEUE.md`; `auto` is `docs/` if it exists, else root |
 | `paths.design` | dir or `null` | `null` | where `/claudhd:design` writes docs; `null` is `design/` |
 
-Directories must be relative, inside the project, and not under `.git/`, `.now/`, or `.gantry/`. An invalid file falls back to the defaults with one warning on stderr and in `.now/reconcile.log`. `node plugins/claudhd/scripts/paths.js` prints the resolved paths. To move an existing project, run `/claudhd:init --relocate --state docs/dev --audit docs/dev --design docs/dev --dry-run`, then again without `--dry-run`; it moves the files with `git mv`, writes the config, rewrites references in tracked `*.md`, and never commits. Files left at the old location are ignored and flagged in the session brief.
+Directories must be relative, inside the project, and not under `.git/`, `.now/`, or `.gantry/`. An invalid file falls back to the defaults with one warning on stderr and in `.now/reconcile.log`. `node plugins/claudhd/scripts/paths.js` prints the resolved paths. To move an existing project, run `/claudhd:init --relocate --state docs/dev --audit docs/dev --design docs/dev --dry-run`, then again without `--dry-run`; it moves the files with `git mv`, writes the config, rewrites references in tracked `*.md` (`--exclude <path>` skips a history log), and never commits. Files left at the old location are ignored and flagged in the session brief.
 
 ## Commands
 

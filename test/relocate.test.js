@@ -230,3 +230,21 @@ test("config-first: files still at the root move to the configured dir", () => {
     assert.match(git(["status", "--porcelain"]), /^R {2}NOW\.md -> docs\/dev\/NOW\.md$/m);
   } finally { cleanup(dir); }
 });
+
+test("--exclude leaves a tracked *.md file's references untouched", () => {
+  const { dir, git } = stateRepo();
+  try {
+    fs.mkdirSync(path.join(dir, "docs"));
+    write(dir, "docs/LOG.md", "# log\n\nEdited `IDEAS.md` and docs/../NOW.md, see [cursor](../NOW.md).\n");
+    write(dir, "README.md", "# app\n\nSee [the cursor](NOW.md).\n");
+    git(["add", "."]);
+    git(["commit", "-q", "-m", "refs"]);
+    const before = read(dir, "docs/LOG.md");
+    const r = relocate(dir, ["--state", "docs/dev", "--exclude", "./docs/LOG.md"]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(read(dir, "docs/LOG.md"), before);
+    assert.match(read(dir, "README.md"), /\[the cursor\]\(docs\/dev\/NOW\.md\)/);
+    assert.match(r.stdout, /exclude: docs\/LOG\.md \(references not rewritten\)/);
+    assert.doesNotMatch(r.stdout, /rewrite: docs\/LOG\.md/);
+  } finally { cleanup(dir); }
+});

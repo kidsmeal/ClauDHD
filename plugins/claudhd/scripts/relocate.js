@@ -5,7 +5,7 @@
  * (init.js hands off here before scaffolding anything) or run directly:
  *
  *   node relocate.js --state <dir> [--audit <dir>] [--design <dir>]
- *                    [--also <path>...] [--dry-run]
+ *                    [--also <path>...] [--exclude <path>...] [--dry-run]
  *
  *   --state   new directory for NOW.md, ROADMAP.md, IDEAS.md, SHIPPED.md.
  *   --audit   new directory for CURRENTNESS_AUDIT.md and
@@ -16,6 +16,8 @@
  *   --also    extra root-relative files moved into the state directory
  *             (design docs, plans), with the same rules and cross-ref
  *             rewrites as the state files.
+ *   --exclude tracked *.md files whose references are never rewritten
+ *             (history logs). Matched against the file's current path.
  *   --dry-run print the full plan and every refusal; write nothing.
  *
  * Plan first, then write. Each file's sources are its current location (per
@@ -52,7 +54,7 @@ const STATE_KEYS = ["now", "roadmap", "ideas", "shipped"];
 const AUDIT_KEYS = ["audit", "rvq"];
 
 function parseArgs(argv) {
-  const opts = { state: null, audit: null, design: null, also: [], dryRun: false, errors: [] };
+  const opts = { state: null, audit: null, design: null, also: [], exclude: [], dryRun: false, errors: [] };
   const valueFlags = { "--state": "state", "--audit": "audit", "--design": "design" };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -65,8 +67,9 @@ function parseArgs(argv) {
       i++;
       continue;
     }
-    if (a === "--also") {
-      while (argv[i + 1] != null && !argv[i + 1].startsWith("--")) opts.also.push(argv[++i]);
+    if (a === "--also" || a === "--exclude") {
+      const list = a === "--also" ? opts.also : opts.exclude;
+      while (argv[i + 1] != null && !argv[i + 1].startsWith("--")) list.push(argv[++i]);
       continue;
     }
     opts.errors.push("unknown argument " + a);
@@ -287,7 +290,7 @@ function rewriteTokens(segment, map) {
   return { text, hits };
 }
 
-function refRewrites(root, plan, shippedTargets) {
+function refRewrites(root, plan, shippedTargets, exclude) {
   let tracked = [];
   try {
     tracked = git(root, ["ls-files", "-z", "--", "*.md"]).split("\0").filter(Boolean);
@@ -296,7 +299,7 @@ function refRewrites(root, plan, shippedTargets) {
   const moveOf = new Map(plan.moves.map((m) => [m.from, m.to]));
   const edits = [];  // { file, readFrom, text, lines: [{ n, from, to }] }
   for (const fileOld of tracked) {
-    if (removed.has(fileOld)) continue;
+    if (removed.has(fileOld) || exclude.has(fileOld)) continue;
     const fileNew = moveOf.get(fileOld) || fileOld;
     if (shippedTargets.has(fileNew) || path.posix.basename(fileNew) === pathsLib.STATE_NAMES.shipped) continue;
     let text;
@@ -356,7 +359,7 @@ function relocate(root, argv) {
   const out = [];
   if (opts.errors.length) {
     return { code: 2, out: ["ClauDHD relocate: " + opts.errors.join("; "),
-      "usage: /claudhd:init --relocate --state <dir> [--audit <dir>] [--design <dir>] [--also <path>...] [--dry-run]"] };
+      "usage: /claudhd:init --relocate --state <dir> [--audit <dir>] [--design <dir>] [--also <path>...] [--exclude <path>...] [--dry-run]"] };
   }
   const plan = buildPlan(root, opts);
   out.push("ClauDHD relocate" + tag);
@@ -377,7 +380,9 @@ function relocate(root, argv) {
   const sr = stateRewrites(plan.state, plan.map);
   for (const [field, from, to] of sr.out) out.push("  state.json " + field + ": " + from + " -> " + to);
   const shippedTargets = new Set([pathsLib.resolvePaths(root).shipped.rel, joinRel(plan.config.paths.state, pathsLib.STATE_NAMES.shipped)]);
-  const edits = refRewrites(root, plan, shippedTargets);
+  const exclude = new Set(opts.exclude.map((e) => path.posix.normalize(e.replace(/\\/g, "/")).replace(/^\.\//, "")));
+  for (const e of exclude) out.push("  exclude: " + e + " (references not rewritten)");
+  const edits = refRewrites(root, plan, shippedTargets, exclude);
   for (const e of edits) for (const c of e.changes) out.push("  rewrite: " + e.file + ":" + c.n + " " + c.from + " -> " + c.to);
 
   if (opts.dryRun) {
