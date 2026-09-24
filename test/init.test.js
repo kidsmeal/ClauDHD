@@ -124,6 +124,8 @@ test("scaffolds .gantry/models.json (all-native when codex is not on PATH) and g
     assert.match(gi, /\.gantry\/active-phase\.json/);
     assert.match(gi, /\.gantry\/models\.json/);
     assert.match(gi, /\.gantry\/headless-implementer-settings\.json/);
+    assert.match(gi, /\.gantry\/models\.codex\.json/);
+    assert.match(gi, /\.gantry\/codex-run\.json/);
   } finally { cleanup(dir); }
 });
 
@@ -147,7 +149,7 @@ test("gitignore entries are appended idempotently: a second init run does not du
     const r2 = run(dir, "init.js");
     assert.equal(r2.status, 0, r2.stderr);
     const gi = read(dir, ".gitignore");
-    for (const entry of [".now/", ".gantry/active-phase.json", ".gantry/models.json", ".gantry/headless-implementer-settings.json"]) {
+    for (const entry of [".now/", ".gantry/active-phase.json", ".gantry/models.json", ".gantry/headless-implementer-settings.json", ".gantry/models.codex.json", ".gantry/codex-run.json"]) {
       const count = gi.split(entry).length - 1;
       assert.equal(count, 1, entry + " must appear exactly once after two init runs");
     }

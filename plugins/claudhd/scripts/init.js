@@ -10,7 +10,7 @@
  * Also scaffolds the two living audit docs (CURRENTNESS_AUDIT.md and
  * RUNTIME_VERIFICATION_QUEUE.md, folded in from Gantry) into docs/ or the
  * project root, and the model-backend config (.gantry/models.json), gitignoring
- * the four local/transient .gantry/* files next to .now/. .gantry/models.json
+ * the six local/transient .gantry/* files next to .now/. .gantry/models.json
  * deliberately keeps its path (it is not tidied into .now/ - see the design's
  * cross-cutting concern 9).
  *
@@ -302,7 +302,7 @@ if (exists(path.join(".gantry", "models.json"))) {
   }
 }
 
-// .gitignore: .now/ (ClauDHD's own local session state) plus the three
+// .gitignore: .now/ (ClauDHD's own local session state) plus the
 // local/transient .gantry/* entries (folded in from Gantry: the sentinel, the
 // per-machine model config, and the transient headless-guard settings) -
 // additive and idempotent, one entry at a time. The .gantry/* entries are
@@ -314,6 +314,8 @@ const GITIGNORE_ENTRIES = [
   ".gantry/models.json",
   ".gantry/headless-implementer-settings.json",
   ".gantry/review-round.json",
+  ".gantry/models.codex.json",
+  ".gantry/codex-run.json",
 ];
 const gi = path.join(ROOT, ".gitignore");
 let giTxt = "";
